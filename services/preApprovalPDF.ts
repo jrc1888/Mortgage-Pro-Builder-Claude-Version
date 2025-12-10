@@ -3,7 +3,9 @@ import { Scenario } from '../types';
 
 // Guild Mortgage Brand Color
 const BRAND_COLOR = '#1f3b83';
-const BRAND_COLOR_RGB = [31, 59, 131];
+const BRAND_COLOR_R = 31;
+const BRAND_COLOR_G = 59;
+const BRAND_COLOR_B = 131;
 
 // Locked legal footer text (compliance requirement)
 const LEGAL_TEXT = 
@@ -161,14 +163,14 @@ export async function generatePreApprovalPDF(data: PreApprovalData): Promise<voi
   yPos += 1.9;
 
   // Divider line
-  doc.setDrawColor(...BRAND_COLOR_RGB);
+  doc.setDrawColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.setLineWidth(0.03);
   doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
   
   yPos += 0.15;
 
   // Title
-  doc.setTextColor(...BRAND_COLOR_RGB);
+  doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.text('Pre-Approval Letter', marginLeft, yPos);
@@ -209,7 +211,7 @@ export async function generatePreApprovalPDF(data: PreApprovalData): Promise<voi
     const rowY = yPos + (index * rowHeight);
     
     // Label cell (blue background, white text)
-    doc.setFillColor(...BRAND_COLOR_RGB);
+    doc.setFillColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
     doc.rect(marginLeft, rowY, labelWidth, rowHeight, 'F');
     
     // Value cell (alternating background)
