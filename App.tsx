@@ -191,6 +191,7 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             onSync={() => fetchData()}
             isSyncing={isLoadingData}
+            userEmail={session?.user?.email}
         />
       ) : (
         <ScenarioBuilder 

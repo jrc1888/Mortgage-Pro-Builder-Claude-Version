@@ -418,7 +418,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
     <div className="flex flex-col h-full bg-slate-50">
       
       {/* Header - Dark Theme */}
-      <header className="bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-20">
+      <header className="bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-28">
         <div className="flex items-center gap-6 flex-1">
           <button onClick={handleExit} className="p-2.5 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800">
             <ArrowLeft size={20} />

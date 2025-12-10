@@ -19,9 +19,10 @@ interface Props {
   onLogout: () => void;
   onSync: () => void;
   isSyncing: boolean;
+  userEmail?: string | null;
 }
 
-const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete, onDeleteClient, onDuplicate, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing }) => {
+const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete, onDeleteClient, onDuplicate, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing, userEmail }) => {
   const [isComparing, setIsComparing] = useState(false);
   const [selectedClient, setSelectedClient] = useState<string | null>(initialClient || null);
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([]);
@@ -491,6 +492,19 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
              >
                 {localDefaults && (
                     <div className="space-y-6">
+                        {/* User Email Display */}
+                        {userEmail && (
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Signed in as</label>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                        {userEmail.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="text-sm font-medium text-slate-700">{userEmail}</span>
+                                </div>
+                            </div>
+                        )}
+                        
                         <div className="pt-2">
                             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">Default Assumptions</h4>
                             
