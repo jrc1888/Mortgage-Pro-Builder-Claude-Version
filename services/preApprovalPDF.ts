@@ -140,32 +140,32 @@ export async function generatePreApprovalPDF(data: PreApprovalData): Promise<voi
 
   // Header - Logo (left side) - smaller to match reference
   if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.0, 0.78);
+    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 1.9, 0.74);
   }
 
   // Header - Headshot and Contact (right side)
-  const rightX = pageWidth - marginRight - 0.9;
+  const rightX = pageWidth - marginRight - 0.85;
   if (headshotBase64) {
-    doc.addImage(headshotBase64, 'PNG', rightX, yPos, 0.9, 0.9);
+    doc.addImage(headshotBase64, 'PNG', rightX, yPos, 0.85, 0.85);
   }
 
   // Contact info - tighter spacing
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(OFFICER_INFO.name, pageWidth - marginRight, yPos + 1.05, { align: 'right' });
+  doc.text(OFFICER_INFO.name, pageWidth - marginRight, yPos + 0.98, { align: 'right' });
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(`${OFFICER_INFO.title}`, pageWidth - marginRight, yPos + 1.18, { align: 'right' });
-  doc.text(OFFICER_INFO.nmls, pageWidth - marginRight, yPos + 1.30, { align: 'right' });
-  doc.text(OFFICER_INFO.phone, pageWidth - marginRight, yPos + 1.42, { align: 'right' });
-  doc.text(OFFICER_INFO.email, pageWidth - marginRight, yPos + 1.54, { align: 'right' });
+  doc.text('Loan Officer', pageWidth - marginRight, yPos + 1.10, { align: 'right' });
+  doc.text(OFFICER_INFO.nmls, pageWidth - marginRight, yPos + 1.22, { align: 'right' });
+  doc.text(OFFICER_INFO.phone, pageWidth - marginRight, yPos + 1.34, { align: 'right' });
+  doc.text(OFFICER_INFO.email, pageWidth - marginRight, yPos + 1.46, { align: 'right' });
 
-  yPos += 1.7;
+  yPos += 1.65;
 
   // Divider line
   doc.setDrawColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.setLineWidth(0.04);
+  doc.setLineWidth(0.05);
   doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
   
   yPos += 0.2;
@@ -173,10 +173,10 @@ export async function generatePreApprovalPDF(data: PreApprovalData): Promise<voi
   // Title
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(18);
   doc.text('Pre-Approval Letter', marginLeft, yPos);
   
-  yPos += 0.08;
+  yPos += 0.18;
 
   // Date
   doc.setTextColor(0, 0, 0);
@@ -356,32 +356,32 @@ export async function generatePreApprovalPDFPreview(data: PreApprovalData): Prom
 
   // Header - Logo (left side) - smaller to match reference
   if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.0, 0.78);
+    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 1.9, 0.74);
   }
 
   // Header - Headshot and Contact (right side)
-  const rightX = pageWidth - marginRight - 0.9;
+  const rightX = pageWidth - marginRight - 0.85;
   if (headshotBase64) {
-    doc.addImage(headshotBase64, 'PNG', rightX, yPos, 0.9, 0.9);
+    doc.addImage(headshotBase64, 'PNG', rightX, yPos, 0.85, 0.85);
   }
 
   // Contact info - tighter spacing
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(OFFICER_INFO.name, pageWidth - marginRight, yPos + 1.05, { align: 'right' });
+  doc.text(OFFICER_INFO.name, pageWidth - marginRight, yPos + 0.98, { align: 'right' });
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(`${OFFICER_INFO.title}`, pageWidth - marginRight, yPos + 1.18, { align: 'right' });
-  doc.text(OFFICER_INFO.nmls, pageWidth - marginRight, yPos + 1.30, { align: 'right' });
-  doc.text(OFFICER_INFO.phone, pageWidth - marginRight, yPos + 1.42, { align: 'right' });
-  doc.text(OFFICER_INFO.email, pageWidth - marginRight, yPos + 1.54, { align: 'right' });
+  doc.text('Loan Officer', pageWidth - marginRight, yPos + 1.10, { align: 'right' });
+  doc.text(OFFICER_INFO.nmls, pageWidth - marginRight, yPos + 1.22, { align: 'right' });
+  doc.text(OFFICER_INFO.phone, pageWidth - marginRight, yPos + 1.34, { align: 'right' });
+  doc.text(OFFICER_INFO.email, pageWidth - marginRight, yPos + 1.46, { align: 'right' });
 
-  yPos += 1.7;
+  yPos += 1.65;
 
   // Divider line
   doc.setDrawColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.setLineWidth(0.04);
+  doc.setLineWidth(0.05);
   doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
   
   yPos += 0.2;
@@ -389,10 +389,10 @@ export async function generatePreApprovalPDFPreview(data: PreApprovalData): Prom
   // Title
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(18);
   doc.text('Pre-Approval Letter', marginLeft, yPos);
   
-  yPos += 0.08;
+  yPos += 0.18;
 
   // Date
   doc.setTextColor(0, 0, 0);
