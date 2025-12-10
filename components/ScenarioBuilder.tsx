@@ -6,7 +6,7 @@ import { analyzeScenario } from '../services/geminiService';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
-import { generatePreApprovalFromScenario } from '../services/preApprovalPDF';
+import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
 
 interface Props {
   initialScenario: Scenario;
@@ -72,6 +72,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
   // Modals
   const [showLogModal, setShowLogModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showPreApprovalModal, setShowPreApprovalModal] = useState(false);
+  const [preApprovalPdfUrl, setPreApprovalPdfUrl] = useState<string | null>(null);
+  const [preApprovalFilename, setPreApprovalFilename] = useState<string>('');
   
   const [logNote, setLogNote] = useState('');
   const [currentChanges, setCurrentChanges] = useState<string[]>([]);
@@ -457,9 +460,24 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
              <button 
                 onClick={async () => {
                   try {
-                    await generatePreApprovalFromScenario(scenario);
+                    const data = {
+                      buyer1: scenario.clientName,
+                      buyer2: '',
+                      purchasePrice: scenario.isAddressTBD ? 'TBD' : scenario.purchasePrice,
+                      loanAmount: scenario.isAddressTBD ? 'TBD' : (scenario.purchasePrice - scenario.downPaymentAmount),
+                      downPayment: `${scenario.downPaymentPercent}%`,
+                      loanType: scenario.loanType,
+                      letterDate: new Date(),
+                      status: 'Pre-Approval' as const,
+                      validDays: 60,
+                      notes: ''
+                    };
+                    const { pdfUrl, filename } = await generatePreApprovalPDFPreview(data);
+                    setPreApprovalPdfUrl(pdfUrl);
+                    setPreApprovalFilename(filename);
+                    setShowPreApprovalModal(true);
                   } catch (error) {
-                    console.error('Error generating PDF:', error);
+                    console.error('Error generating PDF preview:', error);
                     alert('Error generating pre-approval letter. Please try again.');
                   }
                 }}
@@ -1281,6 +1299,56 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                </button>
            </div>
       </Modal>
+
+       {/* Pre-Approval Preview Modal */}
+       <Modal isOpen={showPreApprovalModal} onClose={() => {
+         setShowPreApprovalModal(false);
+         if (preApprovalPdfUrl) {
+           URL.revokeObjectURL(preApprovalPdfUrl);
+           setPreApprovalPdfUrl(null);
+         }
+       }} title="Pre-Approval Letter Preview" maxWidth="max-w-6xl" noPadding>
+          <div className="flex flex-col h-[85vh]">
+              <div className="flex-1 bg-slate-100 overflow-hidden">
+                  {preApprovalPdfUrl && (
+                    <iframe
+                      src={preApprovalPdfUrl}
+                      className="w-full h-full border-0"
+                      title="Pre-Approval Letter Preview"
+                    />
+                  )}
+              </div>
+              
+              {/* Footer with Download Action */}
+              <div className="bg-white border-t border-slate-200 p-4 flex justify-end gap-3 shrink-0">
+                   <button 
+                        onClick={() => {
+                          setShowPreApprovalModal(false);
+                          if (preApprovalPdfUrl) {
+                            URL.revokeObjectURL(preApprovalPdfUrl);
+                            setPreApprovalPdfUrl(null);
+                          }
+                        }}
+                        className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold text-xs uppercase hover:bg-slate-50 transition-colors"
+                   >
+                       Close
+                   </button>
+                   <button 
+                        onClick={() => {
+                          if (preApprovalPdfUrl) {
+                            const link = document.createElement('a');
+                            link.href = preApprovalPdfUrl;
+                            link.download = preApprovalFilename;
+                            link.click();
+                          }
+                        }}
+                        className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold text-xs uppercase hover:bg-indigo-500 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2"
+                   >
+                       <Download size={16} /> Download PDF
+                   </button>
+              </div>
+          </div>
+       </Modal>
 
     </div>
   );
