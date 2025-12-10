@@ -6,6 +6,7 @@ import { analyzeScenario } from '../services/geminiService';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
+import { generatePreApprovalFromScenario } from '../services/preApprovalPDF';
 
 interface Props {
   initialScenario: Scenario;
@@ -71,7 +72,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
   // Modals
   const [showLogModal, setShowLogModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [showPreApprovalModal, setShowPreApprovalModal] = useState(false);
   
   const [logNote, setLogNote] = useState('');
   const [currentChanges, setCurrentChanges] = useState<string[]>([]);
@@ -363,20 +363,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
       setShowLogModal(false);
   };
 
-  const downloadPDF = () => {
-      const element = document.getElementById('pre-approval-letter-content');
-      const opt = {
-          margin: [0.5, 0.5, 0.5, 0.5],
-          filename: `Pre-Approval - ${scenario.clientName}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2 },
-          jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-      };
-      
-      // @ts-ignore
-      html2pdf().set(opt).from(element).save();
-  };
-
   const handleAIAnalysis = async () => {
     setAnalyzing(true);
     setAiAnalysis('');
@@ -469,7 +455,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                 <BrainCircuit size={16} /> AI Review
             </button>
              <button 
-                onClick={() => setShowPreApprovalModal(true)}
+                onClick={async () => {
+                  try {
+                    await generatePreApprovalFromScenario(scenario);
+                  } catch (error) {
+                    console.error('Error generating PDF:', error);
+                    alert('Error generating pre-approval letter. Please try again.');
+                  }
+                }}
                 className="flex items-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
             >
                 <FileBadge size={16} /> Pre-Approval
@@ -1289,95 +1282,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
            </div>
       </Modal>
 
-       {/* Pre-Approval Modal */}
-       <Modal isOpen={showPreApprovalModal} onClose={() => setShowPreApprovalModal(false)} title="Pre-Approval Letter" maxWidth="max-w-4xl" noPadding>
-          <div className="flex flex-col h-[80vh]">
-              <div className="flex-1 bg-slate-100 overflow-y-auto p-8 flex justify-center">
-                  <div id="pre-approval-letter-content" className="bg-white shadow-2xl w-[8.5in] min-h-[11in] p-[1in] text-slate-900 relative">
-                        {/* Letter Content */}
-                        <div className="absolute top-12 right-12 text-right">
-                             <div className="text-2xl font-bold text-slate-900 tracking-tight">MortgagePro</div>
-                             <div className="text-xs text-slate-500 mt-1 font-medium">NMLS #123456</div>
-                        </div>
-
-                        <div className="mt-12 mb-8">
-                             <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Date</div>
-                             <div className="font-medium">{new Date().toLocaleDateString()}</div>
-                        </div>
-
-                        <div className="mb-8">
-                            <h1 className="text-2xl font-bold text-slate-900 mb-4 border-b-2 border-slate-900 pb-2 inline-block">Pre-Approval Certification</h1>
-                            <p className="text-sm leading-relaxed text-slate-700">
-                                Dear {scenario.clientName || "Client"},
-                            </p>
-                            <p className="text-sm leading-relaxed text-slate-700 mt-4">
-                                Based on a preliminary review of your credit and financial information, we are pleased to inform you that you are pre-approved for a mortgage loan with the following terms:
-                            </p>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-y-6 gap-x-12 mb-10 border-y-2 border-slate-100 py-8">
-                             <div>
-                                 <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Purchase Price</span>
-                                 <span className="text-xl font-bold text-slate-900">{formatMoney(scenario.purchasePrice)}</span>
-                             </div>
-                             <div>
-                                 <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Loan Amount</span>
-                                 <span className="text-xl font-bold text-slate-900">{formatMoney(results.totalLoanAmount)}</span>
-                             </div>
-                             <div>
-                                 <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Loan Program</span>
-                                 <span className="text-lg font-bold text-slate-900">{scenario.loanType} {scenario.loanType !== 'VA' && `${scenario.loanTermMonths / 12} Year Fixed`}</span>
-                             </div>
-                             <div>
-                                 <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Interest Rate</span>
-                                 <span className="text-lg font-bold text-slate-900">{scenario.interestRate.toFixed(3)}%</span>
-                             </div>
-                        </div>
-
-                        <div className="space-y-4 mb-16">
-                             <p className="text-sm text-slate-600 leading-relaxed">
-                                 This pre-approval is subject to satisfactory appraisal of the property, final underwriting approval of income and assets, and no material change in your financial status.
-                             </p>
-                             <p className="text-sm text-slate-600 leading-relaxed">
-                                 Conditions:
-                                 <ul className="list-disc pl-5 mt-1 space-y-1">
-                                     <li>Verification of employment and income.</li>
-                                     <li>Verification of sufficient funds to close.</li>
-                                     <li>Satisfactory title report and property insurance.</li>
-                                 </ul>
-                             </p>
-                             <p className="text-sm text-slate-600 mt-4">
-                                 This letter is valid until <strong>{new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString()}</strong>.
-                             </p>
-                        </div>
-
-                        <div className="flex justify-between items-end">
-                             <div>
-                                 <div className="h-px w-64 bg-slate-900 mb-2"></div>
-                                 <div className="text-sm font-bold text-slate-900">Authorized Signature</div>
-                                 <div className="text-xs text-slate-500">Senior Loan Officer</div>
-                             </div>
-                        </div>
-                  </div>
-              </div>
-              
-              {/* Footer with Download Action */}
-              <div className="bg-white border-t border-slate-200 p-4 flex justify-end gap-3 shrink-0">
-                   <button 
-                        onClick={() => setShowPreApprovalModal(false)}
-                        className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold text-xs uppercase hover:bg-slate-50 transition-colors"
-                   >
-                       Close
-                   </button>
-                   <button 
-                        onClick={downloadPDF}
-                        className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold text-xs uppercase hover:bg-indigo-500 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2"
-                   >
-                       <Download size={16} /> Download PDF
-                   </button>
-              </div>
-          </div>
-       </Modal>
     </div>
   );
 };
