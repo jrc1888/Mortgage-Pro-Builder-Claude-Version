@@ -463,8 +463,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                     const data = {
                       buyer1: scenario.clientName,
                       buyer2: '',
-                      purchasePrice: scenario.isAddressTBD ? 'TBD' : scenario.purchasePrice,
-                      loanAmount: scenario.isAddressTBD ? 'TBD' : (scenario.purchasePrice - scenario.downPaymentAmount),
+                      purchasePrice: scenario.isAddressTBD ? ('TBD' as const) : scenario.purchasePrice,
+                      loanAmount: scenario.isAddressTBD ? ('TBD' as const) : (scenario.purchasePrice - scenario.downPaymentAmount),
                       downPayment: `${scenario.downPaymentPercent}%`,
                       loanType: scenario.loanType,
                       letterDate: new Date(),
