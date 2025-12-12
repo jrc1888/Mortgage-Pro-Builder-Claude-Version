@@ -117,11 +117,11 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     format: 'letter'
   });
 
-  // Page settings - maximize use of page
+  // Page settings - maximize use of entire page
   const marginLeft = 0.75;
   const marginRight = 0.75;
-  const marginTop = 0.55;
-  const marginBottom = 0.55;
+  const marginTop = 0.5;
+  const marginBottom = 0.5;
   const pageWidth = 8.5;
   const pageHeight = 11;
   const contentWidth = pageWidth - marginLeft - marginRight; // 7.0"
@@ -132,75 +132,75 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   const logoBase64 = await loadImageAsBase64('/SE96398_logo_orig.png');
   const headshotBase64 = await loadImageAsBase64('/john_creager_guild.png');
 
-  // === HEADER SECTION === (generous spacing)
-  // Logo - left side, larger
+  // === HEADER SECTION === (MUCH more generous spacing)
+  // Logo - left side, even larger
   if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.4, 0.94);
+    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.6, 1.0);
   }
 
-  // Headshot - right side, larger
-  const headshotX = pageWidth - marginRight - 1.0;
+  // Headshot - right side, larger with more space
+  const headshotX = pageWidth - marginRight - 1.1;
   if (headshotBase64) {
-    doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.0, 1.0);
+    doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.1, 1.1);
   }
 
-  // Contact info - more vertical space
+  // Contact info - MUCH more vertical space between lines
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  let contactY = yPos + 1.1;
+  doc.setFontSize(10);
+  let contactY = yPos + 1.25;
   doc.text(OFFICER_INFO.name, pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.16;
+  contactY += 0.19;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.text('Loan Officer', pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.15;
+  contactY += 0.18;
   doc.text(OFFICER_INFO.nmls, pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.15;
+  contactY += 0.18;
   doc.text(OFFICER_INFO.phone, pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.15;
+  contactY += 0.18;
   doc.text(OFFICER_INFO.email, pageWidth - marginRight, contactY, { align: 'right' });
 
-  yPos += 1.9; // More space after header
+  yPos += 2.15; // MUCH more space after header
 
-  // === DIVIDER === (prominent, more space around it)
+  // === DIVIDER === (prominent, lots of space around it)
   doc.setDrawColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.setLineWidth(0.05);
+  doc.setLineWidth(0.055);
   doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
   
-  yPos += 0.35; // More space after divider
+  yPos += 0.42; // Lots more space after divider
 
-  // === TITLE === (larger, more prominent)
+  // === TITLE === (even larger, more prominent)
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
+  doc.setFontSize(24);
   doc.text('Pre-Approval Letter', marginLeft, yPos);
   
-  yPos += 0.28; // More space after title
+  yPos += 0.32; // More space after title
 
   // === DATE === (larger font, more space)
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.text(`Date: ${formatDate(letterDate)}`, marginLeft, yPos);
   
-  yPos += 0.4; // More breathing room before greeting
+  yPos += 0.48; // Much more breathing room before greeting
 
-  // === GREETING PARAGRAPH === (larger font, more line spacing)
+  // === GREETING PARAGRAPH === (larger font, generous line spacing)
   const buyers = buyer1 + (buyer2 ? ` & ${buyer2}` : '');
   const greeting = `Congratulations ${buyers}! Based on the information provided and a review of your documentation, you have been ${status.toLowerCase()} for the home purchase outlined below.`;
   
   doc.setFontSize(12);
   const greetingLines = doc.splitTextToSize(greeting, contentWidth);
   doc.text(greetingLines, marginLeft, yPos);
-  yPos += (greetingLines.length * 0.20); // More line height
+  yPos += (greetingLines.length * 0.22); // More line height
   
-  yPos += 0.38; // More space before table
+  yPos += 0.45; // Much more space before table
 
-  // === SUMMARY TABLE === (taller rows, more padding)
+  // === SUMMARY TABLE === (even taller rows, more padding)
   const gridData = [
     ['Purchase Price', ppDisplay],
     ['Loan Amount', laDisplay],
@@ -211,7 +211,7 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
 
   const labelWidth = 2.2;
   const valueWidth = 4.8;
-  const rowHeight = 0.42; // Much taller rows
+  const rowHeight = 0.46; // Even taller rows
 
   gridData.forEach((row, index) => {
     const rowY = yPos + (index * rowHeight);
@@ -237,30 +237,30 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(row[0], marginLeft + 0.12, rowY + 0.27);
+    doc.text(row[0], marginLeft + 0.13, rowY + 0.30);
     
     // Value text - black, larger
     doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(12);
-    doc.text(row[1], marginLeft + labelWidth + 0.12, rowY + 0.27);
+    doc.text(row[1], marginLeft + labelWidth + 0.13, rowY + 0.30);
   });
 
   yPos += (gridData.length * rowHeight);
-  yPos += 0.4; // More space after table
+  yPos += 0.48; // More space after table
 
-  // === ASSURANCES PARAGRAPH === (larger font, more line spacing)
+  // === ASSURANCES PARAGRAPH === (larger font, generous line spacing)
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   const assurances = "This pre-approval is based on current market conditions and the information and documentation provided. Rate is floating and subject to change until locked. This letter is typically valid for 60 days from the date shown above, subject to satisfactory appraisal, title, and final underwriting approval.";
   const assuranceLines = doc.splitTextToSize(assurances, contentWidth);
   doc.text(assuranceLines, marginLeft, yPos);
-  yPos += (assuranceLines.length * 0.17); // More line height
+  yPos += (assuranceLines.length * 0.18); // More line height
 
-  // Optional Notes - more spacing
+  // Optional Notes - generous spacing
   if (notes) {
-    yPos += 0.3;
+    yPos += 0.35;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     const noteText = `Notes: `;
@@ -271,15 +271,15 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     const notesLines = doc.splitTextToSize(notes, contentWidth - noteWidth);
     doc.text(notesLines[0], marginLeft + noteWidth, yPos);
     for (let i = 1; i < notesLines.length; i++) {
-      yPos += 0.17;
+      yPos += 0.18;
       doc.text(notesLines[i], marginLeft, yPos);
     }
-    yPos += 0.17;
+    yPos += 0.18;
   }
   
-  yPos += 0.45; // More space before signature
+  yPos += 0.5; // Lots more space before signature
 
-  // === SIGNATURE BLOCK === (larger font, more spacing)
+  // === SIGNATURE BLOCK === (larger font, generous spacing)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   const sigLines = [
@@ -292,17 +292,17 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   ];
   sigLines.forEach(line => {
     doc.text(line, marginLeft, yPos);
-    yPos += 0.17; // More spacing between lines
+    yPos += 0.19; // More spacing between lines
   });
 
-  yPos += 0.3; // More space before footer
+  yPos += 0.35; // More space before footer
 
   // === FOOTER === (more space)
   doc.setDrawColor(190, 190, 190);
-  doc.setLineWidth(0.01);
+  doc.setLineWidth(0.012);
   doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
   
-  yPos += 0.14;
+  yPos += 0.16;
 
   // Legal text - larger
   doc.setTextColor(110, 110, 110);
