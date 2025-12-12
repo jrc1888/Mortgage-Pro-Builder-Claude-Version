@@ -117,11 +117,13 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     format: 'letter'
   });
 
-  // Page settings - good margins
+  // Page settings - maximize use of page
   const marginLeft = 0.75;
   const marginRight = 0.75;
-  const marginTop = 0.65;
+  const marginTop = 0.55;
+  const marginBottom = 0.55;
   const pageWidth = 8.5;
+  const pageHeight = 11;
   const contentWidth = pageWidth - marginLeft - marginRight; // 7.0"
 
   let yPos = marginTop;
@@ -130,75 +132,75 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   const logoBase64 = await loadImageAsBase64('/SE96398_logo_orig.png');
   const headshotBase64 = await loadImageAsBase64('/john_creager_guild.png');
 
-  // === HEADER SECTION === (matches Fackrell)
-  // Logo - left side
+  // === HEADER SECTION === (generous spacing)
+  // Logo - left side, larger
   if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.0, 0.78);
+    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.4, 0.94);
   }
 
-  // Headshot - right side
-  const headshotX = pageWidth - marginRight - 0.88;
+  // Headshot - right side, larger
+  const headshotX = pageWidth - marginRight - 1.0;
   if (headshotBase64) {
-    doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 0.88, 0.88);
+    doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.0, 1.0);
   }
 
-  // Contact info - right aligned
+  // Contact info - more vertical space
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  let contactY = yPos + 1.0;
+  let contactY = yPos + 1.1;
   doc.text(OFFICER_INFO.name, pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.135;
+  contactY += 0.16;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.text('Loan Officer', pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.125;
+  contactY += 0.15;
   doc.text(OFFICER_INFO.nmls, pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.125;
+  contactY += 0.15;
   doc.text(OFFICER_INFO.phone, pageWidth - marginRight, contactY, { align: 'right' });
   
-  contactY += 0.125;
+  contactY += 0.15;
   doc.text(OFFICER_INFO.email, pageWidth - marginRight, contactY, { align: 'right' });
 
-  yPos += 1.68; // Header height
+  yPos += 1.9; // More space after header
 
-  // === DIVIDER === (prominent blue line)
+  // === DIVIDER === (prominent, more space around it)
   doc.setDrawColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.setLineWidth(0.045);
+  doc.setLineWidth(0.05);
   doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
   
-  yPos += 0.28; // Space after divider
+  yPos += 0.35; // More space after divider
 
-  // === TITLE === (bold and large)
+  // === TITLE === (larger, more prominent)
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
+  doc.setFontSize(22);
   doc.text('Pre-Approval Letter', marginLeft, yPos);
   
-  yPos += 0.22; // Space after title
+  yPos += 0.28; // More space after title
 
-  // === DATE ===
+  // === DATE === (larger font, more space)
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
+  doc.setFontSize(11);
   doc.text(`Date: ${formatDate(letterDate)}`, marginLeft, yPos);
   
-  yPos += 0.32; // Space before greeting
+  yPos += 0.4; // More breathing room before greeting
 
-  // === GREETING PARAGRAPH ===
+  // === GREETING PARAGRAPH === (larger font, more line spacing)
   const buyers = buyer1 + (buyer2 ? ` & ${buyer2}` : '');
   const greeting = `Congratulations ${buyers}! Based on the information provided and a review of your documentation, you have been ${status.toLowerCase()} for the home purchase outlined below.`;
   
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   const greetingLines = doc.splitTextToSize(greeting, contentWidth);
   doc.text(greetingLines, marginLeft, yPos);
-  yPos += (greetingLines.length * 0.17);
+  yPos += (greetingLines.length * 0.20); // More line height
   
-  yPos += 0.28; // Space before table
+  yPos += 0.38; // More space before table
 
-  // === SUMMARY TABLE === (well-proportioned)
+  // === SUMMARY TABLE === (taller rows, more padding)
   const gridData = [
     ['Purchase Price', ppDisplay],
     ['Loan Amount', laDisplay],
@@ -209,7 +211,7 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
 
   const labelWidth = 2.2;
   const valueWidth = 4.8;
-  const rowHeight = 0.36;
+  const rowHeight = 0.42; // Much taller rows
 
   gridData.forEach((row, index) => {
     const rowY = yPos + (index * rowHeight);
@@ -231,35 +233,36 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     doc.setLineWidth(0.004);
     doc.rect(marginLeft, rowY, labelWidth + valueWidth, rowHeight, 'S');
     
-    // Label text - white, bold
+    // Label text - white, bold, larger
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text(row[0], marginLeft + 0.11, rowY + 0.235);
+    doc.setFontSize(12);
+    doc.text(row[0], marginLeft + 0.12, rowY + 0.27);
     
-    // Value text - black
+    // Value text - black, larger
     doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'normal');
-    doc.text(row[1], marginLeft + labelWidth + 0.11, rowY + 0.235);
+    doc.setFontSize(12);
+    doc.text(row[1], marginLeft + labelWidth + 0.12, rowY + 0.27);
   });
 
   yPos += (gridData.length * rowHeight);
-  yPos += 0.3; // Space after table
+  yPos += 0.4; // More space after table
 
-  // === ASSURANCES PARAGRAPH ===
+  // === ASSURANCES PARAGRAPH === (larger font, more line spacing)
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
+  doc.setFontSize(11);
   const assurances = "This pre-approval is based on current market conditions and the information and documentation provided. Rate is floating and subject to change until locked. This letter is typically valid for 60 days from the date shown above, subject to satisfactory appraisal, title, and final underwriting approval.";
   const assuranceLines = doc.splitTextToSize(assurances, contentWidth);
   doc.text(assuranceLines, marginLeft, yPos);
-  yPos += (assuranceLines.length * 0.145);
+  yPos += (assuranceLines.length * 0.17); // More line height
 
-  // Optional Notes
+  // Optional Notes - more spacing
   if (notes) {
-    yPos += 0.22;
+    yPos += 0.3;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(11);
     const noteText = `Notes: `;
     doc.text(noteText, marginLeft, yPos);
     const noteWidth = doc.getTextWidth(noteText);
@@ -268,17 +271,17 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     const notesLines = doc.splitTextToSize(notes, contentWidth - noteWidth);
     doc.text(notesLines[0], marginLeft + noteWidth, yPos);
     for (let i = 1; i < notesLines.length; i++) {
-      yPos += 0.145;
+      yPos += 0.17;
       doc.text(notesLines[i], marginLeft, yPos);
     }
-    yPos += 0.145;
+    yPos += 0.17;
   }
   
-  yPos += 0.35; // Space before signature
+  yPos += 0.45; // More space before signature
 
-  // === SIGNATURE BLOCK ===
+  // === SIGNATURE BLOCK === (larger font, more spacing)
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
+  doc.setFontSize(11);
   const sigLines = [
     OFFICER_INFO.name,
     OFFICER_INFO.title,
@@ -289,22 +292,22 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   ];
   sigLines.forEach(line => {
     doc.text(line, marginLeft, yPos);
-    yPos += 0.145;
+    yPos += 0.17; // More spacing between lines
   });
 
-  yPos += 0.22; // Space before footer
+  yPos += 0.3; // More space before footer
 
-  // === FOOTER ===
+  // === FOOTER === (more space)
   doc.setDrawColor(190, 190, 190);
-  doc.setLineWidth(0.008);
+  doc.setLineWidth(0.01);
   doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
   
-  yPos += 0.1;
+  yPos += 0.14;
 
-  // Legal text
+  // Legal text - larger
   doc.setTextColor(110, 110, 110);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(8);
   const legalLines = doc.splitTextToSize(LEGAL_TEXT, contentWidth);
   doc.text(legalLines, marginLeft, yPos);
 
