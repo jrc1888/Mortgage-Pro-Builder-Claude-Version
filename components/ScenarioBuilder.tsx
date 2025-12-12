@@ -501,7 +501,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
         </div>
       </header>
 
-      {/* Main Content Grid */}
+      {/* Main Content Grid - 3 Column Layout */}
       <div className="flex-1 overflow-hidden flex flex-col lg:flex-row print:hidden">
         
         {/* Left Panel: Inputs */}
@@ -590,12 +590,17 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                          <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-6 text-sm uppercase tracking-wide border-b border-slate-100 pb-3">
                             <Calculator size={16} className="text-slate-400" /> Loan Details
                         </h3>
-                        <div className="flex bg-slate-100 p-1 rounded-lg mb-6">
-                            {Object.values(LoanType).map((type) => (
-                                <button key={type} onClick={() => handleInputChange('loanType', type)} className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${scenario.loanType === type ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}>
-                                    {type === LoanType.CONVENTIONAL ? 'Conv' : type === LoanType.JUMBO ? 'Jumbo' : type}
-                                </button>
-                            ))}
+                        
+                        {/* Loan Type Toggle */}
+                        <div className="mb-5">
+                            <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Loan Type</label>
+                            <div className="flex bg-slate-100 p-1 rounded-lg">
+                                {Object.values(LoanType).map((type) => (
+                                    <button key={type} onClick={() => handleInputChange('loanType', type)} className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${scenario.loanType === type ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}>
+                                        {type === LoanType.CONVENTIONAL ? 'Conv' : type === LoanType.JUMBO ? 'Jumbo' : type}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Occupancy Type Toggle */}
@@ -606,7 +611,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                                     <button 
                                         key={type} 
                                         onClick={() => handleInputChange('occupancyType', type)} 
-                                        className={`flex-1 py-2 px-2 text-[9px] font-bold uppercase rounded-md transition-all ${scenario.occupancyType === type ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                                        className={`flex-1 py-2 px-2 text-[9px] font-bold uppercase rounded-md transition-all ${(scenario.occupancyType || 'Primary Residence') === type ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
                                     >
                                         {type === 'Primary Residence' ? 'Primary' : type === 'Second Home' ? '2nd Home' : 'Investment'}
                                     </button>
@@ -622,7 +627,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                                     <button 
                                         key={units} 
                                         onClick={() => handleInputChange('numberOfUnits', units)} 
-                                        className={`py-2.5 text-sm font-bold rounded-md transition-all ${scenario.numberOfUnits === units ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                        className={`py-2.5 text-sm font-bold rounded-md transition-all ${(scenario.numberOfUnits || 1) === units ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                                     >
                                         {units}
                                     </button>
@@ -1136,9 +1141,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
           </div>
         </div>
         
-        {/* Right Panel: Results & Breakdown */}
-        <div className="w-full lg:w-[450px] bg-white border-l border-slate-200 overflow-y-auto print:w-full print:border-none">
-            <div className="p-8 space-y-8">
+        {/* Middle Panel: Results & Breakdown */}
+        <div className="w-full lg:w-[380px] bg-white border-l border-slate-200 overflow-y-auto print:w-full print:border-none">
+            <div className="p-6 space-y-6">
                 
                 {/* Total Payment Hero */}
                 <div>
@@ -1245,6 +1250,33 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                      )}
                 </div>
 
+            </div>
+        </div>
+
+        {/* Right Panel: Notes */}
+        <div className="w-full lg:w-[320px] bg-slate-50 border-l border-slate-200 overflow-y-auto print:hidden">
+            <div className="p-6">
+                <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide">
+                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Notes
+                </h3>
+                <textarea 
+                    value={scenario.notes || ''}
+                    onChange={(e) => {
+                        handleInputChange('notes', e.target.value);
+                        // Auto-save will be triggered by handleInputChange
+                    }}
+                    placeholder="Add notes about this scenario...
+
+• Client preferences
+• Property details
+• Follow-up items
+• Special considerations"
+                    className="w-full h-[calc(100vh-180px)] p-4 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                />
+                <p className="text-[10px] text-slate-400 mt-2 italic">Auto-saves as you type</p>
             </div>
         </div>
 
