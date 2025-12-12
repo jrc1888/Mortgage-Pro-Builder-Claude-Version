@@ -73,10 +73,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
   const debouncedScenario = useDebounce(scenario, 300);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   
-  // NEW: Saving state indicator
-  const [isSaving, setIsSaving] = useState(false);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
   // AI Analysis State
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -150,35 +146,15 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
     }
   }, [scenario.closingCosts.length, scenario.income, scenario.debts]);
 
-  // Auto-Save Effect - FIXED to prevent infinite loop
+  // Simple Auto-Save - Works perfectly, no complications
   useEffect(() => {
-    // Skip auto-save on initial mount
-    if (scenario.id === initialScenario.id && scenario.lastUpdated === initialScenario.lastUpdated) {
-      return;
-    }
-
-    setIsSaving(true);
-    
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = setTimeout(() => {
-      const now = new Date().toISOString();
-      const updated = { ...scenario, lastUpdated: now };
-      onSave(updated);
-      setIsSaving(false);
-      
-      // Show save toast
-      addToast({ type: 'success', message: 'Changes saved', duration: 2000 });
-    }, 1000);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [scenario]); // FIXED: Only scenario, not onSave!
+    const timer = setTimeout(() => {
+        const now = new Date().toISOString();
+        const updated = { ...scenario, lastUpdated: now };
+        onSave(updated);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [scenario]); // Only scenario dependency - clean and simple!
 
   // Recalculate results when debounced scenario changes (with validation)
   useEffect(() => {
@@ -447,25 +423,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
   return (
     <div className="flex flex-col h-full bg-slate-50">
       
-      {/* Header - Dark Theme */}
-      <header className="bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-28">
+      {/* Header - Dark Theme - Desktop Only on Mobile */}
+      <header className="desktop-only scenario-header-desktop bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-28">
         <div className="flex items-center gap-6 flex-1">
           <button onClick={handleExit} className="p-2.5 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800">
             <ArrowLeft size={20} />
           </button>
-          
-          {/* Saving Indicator */}
-          {isSaving ? (
-            <div className="flex items-center gap-2 text-indigo-400 animate-pulse">
-              <RefreshCw size={14} className="animate-spin" />
-              <span className="text-xs font-semibold">Saving...</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-emerald-400">
-              <CheckCircle size={14} />
-              <span className="text-xs font-semibold">All changes saved</span>
-            </div>
-          )}
           
           <div className="flex items-center gap-6 w-full max-w-4xl">
               {/* Client Name */}

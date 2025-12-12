@@ -1,281 +1,111 @@
-/* ====================================
-   MOBILE-FIRST RESPONSIVE STYLES
-   Add these to your index.css file
-   ==================================== */
+/* SIMPLE MOBILE FIXES - Make everything usable on mobile */
 
-/* Animation for toast slide-in */
+/* Animations */
 @keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
-.animate-slideIn {
-  animation: slideIn 0.3s ease-out;
-}
-
-/* Fade in animation for validation banners */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
-}
+.animate-slideIn { animation: slideIn 0.3s ease-out; }
+.animate-fadeIn { animation: fadeIn 0.3s ease-out; }
 
-/* ====================================
-   MOBILE BREAKPOINTS
-   ==================================== */
-
-/* Mobile devices (phones) */
+/* MOBILE ONLY (under 768px) */
 @media (max-width: 768px) {
-  /* Stack 3-column layout vertically */
-  .lg\\:flex-row {
-    flex-direction: column !important;
+  
+  /* Prevent zoom on input focus (iOS) */
+  input, textarea, select {
+    font-size: 16px !important;
   }
-
-  /* Full-width sidebars on mobile */
-  .lg\\:w-\\[380px\\],
-  .lg\\:w-\\[320px\\],
-  .lg\\:w-\\[450px\\] {
-    width: 100% !important;
-    max-width: none !important;
-  }
-
-  /* Hide border-left on mobile (no sidebars) */
-  .border-l {
-    border-left: none !important;
-  }
-
-  /* Touch-friendly tap targets (minimum 44x44px per Apple/Android guidelines) */
-  button,
-  a[role="button"],
-  .btn {
+  
+  /* Touch-friendly buttons (min 44x44px) */
+  button, a[role="button"] {
     min-height: 44px;
     min-width: 44px;
   }
-
-  /* Larger inputs on mobile to prevent zoom on iOS */
-  input[type="text"],
-  input[type="number"],
-  input[type="email"],
-  input[type="password"],
-  textarea,
-  select {
-    font-size: 16px !important; /* iOS zooms if font-size < 16px */
-  }
-
-  /* Hide desktop-only elements */
-  .desktop-only {
-    display: none !important;
-  }
-
-  /* Show mobile-only elements */
-  .mobile-only {
-    display: block !important;
-  }
-
-  /* Sticky mobile header */
-  .mobile-header {
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    background: white;
-    border-bottom: 1px solid #e2e8f0;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Reduce padding on mobile for more content space */
-  .p-8 {
-    padding: 1rem !important;
-  }
-
-  .p-6 {
-    padding: 1rem !important;
-  }
-
-  /* Smaller text on mobile */
-  .text-5xl {
-    font-size: 2.5rem !important;
-  }
-
-  /* Grid adjustments */
-  .grid-cols-2 {
+  
+  /* Stack all columns */
+  .grid-cols-2, .md\\:grid-cols-2, .lg\\:grid-cols-2 {
     grid-template-columns: 1fr !important;
   }
-
-  .grid-cols-3 {
-    grid-template-columns: 1fr !important;
+  
+  /* Force flex to column */
+  .lg\\:flex-row {
+    flex-direction: column !important;
   }
-
-  /* Modal full-screen on mobile */
+  
+  /* Full width sidebars */
+  .lg\\:w-\\[380px\\], .lg\\:w-\\[320px\\], .w-72 {
+    width: 100% !important;
+  }
+  
+  /* Remove side borders */
+  .border-l, .border-r {
+    border-left: none !important;
+    border-right: none !important;
+  }
+  
+  /* Reduce padding */
+  .p-8 { padding: 1rem !important; }
+  .p-6 { padding: 1rem !important; }
+  .px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  
+  /* Smaller text */
+  .text-5xl { font-size: 2rem !important; }
+  .text-4xl { font-size: 1.75rem !important; }
+  
+  /* Header - make scrollable horizontally if needed */
+  .scenario-builder-header {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Content - add bottom padding for mobile browsers */
+  .mobile-content {
+    padding-bottom: 2rem !important;
+  }
+  
+  /* Modal - full screen */
   .modal-container {
-    position: fixed;
-    inset: 0;
+    position: fixed !important;
+    inset: 0 !important;
     margin: 0 !important;
     border-radius: 0 !important;
     max-width: 100% !important;
-    max-height: 100% !important;
-    overflow-y: auto;
   }
-
-  /* Toast positioning on mobile */
+  
+  /* Toast - adjust position */
   .toast-container {
-    top: auto !important;
-    bottom: 1rem !important;
     left: 1rem !important;
     right: 1rem !important;
-    max-width: none !important;
-  }
-
-  /* Collapsible sections */
-  .collapsible-section {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-in-out;
-  }
-
-  .collapsible-section.open {
-    max-height: 2000px;
   }
 }
 
-/* Tablet devices */
+/* Tablet (768px - 1024px) */
 @media (min-width: 768px) and (max-width: 1024px) {
-  /* 2-column layout on tablets */
-  .lg\\:w-\\[380px\\] {
+  .lg\\:w-\\[380px\\], .lg\\:w-\\[320px\\] {
     width: 50% !important;
   }
-
-  .lg\\:w-\\[320px\\] {
-    width: 50% !important;
-  }
-
-  /* Wrap to next row if needed */
-  .desktop-three-column {
-    flex-wrap: wrap;
-  }
 }
 
-/* Large screens - everything works normally */
-@media (min-width: 1024px) {
-  .mobile-only {
-    display: none !important;
-  }
-
-  .desktop-only {
-    display: block !important;
-  }
-}
-
-/* ====================================
-   TOUCH INTERACTIONS
-   ==================================== */
-
-/* Remove hover effects on touch devices */
-@media (hover: none) {
-  button:hover,
-  a:hover {
-    /* Revert to non-hover state on touch devices */
-    transform: none !important;
-  }
-}
-
-/* Active state for touch */
-@media (hover: none) {
-  button:active,
-  a:active {
-    transform: scale(0.98);
-    opacity: 0.8;
-  }
-}
-
-/* ====================================
-   ACCESSIBILITY
-   ==================================== */
-
-/* Focus visible for keyboard navigation */
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-textarea:focus-visible {
+/* Accessibility */
+button:focus-visible, input:focus-visible, textarea:focus-visible {
   outline: 2px solid #4f46e5;
   outline-offset: 2px;
 }
 
-/* Remove default focus ring */
-button:focus,
-a:focus,
-input:focus,
-textarea:focus {
+button:focus, input:focus, textarea:focus {
   outline: none;
 }
 
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-  button,
-  input,
-  textarea {
-    border-width: 2px;
-  }
-}
-
-/* Reduced motion support */
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  * {
     animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-}
-
-/* ====================================
-   UTILITY CLASSES
-   ==================================== */
-
-/* Safe area insets for iOS notch */
-.safe-area-inset-top {
-  padding-top: env(safe-area-inset-top);
-}
-
-.safe-area-inset-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-/* Prevent text selection on buttons */
-button {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
-}
-
-/* Hide scrollbar but keep functionality */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
 }

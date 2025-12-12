@@ -1,6 +1,3 @@
-// FIXED NLP PARSER - Better error handling and API format
-// Replace the entire nlpParser.ts file with this:
-
 import { LoanType } from '../types';
 
 export interface ParsedScenarioData {
@@ -22,129 +19,89 @@ export const parseNaturalLanguage = async (
   input: string,
   geminiApiKey: string
 ): Promise<ParsedScenarioData> => {
-  // Check if API key exists
+  
+  console.log('🤖 NLP Parser Starting...');
+  console.log('📝 Input:', input);
+  console.log('🔑 API Key:', geminiApiKey ? `${geminiApiKey.substring(0, 10)}...` : 'MISSING');
+
+  // Validate API key
   if (!geminiApiKey || geminiApiKey.trim() === '') {
+    console.error('❌ No API key provided');
     return {
       confidence: 0,
-      clarifications: ['Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your environment variables.']
+      clarifications: ['ERROR: Gemini API key not configured. Add VITE_GEMINI_API_KEY to Vercel environment variables.']
     };
   }
 
-  const prompt = `You are a mortgage scenario data extractor. Parse this natural language description and extract mortgage details.
+  const prompt = `Extract mortgage scenario data from this text. Return ONLY valid JSON, no markdown, no code blocks.
 
 Input: "${input}"
 
-Extract the following if present:
-- Purchase price (number)
-- Down payment (as percentage OR dollar amount)
-- Loan type (Conventional, FHA, VA, or Jumbo)
-- Client name
-- Property address
-- Interest rate (percentage)
-- Credit score
-- Property tax (yearly amount)
-- HOA fee (monthly amount)
+Extract if present:
+- purchasePrice (number)
+- downPaymentPercent (number)  
+- loanType ("Conventional"|"FHA"|"VA"|"Jumbo")
+- clientName (string)
+- propertyAddress (string)
+- interestRate (number)
+- creditScore (number)
 
-IMPORTANT: Return ONLY valid JSON. No markdown, no code blocks, no extra text.
-
-Format:
-{
-  "purchasePrice": number or null,
-  "downPaymentPercent": number or null,
-  "downPaymentAmount": number or null,
-  "loanType": "Conventional" | "FHA" | "VA" | "Jumbo" | null,
-  "clientName": string or null,
-  "propertyAddress": string or null,
-  "interestRate": number or null,
-  "creditScore": number or null,
-  "propertyTaxYearly": number or null,
-  "hoaMonthly": number or null,
-  "confidence": 0-100,
-  "clarifications": ["what additional info is needed?"]
-}
-
-Examples:
-
-Input: "500k house, 10% down, FHA, John Smith"
-{"purchasePrice":500000,"downPaymentPercent":10,"loanType":"FHA","clientName":"John Smith","confidence":90,"clarifications":["Interest rate?","Property address?"]}
-
-Input: "Jane Doe buying 750000 dollar home with 20 percent down conventional loan at 6.5 percent"
-{"purchasePrice":750000,"downPaymentPercent":20,"loanType":"Conventional","clientName":"Jane Doe","interestRate":6.5,"confidence":95,"clarifications":["Property address?"]}
-
-Input: "300k fha john smith"
-{"purchasePrice":300000,"loanType":"FHA","clientName":"John Smith","confidence":85,"clarifications":["Down payment amount?","Interest rate?","Property address?"]}
+Return this EXACT format:
+{"purchasePrice":500000,"downPaymentPercent":10,"loanType":"FHA","clientName":"John Smith","confidence":90,"clarifications":["What interest rate?"]}
 
 Now parse and return JSON only:`;
 
   try {
-    console.log('🔍 Parsing with Gemini API...');
-    console.log('Input:', input);
+    console.log('📡 Calling Gemini API...');
     
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
-            parts: [{
-              text: prompt
-            }]
+            parts: [{ text: prompt }]
           }],
           generationConfig: {
             temperature: 0.1,
-            topK: 1,
-            topP: 1,
-            maxOutputTokens: 2048,
-          },
-          safetySettings: [
-            {
-              category: "HARM_CATEGORY_HARASSMENT",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_HATE_SPEECH",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-              threshold: "BLOCK_NONE"
-            }
-          ]
+            maxOutputTokens: 1024,
+          }
         })
       }
     );
 
+    console.log('📥 Response status:', response.status);
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Gemini API Error:', response.status, errorText);
+      console.error('❌ API Error:', errorText);
       
-      if (response.status === 400) {
+      if (response.status === 404) {
         return {
           confidence: 0,
-          clarifications: ['Invalid API request. Please check your Gemini API key is correct.']
+          clarifications: ['ERROR 404: Invalid API endpoint. Check Gemini API configuration.']
+        };
+      } else if (response.status === 400) {
+        return {
+          confidence: 0,
+          clarifications: ['ERROR 400: Invalid API request. Check your Gemini API key in Vercel settings.']
         };
       } else if (response.status === 403) {
         return {
           confidence: 0,
-          clarifications: ['API key rejected. Please verify your Gemini API key in Vercel environment variables.']
-        };
-      } else {
-        return {
-          confidence: 0,
-          clarifications: [`API Error (${response.status}). Please try again.`]
+          clarifications: ['ERROR 403: API key rejected. Verify VITE_GEMINI_API_KEY in Vercel is correct.']
         };
       }
+      
+      return {
+        confidence: 0,
+        clarifications: [`ERROR ${response.status}: ${errorText.substring(0, 100)}`]
+      };
     }
 
     const data = await response.json();
-    console.log('📦 Gemini Response:', data);
+    console.log('📦 Full response:', JSON.stringify(data, null, 2));
     
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
@@ -152,31 +109,28 @@ Now parse and return JSON only:`;
       console.error('❌ No text in response');
       return {
         confidence: 0,
-        clarifications: ['No response from AI. Please try rephrasing your input.']
+        clarifications: ['ERROR: No response from AI. Try rephrasing your input.']
       };
     }
     
-    console.log('📝 Raw text:', text);
+    console.log('📝 Raw AI response:', text);
     
-    // Clean up response (remove markdown code blocks if present)
+    // Clean JSON from response
     let cleanText = text.trim();
-    
-    // Remove markdown code blocks
     cleanText = cleanText.replace(/```json\n?/gi, '');
     cleanText = cleanText.replace(/```\n?/g, '');
     
-    // Extract JSON if it's embedded in other text
+    // Extract JSON object
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       cleanText = jsonMatch[0];
     }
     
-    console.log('🧹 Cleaned text:', cleanText);
+    console.log('🧹 Cleaned JSON:', cleanText);
     
     const parsed = JSON.parse(cleanText);
     console.log('✅ Parsed successfully:', parsed);
 
-    // Ensure we have valid data structure
     return {
       purchasePrice: parsed.purchasePrice || undefined,
       downPaymentPercent: parsed.downPaymentPercent || undefined,
@@ -193,18 +147,18 @@ Now parse and return JSON only:`;
     };
     
   } catch (error) {
-    console.error('❌ NLP Parse Error:', error);
+    console.error('❌ Parse Error:', error);
     
     if (error instanceof SyntaxError) {
       return {
         confidence: 0,
-        clarifications: ['Failed to parse AI response. Please try rephrasing your input more clearly.']
+        clarifications: ['ERROR: Could not parse AI response. Try simpler phrasing like "300k house fha john smith".']
       };
     }
     
     return {
       confidence: 0,
-      clarifications: ['An error occurred. Please check your internet connection and try again.']
+      clarifications: [`ERROR: ${error instanceof Error ? error.message : 'Unknown error'}. Check console for details.`]
     };
   }
 };
