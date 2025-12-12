@@ -137,6 +137,9 @@ export interface Scenario {
   // Costs
   closingCosts: ClosingCostItem[];
   
+  // Notes
+  notes: string;
+  
   // Advanced Features
   buydown: BuydownConfig;
   dpa: DPAConfig;

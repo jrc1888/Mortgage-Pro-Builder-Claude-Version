@@ -85,6 +85,8 @@ export const DEFAULT_SCENARIO: Scenario = {
 
   closingCosts: DEFAULT_CLOSING_COSTS,
   
+  notes: '',
+  
   buydown: {
     active: false,
     type: '2-1',
