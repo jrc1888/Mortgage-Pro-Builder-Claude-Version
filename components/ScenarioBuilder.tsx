@@ -7,6 +7,10 @@ import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
 import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
+import { useToast } from '../hooks/useToast';
+import { useDebounce } from '../hooks/useDebounce';
+import { validateScenario, ValidationError } from '../services/validation';
+import { ValidationBanner } from './ValidationBanner';
 
 interface Props {
   initialScenario: Scenario;
@@ -63,6 +67,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
   const [scenario, setScenario] = useState<Scenario>(initialScenario);
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(initialScenario));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
+  
+  // NEW: Toast, Debounce, and Validation
+  const { addToast } = useToast();
+  const debouncedScenario = useDebounce(scenario, 300);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   
   // AI Analysis State
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
@@ -147,11 +156,15 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
     return () => clearTimeout(timer);
   }, [scenario, onSave]);
 
-  // Recalculate results when scenario changes
+  // Recalculate results when debounced scenario changes (with validation)
   useEffect(() => {
-    const res = calculateScenario(scenario);
+    const res = calculateScenario(debouncedScenario);
     setResults(res);
-  }, [scenario]);
+    
+    // Run validation
+    const errors = validateScenario(debouncedScenario, res);
+    setValidationErrors(errors);
+  }, [debouncedScenario]);
 
   // Group closing costs by category
   const costGroups = useMemo(() => {
@@ -365,6 +378,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
           history: [...prev.history, newEntry]
       }));
       setShowLogModal(false);
+      
+      // Show success toast
+      addToast({ type: 'success', message: 'Version saved successfully!' });
   };
 
   const handleAIAnalysis = async () => {
@@ -497,7 +513,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
 
             {/* Loan Tab Content */}
             {activeTab === 'loan' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
+                <>
+                    {/* Validation Banner */}
+                    <ValidationBanner errors={validationErrors} />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
                     <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                         <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-6 text-sm uppercase tracking-wide border-b border-slate-100 pb-3">
                             <Building size={16} className="text-slate-400" /> Property Profile
@@ -712,6 +732,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                          </div>
                     </div>
                 </div>
+                </>
             )}
             
              {/* Costs Tab Content */}

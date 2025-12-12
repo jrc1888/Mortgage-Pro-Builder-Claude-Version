@@ -1,10 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp } from 'lucide-react';
+import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp, Sparkles } from 'lucide-react';
 import { Scenario, ScenarioDefaults } from '../types';
 import { FormattedNumberInput, LiveDecimalInput } from './CommonInputs';
 import { Modal } from './Modal';
 import { isSupabaseConfigured } from '../services/supabaseClient';
+import { NLPScenarioModal } from './NLPScenarioModal';
+import { DEFAULT_SCENARIO } from '../constants';
 
 interface Props {
   scenarios: Scenario[];
@@ -36,6 +38,10 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; type: 'folder' | 'scenario'; id: string; name: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [localDefaults, setLocalDefaults] = useState<ScenarioDefaults | null>(null);
+  
+  // NLP Modal State
+  const [showNLPModal, setShowNLPModal] = useState(false);
+  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 
   // Group Scenarios by Client
   const clientGroups = useMemo<Record<string, Scenario[]>>(() => {
@@ -426,11 +432,20 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
                                  <span className="hidden xl:inline">Delete</span>
                              </button>
                              
+                             {/* New Scenario Button */}
                              <button 
                                 onClick={() => onCreateNew(selectedClient!)}
-                                className="flex items-center gap-3 px-6 py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 shadow-lg shadow-emerald-900/40 hover:shadow-emerald-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-emerald-500/50 transform hover:-translate-y-0.5"
+                                className="flex items-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 shadow-lg shadow-indigo-900/40 hover:shadow-indigo-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-indigo-500/50 transform hover:-translate-y-0.5"
                             >
                                 <Plus size={18} strokeWidth={3} /> New Scenario
+                            </button>
+                            
+                            {/* Create with AI Button */}
+                            <button 
+                                onClick={() => setShowNLPModal(true)}
+                                className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-900/40 hover:shadow-purple-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-purple-500/50 transform hover:-translate-y-0.5"
+                            >
+                                <Sparkles size={18} strokeWidth={2.5} /> Create with AI
                             </button>
                          </div>
                     </header>
@@ -606,6 +621,18 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
                     </div>
                 )}
              </Modal>
+             
+             {/* NLP Scenario Creation Modal */}
+             <NLPScenarioModal
+                isOpen={showNLPModal}
+                onClose={() => setShowNLPModal(false)}
+                onCreateScenario={(data) => {
+                    onCreateNew(data.clientName || selectedClient);
+                    setShowNLPModal(false);
+                }}
+                defaultScenario={userDefaults ? { ...DEFAULT_SCENARIO, ...userDefaults } : DEFAULT_SCENARIO}
+                geminiApiKey={geminiApiKey}
+             />
         </div>
     </div>
   );
