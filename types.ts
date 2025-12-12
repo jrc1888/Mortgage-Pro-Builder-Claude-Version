@@ -115,6 +115,8 @@ export interface Scenario {
 
   // Loan Logic
   loanType: LoanType;
+  occupancyType: 'Primary Residence' | 'Second Home' | 'Investment Property';
+  numberOfUnits: 1 | 2 | 3 | 4;
   downPaymentAmount: number;
   downPaymentPercent: number; // 20 means 20%
   interestRate: number;

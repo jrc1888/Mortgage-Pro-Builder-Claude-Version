@@ -60,6 +60,8 @@ export const DEFAULT_SCENARIO: Scenario = {
   hoaMonthly: 0,
   
   loanType: LoanType.CONVENTIONAL,
+  occupancyType: 'Primary Residence',
+  numberOfUnits: 1,
   downPaymentAmount: 25000, // 5% of 500k
   downPaymentPercent: 5,
   interestRate: 6.5,
