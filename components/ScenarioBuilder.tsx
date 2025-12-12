@@ -73,6 +73,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
   const [showLogModal, setShowLogModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showPreApprovalModal, setShowPreApprovalModal] = useState(false);
+  const [showPreApprovalOptionsModal, setShowPreApprovalOptionsModal] = useState(false);
   const [preApprovalPdfUrl, setPreApprovalPdfUrl] = useState<string | null>(null);
   const [preApprovalFilename, setPreApprovalFilename] = useState<string>('');
   
@@ -458,29 +459,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                 <BrainCircuit size={16} /> AI Review
             </button>
              <button 
-                onClick={async () => {
-                  try {
-                    const data = {
-                      buyer1: scenario.clientName,
-                      buyer2: '',
-                      purchasePrice: scenario.isAddressTBD ? ('TBD' as const) : scenario.purchasePrice,
-                      loanAmount: scenario.isAddressTBD ? ('TBD' as const) : (scenario.purchasePrice - scenario.downPaymentAmount),
-                      downPayment: `${scenario.downPaymentPercent}%`,
-                      loanType: scenario.loanType,
-                      letterDate: new Date(),
-                      status: 'Pre-Approval' as const,
-                      validDays: 60,
-                      notes: ''
-                    };
-                    const { pdfUrl, filename } = await generatePreApprovalPDFPreview(data);
-                    setPreApprovalPdfUrl(pdfUrl);
-                    setPreApprovalFilename(filename);
-                    setShowPreApprovalModal(true);
-                  } catch (error) {
-                    console.error('Error generating PDF preview:', error);
-                    alert('Error generating pre-approval letter. Please try again.');
-                  }
-                }}
+                onClick={() => setShowPreApprovalOptionsModal(true)}
                 className="flex items-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
             >
                 <FileBadge size={16} /> Pre-Approval
@@ -1364,6 +1343,111 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                </button>
            </div>
       </Modal>
+
+       {/* Pre-Approval Options Modal */}
+       <Modal isOpen={showPreApprovalOptionsModal} onClose={() => setShowPreApprovalOptionsModal(false)} title="Pre-Approval Letter Options">
+          <div className="space-y-6">
+              <p className="text-sm text-slate-600">Choose how to generate the pre-approval letter:</p>
+              
+              {/* Option 1: TBD */}
+              <button 
+                  onClick={async () => {
+                      try {
+                          const data = {
+                              buyer1: scenario.clientName,
+                              buyer2: '',
+                              purchasePrice: 'TBD' as const,
+                              loanAmount: 'TBD' as const,
+                              downPayment: `${scenario.downPaymentPercent}%`,
+                              loanType: scenario.loanType,
+                              letterDate: new Date(),
+                              status: 'Pre-Approval' as const,
+                              validDays: 60,
+                              notes: ''
+                          };
+                          const { pdfUrl, filename } = await generatePreApprovalPDFPreview(data);
+                          setPreApprovalPdfUrl(pdfUrl);
+                          setPreApprovalFilename(filename);
+                          setShowPreApprovalOptionsModal(false);
+                          setShowPreApprovalModal(true);
+                      } catch (error) {
+                          console.error('Error generating PDF preview:', error);
+                          alert('Error generating pre-approval letter. Please try again.');
+                      }
+                  }}
+                  className="w-full p-6 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all text-left group"
+              >
+                  <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center shrink-0 transition-colors">
+                          <svg className="w-6 h-6 text-slate-600 group-hover:text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                      </div>
+                      <div className="flex-1">
+                          <h3 className="text-lg font-bold text-slate-900 mb-2 group-hover:text-indigo-600 transition-colors">Purchase Price TBD</h3>
+                          <p className="text-sm text-slate-600 mb-3">
+                              Generate letter without specific purchase price or loan amount. 
+                              Shows "TBD" with down payment percentage ({scenario.downPaymentPercent}%) from scenario.
+                          </p>
+                          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                              <span className="bg-slate-100 px-2 py-1 rounded">Purchase Price: TBD</span>
+                              <span className="bg-slate-100 px-2 py-1 rounded">Loan Amount: TBD</span>
+                              <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Down Payment: {scenario.downPaymentPercent}%</span>
+                          </div>
+                      </div>
+                  </div>
+              </button>
+
+              {/* Option 2: Use Scenario Values */}
+              <button 
+                  onClick={async () => {
+                      try {
+                          const data = {
+                              buyer1: scenario.clientName,
+                              buyer2: '',
+                              purchasePrice: scenario.purchasePrice,
+                              loanAmount: scenario.purchasePrice - scenario.downPaymentAmount,
+                              downPayment: `${scenario.downPaymentPercent}%`,
+                              loanType: scenario.loanType,
+                              letterDate: new Date(),
+                              status: 'Pre-Approval' as const,
+                              validDays: 60,
+                              notes: ''
+                          };
+                          const { pdfUrl, filename } = await generatePreApprovalPDFPreview(data);
+                          setPreApprovalPdfUrl(pdfUrl);
+                          setPreApprovalFilename(filename);
+                          setShowPreApprovalOptionsModal(false);
+                          setShowPreApprovalModal(true);
+                      } catch (error) {
+                          console.error('Error generating PDF preview:', error);
+                          alert('Error generating pre-approval letter. Please try again.');
+                      }
+                  }}
+                  className="w-full p-6 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all text-left group"
+              >
+                  <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center shrink-0 transition-colors">
+                          <svg className="w-6 h-6 text-slate-600 group-hover:text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                      </div>
+                      <div className="flex-1">
+                          <h3 className="text-lg font-bold text-slate-900 mb-2 group-hover:text-indigo-600 transition-colors">Use Scenario Values</h3>
+                          <p className="text-sm text-slate-600 mb-3">
+                              Generate letter with exact values from current scenario. 
+                              Shows specific purchase price and loan amount.
+                          </p>
+                          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                              <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Purchase: {formatMoney(scenario.purchasePrice)}</span>
+                              <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Loan: {formatMoney(scenario.purchasePrice - scenario.downPaymentAmount)}</span>
+                              <span className="bg-slate-100 px-2 py-1 rounded">Down: {scenario.downPaymentPercent}%</span>
+                          </div>
+                      </div>
+                  </div>
+              </button>
+          </div>
+       </Modal>
 
        {/* Pre-Approval Preview Modal */}
        <Modal isOpen={showPreApprovalModal} onClose={() => {
