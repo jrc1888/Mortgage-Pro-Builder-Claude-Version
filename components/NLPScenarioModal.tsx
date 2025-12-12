@@ -128,6 +128,9 @@ export const NLPScenarioModal: React.FC<Props> = ({
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             placeholder="Example: Jane buying $750,000 home with 20% down, conventional loan, 7% interest..."
             className="w-full h-32 p-4 pr-12 border-2 border-slate-300 rounded-lg text-sm resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
           />
