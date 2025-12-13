@@ -698,14 +698,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                                                 <div className={symbolClass}>$</div>
                                                 <FormattedNumberInput value={scenario.manualMI ?? 0} onChangeValue={(val) => handleMIChange('dollars', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                             </div>
-                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Monthly</span>
+                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Monthly ({formatMoney(results.monthlyMI)})</span>
                                         </div>
                                         <div>
                                             <div className={inputGroupClass}>
                                                 <LiveDecimalInput value={scenario.manualMI ? results.miRatePercent : 0} onChange={(val) => handleMIChange('rate', val)} step="0.01" precision={3} placeholder={results.miRatePercent.toFixed(3)} className="h-full pl-4 pr-4 text-sm text-slate-900 text-right font-medium" />
                                                 <div className={symbolRightClass}>%</div>
                                             </div>
-                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Annual Rate</span>
+                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Annual Rate ({results.miRatePercent.toFixed(3)}%)</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1218,7 +1218,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                 {/* Cash To Close Card */}
                 <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 shadow-sm mt-8">
                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Cash to Close Statement</h3>
-                     <div className="space-y-3 mb-6 text-sm">
+                     <div className="space-y-3 mb-4 text-sm">
                          <div className="flex justify-between text-slate-600">
                              <span>Down Payment</span>
                              <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
@@ -1233,7 +1233,19 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                                  <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
                              </div>
                          )}
-                          <div className="flex justify-between text-emerald-600">
+                     </div>
+                     
+                     {/* Subtotal before Earnest Money */}
+                     <div className="border-t border-slate-300 pt-3 mb-4 flex justify-between items-center">
+                         <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
+                         <span className="text-lg font-bold text-slate-900">
+                             {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
+                         </span>
+                     </div>
+                     
+                     {/* Earnest Money Deduction */}
+                     <div className="mb-6">
+                         <div className="flex justify-between text-emerald-600 text-sm">
                              <span>Earnest Money</span>
                              <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
                          </div>
@@ -1274,7 +1286,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
 • Property details
 • Follow-up items
 • Special considerations"
-                    className="w-full h-[calc(100vh-180px)] p-4 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                    className="w-full min-h-[200px] max-h-[calc(100vh-180px)] p-4 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all overflow-y-auto"
                 />
                 <p className="text-[10px] text-slate-400 mt-2 italic">Auto-saves as you type</p>
             </div>
