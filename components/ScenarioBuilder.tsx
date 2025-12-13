@@ -500,8 +500,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
       <div className="flex-1 overflow-hidden flex flex-col lg:flex-row print:hidden">
         
         {/* Left Panel: Inputs */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
-          <div className="max-w-3xl mx-auto space-y-6 pb-20">
+        <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+          <div className="max-w-3xl mx-auto space-y-4 pb-8">
             
             {/* Tabs */}
             <div className="flex bg-white rounded-xl p-1.5 shadow-sm border border-slate-200 mb-6 sticky top-0 z-20">
@@ -517,12 +517,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                     {/* Validation Banner */}
                     <ValidationBanner errors={validationErrors} />
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-6 text-sm uppercase tracking-wide border-b border-slate-100 pb-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide border-b border-slate-100 pb-2">
                             <Building size={16} className="text-slate-400" /> Property Profile
                         </h3>
-                        <div className="space-y-5">
+                        <div className="space-y-3">
                             <div>
                                 <div className="flex justify-between items-center mb-1.5">
                                     <label className={labelClass}>Address</label>
@@ -585,13 +585,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
-                         <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-6 text-sm uppercase tracking-wide border-b border-slate-100 pb-3">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-fit">
+                         <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide border-b border-slate-100 pb-2">
                             <Calculator size={16} className="text-slate-400" /> Loan Details
                         </h3>
                         
                         {/* Loan Type Toggle */}
-                        <div className="mb-5">
+                        <div className="mb-3">
                             <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Loan Type</label>
                             <div className="flex bg-slate-100 p-1 rounded-lg">
                                 {Object.values(LoanType).map((type) => (
@@ -603,7 +603,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                         </div>
 
                         {/* Occupancy Type Toggle */}
-                        <div className="mb-5">
+                        <div className="mb-3">
                             <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Occupancy Type</label>
                             <div className="flex bg-slate-100 p-1 rounded-lg">
                                 {(['Primary Residence', 'Second Home', 'Investment Property'] as const).map((type) => (
@@ -619,7 +619,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                         </div>
 
                         {/* Number of Units Toggle */}
-                        <div className="mb-6">
+                        <div className="mb-4">
                             <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Number of Units</label>
                             <div className="grid grid-cols-4 gap-2">
                                 {([1, 2, 3, 4] as const).map((units) => (
@@ -634,7 +634,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                             </div>
                         </div>
 
-                        <div className="space-y-5">
+                        <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className={labelClass}>Interest Rate</label>
@@ -696,16 +696,26 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                                         <div>
                                             <div className={inputGroupClass}>
                                                 <div className={symbolClass}>$</div>
-                                                <FormattedNumberInput value={scenario.manualMI ?? 0} onChangeValue={(val) => handleMIChange('dollars', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                                <FormattedNumberInput 
+                                                    value={results.monthlyMI} 
+                                                    onChangeValue={(val) => handleMIChange('dollars', val)} 
+                                                    className="h-full px-4 text-sm text-slate-900 font-medium" 
+                                                />
                                             </div>
-                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Monthly ({formatMoney(results.monthlyMI)})</span>
+                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Monthly</span>
                                         </div>
                                         <div>
                                             <div className={inputGroupClass}>
-                                                <LiveDecimalInput value={scenario.manualMI ? results.miRatePercent : 0} onChange={(val) => handleMIChange('rate', val)} step="0.01" precision={3} placeholder={results.miRatePercent.toFixed(3)} className="h-full pl-4 pr-4 text-sm text-slate-900 text-right font-medium" />
+                                                <LiveDecimalInput 
+                                                    value={results.miRatePercent} 
+                                                    onChange={(val) => handleMIChange('rate', val)} 
+                                                    step="0.01" 
+                                                    precision={3} 
+                                                    className="h-full pl-4 pr-4 text-sm text-slate-900 text-right font-medium" 
+                                                />
                                                 <div className={symbolRightClass}>%</div>
                                             </div>
-                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Annual Rate ({results.miRatePercent.toFixed(3)}%)</span>
+                                            <span className="text-[9px] text-slate-400 mt-1 block font-bold uppercase tracking-wider ml-0.5">Annual Rate</span>
                                         </div>
                                     </div>
                                 </div>
@@ -713,7 +723,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                         </div>
 
                         {/* NEW: Total Loan Amount Footer */}
-                        <div className="mt-8 pt-6 border-t border-slate-100">
+                        <div className="mt-4 pt-4 border-t border-slate-100">
                             <div className="flex justify-between items-end">
                                 <div>
                                     <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Base Loan Amount</span>
@@ -1143,7 +1153,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
         
         {/* Middle Panel: Results & Breakdown */}
         <div className="w-full lg:w-[380px] bg-white border-l border-slate-200 overflow-y-auto print:w-full print:border-none">
-            <div className="p-6 space-y-6">
+            <div className="p-4 space-y-4">
                 
                 {/* Total Payment Hero */}
                 <div>
@@ -1177,9 +1187,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                 </div>
                 
                 {/* Monthly Breakdown List */}
-                <div className="border-t border-slate-100 pt-6">
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">Monthly Breakdown</h3>
-                    <div className="space-y-4 text-base">
+                <div className="border-t border-slate-100 pt-4">
+                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
+                    <div className="space-y-2 text-base">
                         <div className="flex justify-between items-center text-slate-600">
                             <span>Principal & Interest</span>
                             <span className="font-bold text-slate-900">{formatMoney(results.monthlyPrincipalAndInterest)}</span>
@@ -1216,9 +1226,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                 </div>
 
                 {/* Cash To Close Card */}
-                <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 shadow-sm mt-8">
-                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Cash to Close Statement</h3>
-                     <div className="space-y-3 mb-4 text-sm">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-sm mt-4">
+                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Cash to Close Statement</h3>
+                     <div className="space-y-2 mb-3 text-sm">
                          <div className="flex justify-between text-slate-600">
                              <span>Down Payment</span>
                              <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
@@ -1236,7 +1246,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                      </div>
                      
                      {/* Subtotal before Earnest Money */}
-                     <div className="border-t border-slate-300 pt-3 mb-4 flex justify-between items-center">
+                     <div className="border-t border-slate-300 pt-2 mb-3 flex justify-between items-center">
                          <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
                          <span className="text-lg font-bold text-slate-900">
                              {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
@@ -1244,14 +1254,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                      </div>
                      
                      {/* Earnest Money Deduction */}
-                     <div className="mb-6">
+                     <div className="mb-4">
                          <div className="flex justify-between text-emerald-600 text-sm">
                              <span>Earnest Money</span>
                              <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
                          </div>
                      </div>
                      
-                     <div className="border-t border-slate-200 pt-4 flex justify-between items-end">
+                     <div className="border-t border-slate-200 pt-3 flex justify-between items-end">
                          <span className="text-xs font-bold text-slate-500 uppercase">Cash Required</span>
                          <span className={`text-3xl font-black tracking-tight ${results.cashToClose < 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
                              {formatMoney(results.cashToClose)}
@@ -1267,7 +1277,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
 
         {/* Right Panel: Notes */}
         <div className="w-full lg:w-[320px] bg-slate-50 border-l border-slate-200 overflow-y-auto print:hidden">
-            <div className="p-6">
+            <div className="p-4">
                 <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide">
                     <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
