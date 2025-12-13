@@ -89,6 +89,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
   const [logNote, setLogNote] = useState('');
   const [currentChanges, setCurrentChanges] = useState<string[]>([]);
   
+  // Notes textarea ref for auto-grow
+  const notesTextareaRef = useRef<HTMLTextAreaElement>(null);
+  
   // Ensure new closing cost items exist if loaded from old data
   useEffect(() => {
     let updatedCosts = [...scenario.closingCosts];
@@ -165,6 +168,17 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
     const errors = validateScenario(debouncedScenario, res);
     setValidationErrors(errors);
   }, [debouncedScenario]);
+
+  // Auto-resize notes textarea
+  useEffect(() => {
+    const textarea = notesTextareaRef.current;
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight
+      textarea.style.height = 'auto';
+      // Set height to scrollHeight to show all content
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+  }, [scenario.notes]);
 
   // Group closing costs by category
   const costGroups = useMemo(() => {
@@ -1285,6 +1299,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
                     Notes
                 </h3>
                 <textarea 
+                    ref={notesTextareaRef}
                     value={scenario.notes || ''}
                     onChange={(e) => {
                         handleInputChange('notes', e.target.value);
@@ -1296,7 +1311,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
 • Property details
 • Follow-up items
 • Special considerations"
-                    className="w-full min-h-[200px] max-h-[calc(100vh-180px)] p-4 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all overflow-y-auto"
+                    className="w-full min-h-[150px] p-4 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all overflow-hidden"
+                    style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
                 />
                 <p className="text-[10px] text-slate-400 mt-2 italic">Auto-saves as you type</p>
             </div>
