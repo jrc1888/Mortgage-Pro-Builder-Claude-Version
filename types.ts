@@ -83,6 +83,17 @@ export interface ScenarioDefaults {
   loanType: LoanType;
   creditScore: number;
   systemPin?: string; // New: OS Login PIN
+  
+  // Validation Thresholds
+  validationThresholds?: {
+    purchasePriceMin: number;
+    interestRateMin: number;
+    interestRateMax: number;
+    dtiFrontEndWarning: number;
+    dtiBackEndMax: number;
+    creditScoreFhaMin: number;
+    creditScoreConventionalMin: number;
+  };
 }
 
 export interface Scenario {

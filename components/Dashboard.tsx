@@ -7,6 +7,7 @@ import { Modal } from './Modal';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { NLPScenarioModal } from './NLPScenarioModal';
 import { DEFAULT_SCENARIO } from '../constants';
+import { DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
 
 interface Props {
   scenarios: Scenario[];
@@ -132,7 +133,11 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
 
   const openSettings = () => {
       if (userDefaults) {
-          setLocalDefaults({ ...userDefaults });
+          const defaults = {
+              ...userDefaults,
+              validationThresholds: userDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS
+          };
+          setLocalDefaults(defaults);
           setShowSettings(true);
       }
   };
@@ -608,6 +613,136 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
                                             onChange={(e) => setLocalDefaults({...localDefaults, creditScore: parseInt(e.target.value) || 740})} 
                                             className="w-full px-3 h-10 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 font-medium focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none" 
                                         />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Validation Thresholds Section */}
+                        <div className="pt-6 border-t border-slate-200">
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">Validation Thresholds</h4>
+                            
+                            <div className="space-y-4">
+                                {/* Purchase Price Minimum */}
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">Min Purchase Price (Warning)</label>
+                                    <div className="flex items-center w-full bg-white border border-slate-200 rounded-lg h-10 overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                                        <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-r border-slate-200 text-slate-500 text-sm font-semibold min-w-[2.5rem]">$</div>
+                                        <FormattedNumberInput 
+                                            value={localDefaults.validationThresholds?.purchasePriceMin || 50000} 
+                                            onChangeValue={(val) => setLocalDefaults({
+                                                ...localDefaults, 
+                                                validationThresholds: {...(localDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS), purchasePriceMin: val}
+                                            })} 
+                                            className="h-full px-3 text-sm text-slate-900 font-medium" 
+                                        />
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 mt-1 ml-0.5">Warns if purchase price is below this amount</p>
+                                </div>
+
+                                {/* Interest Rate Range */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">Min Interest Rate</label>
+                                        <div className="flex items-center w-full bg-white border border-slate-200 rounded-lg h-10 overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                                            <LiveDecimalInput 
+                                                value={localDefaults.validationThresholds?.interestRateMin || 2} 
+                                                onChange={(val) => setLocalDefaults({
+                                                    ...localDefaults, 
+                                                    validationThresholds: {...(localDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS), interestRateMin: val}
+                                                })} 
+                                                step="0.125" precision={3} 
+                                                className="h-full pl-3 text-right text-sm text-slate-900 font-medium" 
+                                            />
+                                            <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-500 text-sm font-semibold min-w-[2.5rem]">%</div>
+                                        </div>
+                                        <p className="text-[9px] text-slate-400 mt-1 ml-0.5">Warns if unusually low</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">Max Interest Rate</label>
+                                        <div className="flex items-center w-full bg-white border border-slate-200 rounded-lg h-10 overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                                            <LiveDecimalInput 
+                                                value={localDefaults.validationThresholds?.interestRateMax || 12} 
+                                                onChange={(val) => setLocalDefaults({
+                                                    ...localDefaults, 
+                                                    validationThresholds: {...(localDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS), interestRateMax: val}
+                                                })} 
+                                                step="0.125" precision={3} 
+                                                className="h-full pl-3 text-right text-sm text-slate-900 font-medium" 
+                                            />
+                                            <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-500 text-sm font-semibold min-w-[2.5rem]">%</div>
+                                        </div>
+                                        <p className="text-[9px] text-slate-400 mt-1 ml-0.5">Warns if unusually high</p>
+                                    </div>
+                                </div>
+
+                                {/* DTI Limits */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">Front-End DTI Warning</label>
+                                        <div className="flex items-center w-full bg-white border border-slate-200 rounded-lg h-10 overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                                            <input 
+                                                type="number" 
+                                                value={localDefaults.validationThresholds?.dtiFrontEndWarning || 43} 
+                                                onChange={(e) => setLocalDefaults({
+                                                    ...localDefaults, 
+                                                    validationThresholds: {...(localDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS), dtiFrontEndWarning: parseFloat(e.target.value) || 43}
+                                                })} 
+                                                step="1"
+                                                className="h-full pl-3 text-right text-sm text-slate-900 font-medium outline-none bg-transparent flex-1" 
+                                            />
+                                            <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-500 text-sm font-semibold min-w-[2.5rem]">%</div>
+                                        </div>
+                                        <p className="text-[9px] text-slate-400 mt-1 ml-0.5">Housing DTI threshold</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">Back-End DTI Max</label>
+                                        <div className="flex items-center w-full bg-white border border-slate-200 rounded-lg h-10 overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                                            <input 
+                                                type="number" 
+                                                value={localDefaults.validationThresholds?.dtiBackEndMax || 50} 
+                                                onChange={(e) => setLocalDefaults({
+                                                    ...localDefaults, 
+                                                    validationThresholds: {...(localDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS), dtiBackEndMax: parseFloat(e.target.value) || 50}
+                                                })} 
+                                                step="1"
+                                                className="h-full pl-3 text-right text-sm text-slate-900 font-medium outline-none bg-transparent flex-1" 
+                                            />
+                                            <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-500 text-sm font-semibold min-w-[2.5rem]">%</div>
+                                        </div>
+                                        <p className="text-[9px] text-slate-400 mt-1 ml-0.5">Total DTI error threshold</p>
+                                    </div>
+                                </div>
+
+                                {/* Credit Score Minimums */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">FHA Min Credit Score</label>
+                                        <input 
+                                            type="number" 
+                                            value={localDefaults.validationThresholds?.creditScoreFhaMin || 580} 
+                                            onChange={(e) => setLocalDefaults({
+                                                ...localDefaults, 
+                                                validationThresholds: {...(localDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS), creditScoreFhaMin: parseInt(e.target.value) || 580}
+                                            })} 
+                                            step="10"
+                                            className="w-full px-3 h-10 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 font-medium focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none" 
+                                        />
+                                        <p className="text-[9px] text-slate-400 mt-1 ml-0.5">Minimum for FHA loans</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">Conv Min Credit Score</label>
+                                        <input 
+                                            type="number" 
+                                            value={localDefaults.validationThresholds?.creditScoreConventionalMin || 620} 
+                                            onChange={(e) => setLocalDefaults({
+                                                ...localDefaults, 
+                                                validationThresholds: {...(localDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS), creditScoreConventionalMin: parseInt(e.target.value) || 620}
+                                            })} 
+                                            step="10"
+                                            className="w-full px-3 h-10 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 font-medium focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none" 
+                                        />
+                                        <p className="text-[9px] text-slate-400 mt-1 ml-0.5">Minimum for Conventional</p>
                                     </div>
                                 </div>
                             </div>

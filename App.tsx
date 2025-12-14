@@ -204,6 +204,7 @@ const App: React.FC = () => {
               initialScenario={activeScenario} 
               onSave={handleSave}
               onBack={() => setView('dashboard')}
+              validationThresholds={userDefaults.validationThresholds}
           />
         )}
 

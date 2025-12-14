@@ -9,13 +9,14 @@ import { Modal } from './Modal';
 import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
 import { useToast } from '../hooks/useToast';
 import { useDebounce } from '../hooks/useDebounce';
-import { validateScenario, ValidationError } from '../services/validation';
+import { validateScenario, ValidationError, ValidationThresholds, DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
 import { ValidationBanner } from './ValidationBanner';
 
 interface Props {
   initialScenario: Scenario;
   onSave: (scenario: Scenario) => void;
   onBack: () => void;
+  validationThresholds?: ValidationThresholds;
 }
 
 // --- Aesthetics ---
@@ -63,7 +64,7 @@ const CompactTypeToggleInput: React.FC<{
     );
 };
 
-const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) => {
+const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, validationThresholds = DEFAULT_VALIDATION_THRESHOLDS }) => {
   const [scenario, setScenario] = useState<Scenario>(initialScenario);
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(initialScenario));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
@@ -164,10 +165,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack }) =
     const res = calculateScenario(debouncedScenario);
     setResults(res);
     
-    // Run validation
-    const errors = validateScenario(debouncedScenario, res);
+    // Run validation with custom thresholds
+    const errors = validateScenario(debouncedScenario, res, undefined, undefined, validationThresholds);
     setValidationErrors(errors);
-  }, [debouncedScenario]);
+  }, [debouncedScenario, validationThresholds]);
 
   // Auto-resize notes textarea
   useEffect(() => {
