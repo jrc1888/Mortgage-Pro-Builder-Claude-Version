@@ -43,7 +43,7 @@ const App: React.FC = () => {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newScenarioData, setNewScenarioData] = useState({ clientName: '', address: '', isTBD: true });
+  const [newScenarioData, setNewScenarioData] = useState({ clientName: '', address: '', isTBD: true, transactionType: 'Purchase' as 'Purchase' | 'Refinance' });
 
   // 1. Handle Session State
   useEffect(() => {
@@ -76,7 +76,12 @@ const App: React.FC = () => {
   const fetchData = async () => {
       setIsLoadingData(true);
       const { data } = await loadScenarios();
-      setScenarios(data);
+      // Backward compatibility: ensure transactionType exists for old scenarios
+      const scenariosWithDefaults = data.map(s => ({
+        ...s,
+        transactionType: s.transactionType || 'Purchase'
+      }));
+      setScenarios(scenariosWithDefaults);
       setIsLoadingData(false);
   };
 
@@ -91,7 +96,7 @@ const App: React.FC = () => {
   };
 
   const handleOpenNewModal = (prefilledClientName?: string) => {
-      setNewScenarioData({ clientName: prefilledClientName || '', address: '', isTBD: true });
+      setNewScenarioData({ clientName: prefilledClientName || '', address: '', isTBD: true, transactionType: 'Purchase' });
       setIsModalOpen(true);
   };
 
@@ -108,6 +113,7 @@ const App: React.FC = () => {
         lastUpdated: now,
         name: 'New Scenario',
         clientName: newScenarioData.clientName,
+        transactionType: newScenarioData.transactionType,
         propertyAddress: newScenarioData.isTBD ? '' : newScenarioData.address,
         isAddressTBD: newScenarioData.isTBD
     };
@@ -232,6 +238,24 @@ const App: React.FC = () => {
                             className="w-full pl-9 pr-4 h-10 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-sm"
                             placeholder="e.g. John Doe"
                         />
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 ml-0.5">Transaction Type</label>
+                    <div className="flex bg-slate-100 p-1 rounded-lg">
+                        <button 
+                            onClick={() => setNewScenarioData(prev => ({...prev, transactionType: 'Purchase'}))}
+                            className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${newScenarioData.transactionType === 'Purchase' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Purchase
+                        </button>
+                        <button 
+                            onClick={() => setNewScenarioData(prev => ({...prev, transactionType: 'Refinance'}))}
+                            className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${newScenarioData.transactionType === 'Refinance' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Refinance
+                        </button>
                     </div>
                 </div>
                 

@@ -40,6 +40,7 @@ export const DEFAULT_SCENARIO: Scenario = {
   id: '',
   name: 'New Scenario',
   clientName: '',
+  transactionType: 'Purchase',
   propertyAddress: '',
   isAddressTBD: false,
   dateCreated: new Date().toISOString(),

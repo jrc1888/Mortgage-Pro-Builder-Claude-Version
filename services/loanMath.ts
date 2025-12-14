@@ -31,7 +31,10 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   const sellerConcessionsInput = scenario.showSellerConcessions ? safeNum(scenario.sellerConcessions) : 0;
 
   // 1. Base Numbers
-  let baseLoanAmount = purchasePrice - downPaymentAmount;
+  // Account for DPA: DPA reduces the effective down payment, increasing loan amount
+  const dpaAmount = scenario.dpa.active ? safeNum(scenario.dpa.amount) : 0;
+  const effectiveDownPayment = Math.max(0, downPaymentAmount - dpaAmount);
+  let baseLoanAmount = purchasePrice - effectiveDownPayment;
   
   // 2. Upfront MIP / Funding Fee Logic
   let ufmipRate = 0;
@@ -46,7 +49,8 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     : 0;
 
   const totalLoanAmount = baseLoanAmount + financedMIP;
-  const ltv = purchasePrice > 0 ? (baseLoanAmount / purchasePrice) * 100 : 0;
+  // LTV uses totalLoanAmount (includes UFMIP/funding fee) divided by property value
+  const ltv = purchasePrice > 0 ? (totalLoanAmount / purchasePrice) * 100 : 0;
 
   // 3. Monthly P&I
   const monthlyRate = (interestRate / 100) / 12;
@@ -88,12 +92,12 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   }
 
   // 5. DPA
+  // dpaAmount already calculated above in step 1
   let dpaPayment = 0;
-  if (scenario.dpa.active) {
+  if (scenario.dpa.active && dpaAmount > 0) {
     if (scenario.dpa.isDeferred) {
         dpaPayment = 0;
     } else {
-        const dpaAmount = safeNum(scenario.dpa.amount);
         const dpaRate = safeNum(scenario.dpa.rate);
         const dpaTerm = safeNum(scenario.dpa.termMonths) || 120;
         
@@ -224,7 +228,7 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   const unusedCredits = rawNetClosingCosts < 0 ? Math.abs(rawNetClosingCosts) : 0;
 
   // 10. Cash / Funds Required
-  const dpaAmount = scenario.dpa.active ? safeNum(scenario.dpa.amount) : 0;
+  // dpaAmount already calculated above in step 1
   
   // Logic: Total funds required = down + net closing costs - dpa
   const totalFundsRequired = downPaymentAmount + netClosingCosts - dpaAmount;

@@ -65,7 +65,12 @@ const CompactTypeToggleInput: React.FC<{
 };
 
 const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, validationThresholds = DEFAULT_VALIDATION_THRESHOLDS }) => {
-  const [scenario, setScenario] = useState<Scenario>(initialScenario);
+  // Backward compatibility: ensure transactionType exists
+  const scenarioWithDefaults = {
+    ...initialScenario,
+    transactionType: initialScenario.transactionType || 'Purchase'
+  };
+  const [scenario, setScenario] = useState<Scenario>(scenarioWithDefaults);
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(initialScenario));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
   
@@ -539,6 +544,24 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </h3>
                         <div className="space-y-3">
                             <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Transaction Type</label>
+                                <div className="flex bg-slate-100 p-1 rounded-lg">
+                                    <button 
+                                        onClick={() => handleInputChange('transactionType', 'Purchase')}
+                                        className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${scenario.transactionType === 'Purchase' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        Purchase
+                                    </button>
+                                    <button 
+                                        onClick={() => handleInputChange('transactionType', 'Refinance')}
+                                        className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${scenario.transactionType === 'Refinance' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        Refinance
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
                                 <div className="flex justify-between items-center mb-1.5">
                                     <label className={labelClass}>Address</label>
                                     <CustomCheckbox checked={scenario.isAddressTBD} onChange={(checked) => handleInputChange('isAddressTBD', checked)} label="TBD" />
@@ -552,29 +575,51 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             </div>
                             
                             <div>
-                                <label className={labelClass}>Purchase Price</label>
+                                <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
                                 <div className={inputGroupClass}>
                                     <div className={symbolClass}>$</div>
                                     <FormattedNumberInput value={scenario.purchasePrice || 0} onChangeValue={(val) => handleInputChange('purchasePrice', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className={labelClass}>Down Pmt ($)</label>
-                                    <div className={inputGroupClass}>
-                                        <div className={symbolClass}>$</div>
-                                        <FormattedNumberInput value={scenario.downPaymentAmount || 0} onChangeValue={(val) => handleInputChange('downPaymentAmount', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                            {scenario.transactionType === 'Purchase' ? (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelClass}>Down Pmt ($)</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput value={scenario.downPaymentAmount || 0} onChangeValue={(val) => handleInputChange('downPaymentAmount', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Down Pmt (%)</label>
+                                        <div className={inputGroupClass}>
+                                            <LiveDecimalInput value={scenario.downPaymentPercent} onChange={(val) => handleInputChange('downPaymentPercent', val)} step="0.01" precision={2} className="h-full pl-4 pr-4 text-sm text-slate-900 font-medium text-right" />
+                                            <div className={symbolRightClass}>%</div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div>
-                                    <label className={labelClass}>Down Pmt (%)</label>
-                                    <div className={inputGroupClass}>
-                                        <LiveDecimalInput value={scenario.downPaymentPercent} onChange={(val) => handleInputChange('downPaymentPercent', val)} step="0.01" precision={2} className="h-full pl-4 pr-4 text-sm text-slate-900 font-medium text-right" />
-                                        <div className={symbolRightClass}>%</div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelClass}>Cash Out ($)</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput value={scenario.downPaymentAmount || 0} onChangeValue={(val) => handleInputChange('downPaymentAmount', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Loan Amount</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput value={(scenario.purchasePrice || 0) - (scenario.downPaymentAmount || 0)} onChangeValue={(val) => {
+                                                const newDownPayment = (scenario.purchasePrice || 0) - val;
+                                                handleInputChange('downPaymentAmount', newDownPayment);
+                                            }} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                             
                             <div>
                                 <label className={labelClass}>Property Taxes (Yearly)</label>
@@ -768,18 +813,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     </h3>
                     
                     {/* Header Grid */}
-                    <div className="mb-8 grid grid-cols-1 md:grid-cols-4 gap-4">
-                        {/* Earnest Money */}
-                        <div className="col-span-1 bg-emerald-50/50 p-4 rounded-lg border border-emerald-100/60 h-28 flex flex-col justify-between">
-                             <label className="block text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-0.5">Earnest Money</label>
-                             <div className="flex items-center w-full bg-white border border-emerald-200 rounded-lg shadow-sm h-10 overflow-hidden mt-auto">
-                                <div className="flex items-center justify-center h-full px-3 bg-emerald-50 border-r border-emerald-100 text-emerald-600 text-xs font-bold">$</div>
-                                <FormattedNumberInput value={scenario.earnestMoney || 0} onChangeValue={(val) => handleInputChange('earnestMoney', val)} className="h-full px-4 text-sm text-emerald-900 font-medium" />
+                    <div className={`mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 ${scenario.transactionType === 'Refinance' ? 'md:grid-cols-2' : ''}`}>
+                        {/* Earnest Money - Only show for Purchase */}
+                        {scenario.transactionType === 'Purchase' && (
+                            <div className="col-span-1 bg-emerald-50/50 p-4 rounded-lg border border-emerald-100/60 h-28 flex flex-col justify-between">
+                                 <label className="block text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-0.5">Earnest Money</label>
+                                 <div className="flex items-center w-full bg-white border border-emerald-200 rounded-lg shadow-sm h-10 overflow-hidden mt-auto">
+                                    <div className="flex items-center justify-center h-full px-3 bg-emerald-50 border-r border-emerald-100 text-emerald-600 text-xs font-bold">$</div>
+                                    <FormattedNumberInput value={scenario.earnestMoney || 0} onChangeValue={(val) => handleInputChange('earnestMoney', val)} className="h-full px-4 text-sm text-emerald-900 font-medium" />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
-                        {/* Seller Concessions */}
-                        <div className="col-span-1 md:col-span-2 bg-indigo-50/50 p-4 rounded-lg border border-indigo-100/60 h-28 flex flex-col justify-between">
+                        {/* Seller Concessions - Only show for Purchase */}
+                        {scenario.transactionType === 'Purchase' && (
+                            <div className="col-span-1 md:col-span-2 bg-indigo-50/50 p-4 rounded-lg border border-indigo-100/60 h-28 flex flex-col justify-between">
                             <div className="flex justify-between items-start">
                                 <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest ml-0.5">Seller Concessions</label>
                                 <button onClick={() => setScenario(prev => ({ ...prev, showSellerConcessions: !prev.showSellerConcessions }))} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showSellerConcessions ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
@@ -813,7 +861,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             ) : (
                                 <div className="h-10 mt-auto w-full bg-slate-200/20 rounded-lg border border-transparent flex items-center justify-center text-xs text-slate-400 italic font-medium">Disabled</div>
                             )}
-                        </div>
+                            </div>
+                        )}
 
                         {/* Lender Credit */}
                         <div className="col-span-1 bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between">
@@ -1194,10 +1243,31 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                          </div>
                     )}
 
-                     {/* NEW: Total Loan Amount Subtle Display */}
-                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-100/50">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
-                        <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
+                     {/* Total Loan Amount & LTV Display */}
+                    <div className="mt-3 pt-3 border-t border-slate-100/50 space-y-2">
+                        <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
+                            <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
+                        </div>
+                        {scenario.transactionType === 'Refinance' ? (
+                            // More prominent LTV for Refinance
+                            <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Loan-to-Value (LTV)</span>
+                                    <span className="text-lg font-black text-indigo-600">
+                                        {results.ltv.toFixed(2)}%
+                                    </span>
+                                </div>
+                            </div>
+                        ) : (
+                            // Subtle LTV for Purchase
+                            <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LTV</span>
+                                <span className="text-sm font-bold text-slate-600 font-mono">
+                                    {results.ltv.toFixed(2)}%
+                                </span>
+                            </div>
+                        )}
                     </div>
                 </div>
                 
@@ -1242,10 +1312,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
                 {/* Cash To Close Card */}
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-sm mt-4">
-                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Cash to Close Statement</h3>
+                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}</h3>
                      <div className="space-y-2 mb-3 text-sm">
                          <div className="flex justify-between text-slate-600">
-                             <span>Down Payment</span>
+                             <span>{scenario.transactionType === 'Purchase' ? 'Down Payment' : 'Cash Out'}</span>
                              <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
                          </div>
                           <div className="flex justify-between text-slate-600">
@@ -1260,21 +1330,25 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                          )}
                      </div>
                      
-                     {/* Subtotal before Earnest Money */}
-                     <div className="border-t border-slate-300 pt-2 mb-3 flex justify-between items-center">
-                         <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
-                         <span className="text-lg font-bold text-slate-900">
-                             {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
-                         </span>
-                     </div>
-                     
-                     {/* Earnest Money Deduction */}
-                     <div className="mb-4">
-                         <div className="flex justify-between text-emerald-600 text-sm">
-                             <span>Earnest Money</span>
-                             <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
-                         </div>
-                     </div>
+                     {/* Subtotal before Earnest Money (Purchase only) */}
+                     {scenario.transactionType === 'Purchase' && (
+                         <>
+                             <div className="border-t border-slate-300 pt-2 mb-3 flex justify-between items-center">
+                                 <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
+                                 <span className="text-lg font-bold text-slate-900">
+                                     {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
+                                 </span>
+                             </div>
+                             
+                             {/* Earnest Money Deduction */}
+                             <div className="mb-4">
+                                 <div className="flex justify-between text-emerald-600 text-sm">
+                                     <span>Earnest Money</span>
+                                     <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
+                                 </div>
+                             </div>
+                         </>
+                     )}
                      
                      <div className="border-t border-slate-200 pt-3 flex justify-between items-end">
                          <span className="text-xs font-bold text-slate-500 uppercase">Cash Required</span>

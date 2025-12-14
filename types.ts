@@ -101,6 +101,9 @@ export interface Scenario {
   name: string;
   clientName: string;
   
+  // Transaction Type
+  transactionType: 'Purchase' | 'Refinance';
+  
   // Property Identity
   propertyAddress: string;
   isAddressTBD: boolean;
