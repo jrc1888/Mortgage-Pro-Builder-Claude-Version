@@ -14,6 +14,16 @@ export interface LTVRules {
   jumbo: { minDownPayment: number; maxLTV: number };
 }
 
+export interface ValidationThresholds {
+  purchasePriceMin: number;
+  interestRateMin: number;
+  interestRateMax: number;
+  dtiFrontEndWarning: number;
+  dtiBackEndMax: number;
+  creditScoreFhaMin: number;
+  creditScoreConventionalMin: number;
+}
+
 export interface ValidationError {
   field: string;
   message: string;
@@ -57,11 +67,22 @@ export const DEFAULT_LTV_RULES: LTVRules = {
   }
 };
 
+export const DEFAULT_VALIDATION_THRESHOLDS: ValidationThresholds = {
+  purchasePriceMin: 50000,
+  interestRateMin: 2,
+  interestRateMax: 12,
+  dtiFrontEndWarning: 43,
+  dtiBackEndMax: 50,
+  creditScoreFhaMin: 580,
+  creditScoreConventionalMin: 620
+};
+
 export const validateScenario = (
   scenario: Scenario,
   results: CalculatedResults,
   loanLimits: LoanLimits = DEFAULT_LOAN_LIMITS,
-  ltvRules: LTVRules = DEFAULT_LTV_RULES
+  ltvRules: LTVRules = DEFAULT_LTV_RULES,
+  thresholds: ValidationThresholds = DEFAULT_VALIDATION_THRESHOLDS
 ): ValidationError[] => {
   const errors: ValidationError[] = [];
 
@@ -74,7 +95,7 @@ export const validateScenario = (
     });
   }
 
-  if (scenario.purchasePrice < 50000) {
+  if (scenario.purchasePrice < thresholds.purchasePriceMin) {
     errors.push({
       field: 'purchasePrice',
       message: 'Purchase price seems unusually low',
@@ -124,41 +145,41 @@ export const validateScenario = (
   }
 
   // DTI Validation
-  if (results.dti.frontEnd > 43) {
+  if (results.dti.frontEnd > thresholds.dtiFrontEndWarning) {
     errors.push({
       field: 'income',
-      message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (43%)`,
+      message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiFrontEndWarning}%)`,
       severity: 'warning'
     });
   }
 
-  if (results.dti.backEnd > 50) {
+  if (results.dti.backEnd > thresholds.dtiBackEndMax) {
     errors.push({
       field: 'income',
-      message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (50%)`,
+      message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiBackEndMax}%)`,
       severity: 'error'
     });
   }
 
   // Credit Score Validation
-  if (scenario.loanType === LoanType.FHA && scenario.creditScore < 580) {
+  if (scenario.loanType === LoanType.FHA && scenario.creditScore < thresholds.creditScoreFhaMin) {
     errors.push({
       field: 'creditScore',
-      message: 'FHA requires minimum 580 credit score',
+      message: `FHA requires minimum ${thresholds.creditScoreFhaMin} credit score`,
       severity: 'error'
     });
   }
 
-  if (scenario.loanType === LoanType.CONVENTIONAL && scenario.creditScore < 620) {
+  if (scenario.loanType === LoanType.CONVENTIONAL && scenario.creditScore < thresholds.creditScoreConventionalMin) {
     errors.push({
       field: 'creditScore',
-      message: 'Conventional loans typically require 620+ credit score',
+      message: `Conventional loans typically require ${thresholds.creditScoreConventionalMin}+ credit score`,
       severity: 'warning'
     });
   }
 
   // Interest Rate Validation
-  if (scenario.interestRate > 12) {
+  if (scenario.interestRate > thresholds.interestRateMax) {
     errors.push({
       field: 'interestRate',
       message: 'Interest rate seems unusually high. Please verify.',
@@ -166,7 +187,7 @@ export const validateScenario = (
     });
   }
 
-  if (scenario.interestRate < 2) {
+  if (scenario.interestRate < thresholds.interestRateMin) {
     errors.push({
       field: 'interestRate',
       message: 'Interest rate seems unusually low. Please verify.',

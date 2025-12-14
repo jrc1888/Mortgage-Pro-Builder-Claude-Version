@@ -1,22 +1,25 @@
 import React, { useState } from 'react';
 import { FormattedNumberInput } from '../CommonInputs';
 import { Save, RotateCcw } from 'lucide-react';
-import { DEFAULT_LOAN_LIMITS, DEFAULT_LTV_RULES } from '../../services/validation';
-import type { LoanLimits, LTVRules } from '../../services/validation';
+import { DEFAULT_LOAN_LIMITS, DEFAULT_LTV_RULES, DEFAULT_VALIDATION_THRESHOLDS } from '../../services/validation';
+import type { LoanLimits, LTVRules, ValidationThresholds } from '../../services/validation';
 
 interface Props {
   initialLimits?: LoanLimits;
   initialRules?: LTVRules;
-  onSave: (limits: LoanLimits, rules: LTVRules) => void;
+  initialThresholds?: ValidationThresholds;
+  onSave: (limits: LoanLimits, rules: LTVRules, thresholds: ValidationThresholds) => void;
 }
 
 export const LoanLimitsSettings: React.FC<Props> = ({ 
   initialLimits = DEFAULT_LOAN_LIMITS,
   initialRules = DEFAULT_LTV_RULES,
+  initialThresholds = DEFAULT_VALIDATION_THRESHOLDS,
   onSave 
 }) => {
   const [limits, setLimits] = useState<LoanLimits>(initialLimits);
   const [rules, setRules] = useState<LTVRules>(initialRules);
+  const [thresholds, setThresholds] = useState<ValidationThresholds>(initialThresholds);
   const [hasChanges, setHasChanges] = useState(false);
 
   const updateLimit = (loanType: keyof LoanLimits, field: string, value: number) => {
@@ -41,8 +44,16 @@ export const LoanLimitsSettings: React.FC<Props> = ({
     setHasChanges(true);
   };
 
+  const updateThreshold = (field: keyof ValidationThresholds, value: number) => {
+    setThresholds(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    setHasChanges(true);
+  };
+
   const handleSave = () => {
-    onSave(limits, rules);
+    onSave(limits, rules, thresholds);
     setHasChanges(false);
   };
 
@@ -50,6 +61,7 @@ export const LoanLimitsSettings: React.FC<Props> = ({
     if (confirm('Reset all values to defaults?')) {
       setLimits(DEFAULT_LOAN_LIMITS);
       setRules(DEFAULT_LTV_RULES);
+      setThresholds(DEFAULT_VALIDATION_THRESHOLDS);
       setHasChanges(true);
     }
   };
@@ -357,6 +369,144 @@ export const LoanLimitsSettings: React.FC<Props> = ({
                   <span className="text-slate-500 font-semibold">%</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-1">Varies by lender (typically 80-90%)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Validation Thresholds */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <span className="w-1 h-6 bg-amber-600 rounded"></span>
+          Validation Thresholds
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Purchase Price */}
+          <div className={sectionClass}>
+            <h4 className="font-bold text-slate-800 mb-4 text-base">Purchase Price</h4>
+            <div>
+              <label className={labelClass}>Minimum Acceptable Price</label>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-semibold">$</span>
+                <FormattedNumberInput
+                  value={thresholds.purchasePriceMin}
+                  onChangeValue={(val) => updateThreshold('purchasePriceMin', val)}
+                  className={inputClass}
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Warns if purchase price is below this amount</p>
+            </div>
+          </div>
+
+          {/* Interest Rate */}
+          <div className={sectionClass}>
+            <h4 className="font-bold text-slate-800 mb-4 text-base">Interest Rate Range</h4>
+            <div className="space-y-4">
+              <div>
+                <label className={labelClass}>Minimum Rate (%)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={thresholds.interestRateMin}
+                    onChange={(e) => updateThreshold('interestRateMin', parseFloat(e.target.value) || 2)}
+                    className={inputClass}
+                    step="0.125"
+                    min="0"
+                    max="20"
+                  />
+                  <span className="text-slate-500 font-semibold">%</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Warns if rate is unusually low</p>
+              </div>
+              <div>
+                <label className={labelClass}>Maximum Rate (%)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={thresholds.interestRateMax}
+                    onChange={(e) => updateThreshold('interestRateMax', parseFloat(e.target.value) || 12)}
+                    className={inputClass}
+                    step="0.125"
+                    min="0"
+                    max="20"
+                  />
+                  <span className="text-slate-500 font-semibold">%</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Warns if rate is unusually high</p>
+              </div>
+            </div>
+          </div>
+
+          {/* DTI Limits */}
+          <div className={sectionClass}>
+            <h4 className="font-bold text-slate-800 mb-4 text-base">DTI Limits</h4>
+            <div className="space-y-4">
+              <div>
+                <label className={labelClass}>Front-End Warning (%)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={thresholds.dtiFrontEndWarning}
+                    onChange={(e) => updateThreshold('dtiFrontEndWarning', parseFloat(e.target.value) || 43)}
+                    className={inputClass}
+                    step="1"
+                    min="0"
+                    max="100"
+                  />
+                  <span className="text-slate-500 font-semibold">%</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Housing DTI warning threshold</p>
+              </div>
+              <div>
+                <label className={labelClass}>Back-End Maximum (%)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={thresholds.dtiBackEndMax}
+                    onChange={(e) => updateThreshold('dtiBackEndMax', parseFloat(e.target.value) || 50)}
+                    className={inputClass}
+                    step="1"
+                    min="0"
+                    max="100"
+                  />
+                  <span className="text-slate-500 font-semibold">%</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Total DTI error threshold</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Credit Score */}
+          <div className={sectionClass}>
+            <h4 className="font-bold text-slate-800 mb-4 text-base">Credit Score Minimums</h4>
+            <div className="space-y-4">
+              <div>
+                <label className={labelClass}>FHA Minimum</label>
+                <input
+                  type="number"
+                  value={thresholds.creditScoreFhaMin}
+                  onChange={(e) => updateThreshold('creditScoreFhaMin', parseInt(e.target.value) || 580)}
+                  className={inputClass}
+                  step="10"
+                  min="300"
+                  max="850"
+                />
+                <p className="text-xs text-slate-400 mt-1">Minimum FHA credit score requirement</p>
+              </div>
+              <div>
+                <label className={labelClass}>Conventional Minimum</label>
+                <input
+                  type="number"
+                  value={thresholds.creditScoreConventionalMin}
+                  onChange={(e) => updateThreshold('creditScoreConventionalMin', parseInt(e.target.value) || 620)}
+                  className={inputClass}
+                  step="10"
+                  min="300"
+                  max="850"
+                />
+                <p className="text-xs text-slate-400 mt-1">Minimum conventional credit score</p>
               </div>
             </div>
           </div>
