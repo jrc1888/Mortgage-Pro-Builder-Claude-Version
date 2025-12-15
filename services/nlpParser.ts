@@ -57,7 +57,7 @@ export const parseNaturalLanguage = async (
       } else if (response.status === 429) {
         return {
           confidence: 0,
-          clarifications: ['ERROR 429: Rate limit exceeded. Please try again in a moment.']
+          clarifications: ['ERROR 429: Rate limit exceeded. This usually means you\'ve made too many requests too quickly. Please wait 30-60 seconds and try again. If this persists, check your OpenAI account limits at platform.openai.com']
         };
       } else if (response.status === 500) {
         return {
