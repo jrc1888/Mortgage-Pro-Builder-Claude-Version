@@ -11,6 +11,7 @@ export interface ParsedScenarioData {
   creditScore?: number;
   propertyTaxYearly?: number;
   hoaMonthly?: number;
+  transactionType?: 'Purchase' | 'Refinance'; // Add transactionType
   confidence: number;
   clarifications: string[];
 }
@@ -86,6 +87,7 @@ export const parseNaturalLanguage = async (
       creditScore: parsed.creditScore || undefined,
       propertyTaxYearly: parsed.propertyTaxYearly || undefined,
       hoaMonthly: parsed.hoaMonthly || undefined,
+      transactionType: parsed.transactionType || undefined, // Add transactionType extraction
       confidence: parsed.confidence || 50,
       clarifications: parsed.clarifications || []
     };

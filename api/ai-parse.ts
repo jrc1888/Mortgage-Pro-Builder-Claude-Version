@@ -37,18 +37,26 @@ export default async function handler(
 Input: "${input}"
 
 Extract if present:
-- purchasePrice (number)
-- downPaymentPercent (number)  
-- loanType ("Conventional"|"FHA"|"VA"|"Jumbo")
-- clientName (string)
-- propertyAddress (string)
-- interestRate (number)
-- creditScore (number)
+- purchasePrice (number) - property purchase price or value
+- downPaymentPercent (number) - down payment as percentage (e.g., 20 means 20%)
+- downPaymentAmount (number) - down payment as dollar amount (optional, can calculate from percent)
+- loanType ("Conventional"|"FHA"|"VA"|"Jumbo") - must match exactly
+- transactionType ("Purchase"|"Refinance") - infer from context (buying = Purchase, refinancing = Refinance)
+- clientName (string) - borrower/client name
+- propertyAddress (string) - full property address if mentioned
+- interestRate (number) - interest rate percentage
+- creditScore (number) - credit score
+- propertyTaxYearly (number) - annual property taxes if mentioned
+- hoaMonthly (number) - monthly HOA dues if mentioned
 
 Return this EXACT format:
-{"purchasePrice":500000,"downPaymentPercent":10,"loanType":"FHA","clientName":"John Smith","confidence":90,"clarifications":["What interest rate?"]}
+{"purchasePrice":500000,"downPaymentPercent":10,"loanType":"FHA","clientName":"John Smith","transactionType":"Purchase","confidence":90,"clarifications":["What interest rate?"]}
 
-Return ONLY the JSON object, nothing else:`;
+Important: 
+- Set confidence (0-100) based on how much data was extracted
+- Include clarifications array for missing important fields
+- transactionType defaults to "Purchase" unless text mentions refinancing/refinance/refi
+- Return ONLY the JSON object, nothing else:`;
 
     // Retry logic for rate limits (429 errors)
     let openaiResponse;

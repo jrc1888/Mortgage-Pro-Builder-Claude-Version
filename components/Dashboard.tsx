@@ -13,6 +13,7 @@ interface Props {
   scenarios: Scenario[];
   onCreateNew: (clientName?: string) => void;
   onSelect: (scenario: Scenario) => void;
+  onSave?: (scenario: Scenario) => Promise<void>; // Optional save function for AI-created scenarios
   onDelete: (id: string) => void;
   onDeleteClient: (clientName: string) => void;
   onDuplicate: (id: string) => void;
@@ -25,7 +26,7 @@ interface Props {
   userEmail?: string | null;
 }
 
-const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete, onDeleteClient, onDuplicate, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing, userEmail }) => {
+const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, onDelete, onDeleteClient, onDuplicate, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing, userEmail }) => {
   const [isComparing, setIsComparing] = useState(false);
   const [selectedClient, setSelectedClient] = useState<string | null>(initialClient || null);
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([]);
@@ -773,11 +774,35 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
              <NLPScenarioModal
                 isOpen={showNLPModal}
                 onClose={() => setShowNLPModal(false)}
-                onCreateScenario={(data) => {
-                    onCreateNew(data.clientName || selectedClient);
+                onCreateScenario={async (scenarioData) => {
+                    // Create full scenario from AI-extracted data
+                    const fullScenario: Scenario = {
+                        ...DEFAULT_SCENARIO,
+                        ...userDefaults,
+                        ...scenarioData, // AI-extracted data takes precedence
+                        // Ensure all required fields are set
+                        id: scenarioData.id || crypto.randomUUID(),
+                        name: scenarioData.name || 'New Scenario',
+                        clientName: scenarioData.clientName || selectedClient || 'Unassigned',
+                        transactionType: scenarioData.transactionType || 'Purchase',
+                        // Calculate down payment if needed
+                        downPaymentAmount: scenarioData.downPaymentAmount || 
+                            (scenarioData.purchasePrice && scenarioData.downPaymentPercent 
+                                ? (scenarioData.purchasePrice * scenarioData.downPaymentPercent) / 100
+                                : (userDefaults?.purchasePrice || DEFAULT_SCENARIO.purchasePrice) * ((userDefaults?.downPaymentPercent || DEFAULT_SCENARIO.downPaymentPercent) / 100))
+                    };
+                    
+                    // Save scenario if save function is provided
+                    if (onSave) {
+                        await onSave(fullScenario);
+                    }
+                    
+                    // Open scenario in builder
+                    onSelect(fullScenario);
                     setShowNLPModal(false);
                 }}
                 defaultScenario={userDefaults ? { ...DEFAULT_SCENARIO, ...userDefaults } : DEFAULT_SCENARIO}
+                defaultClientName={selectedClient || undefined}
              />
         </div>
     </div>

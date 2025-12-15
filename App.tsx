@@ -8,7 +8,8 @@ import { Scenario, ScenarioDefaults } from './types';
 import { DEFAULT_SCENARIO } from './constants';
 import { loadScenarios, saveScenario, deleteScenario, deleteClientFolder } from './services/supabase';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
-import { User, MapPin, Check, ArrowRight, Loader2 } from 'lucide-react';
+import { User, MapPin, Check, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { NLPScenarioModal } from './components/NLPScenarioModal';
 import { Session } from '@supabase/supabase-js';
 
 // NEW IMPORTS FOR TOAST
@@ -43,6 +44,7 @@ const App: React.FC = () => {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
   const [newScenarioData, setNewScenarioData] = useState({ clientName: '', address: '', isTBD: true, transactionType: 'Purchase' as 'Purchase' | 'Refinance' });
 
   // 1. Handle Session State
@@ -194,6 +196,7 @@ const App: React.FC = () => {
               scenarios={scenarios} 
               onCreateNew={handleOpenNewModal} 
               onSelect={handleSelect}
+              onSave={handleSave}
               onDelete={handleDelete}
               onDeleteClient={handleDeleteClient}
               onDuplicate={handleDuplicate}
@@ -293,10 +296,67 @@ const App: React.FC = () => {
 
                 <div className="pt-4 flex gap-3">
                     <button onClick={() => setIsModalOpen(false)} className="flex-1 h-10 text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg font-bold transition-all text-xs uppercase tracking-wide">Cancel</button>
-                    <button onClick={startNewScenario} disabled={!newScenarioData.clientName} className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20">Create Scenario <ArrowRight size={14} /></button>
+                    <button 
+                        onClick={() => {
+                            setIsModalOpen(false);
+                            setShowAIModal(true);
+                        }}
+                        className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-900/20 px-4"
+                    >
+                        <Sparkles size={16} className="flex-shrink-0" />
+                        <span>Create with AI</span>
+                    </button>
+                    <button 
+                        onClick={startNewScenario} 
+                        disabled={!newScenarioData.clientName} 
+                        className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20 px-4"
+                    >
+                        <span>Create Scenario</span>
+                        <ArrowRight size={16} className="flex-shrink-0" />
+                    </button>
                 </div>
             </div>
         </Modal>
+
+        {/* AI Scenario Creation Modal */}
+        <NLPScenarioModal
+          isOpen={showAIModal}
+          onClose={() => setShowAIModal(false)}
+          onCreateScenario={async (data) => {
+            // Create full scenario from AI-extracted data
+            const now = new Date().toISOString();
+            const scenario: Scenario = {
+              ...DEFAULT_SCENARIO,
+              ...userDefaults,
+              ...data, // AI-extracted data takes precedence
+              id: data.id || crypto.randomUUID(),
+              dateCreated: data.dateCreated || now,
+              lastUpdated: data.lastUpdated || now,
+              name: data.name || 'New Scenario',
+              clientName: data.clientName || newScenarioData.clientName || '',
+              transactionType: data.transactionType || newScenarioData.transactionType || 'Purchase',
+              propertyAddress: data.propertyAddress || (newScenarioData.isTBD ? '' : newScenarioData.address),
+              isAddressTBD: data.isAddressTBD !== undefined ? data.isAddressTBD : newScenarioData.isTBD,
+              // Ensure down payment is calculated if we have price and percent
+              downPaymentAmount: data.downPaymentAmount || (data.purchasePrice && data.downPaymentPercent 
+                ? (data.purchasePrice * data.downPaymentPercent) / 100 
+                : userDefaults.purchasePrice * (userDefaults.downPaymentPercent / 100))
+            };
+            
+            // Optimistic Update
+            setScenarios(prev => [scenario, ...prev]);
+            setActiveScenario(scenario);
+            
+            // Save to DB
+            await saveScenario(scenario);
+            
+            setView('builder');
+            setShowAIModal(false);
+            setIsModalOpen(false);
+          }}
+          defaultScenario={userDefaults ? { ...DEFAULT_SCENARIO, ...userDefaults } : DEFAULT_SCENARIO}
+          defaultClientName={newScenarioData.clientName || undefined}
+        />
 
         {/* TOAST CONTAINER - Shows notifications */}
         <ToastContainer />
