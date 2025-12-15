@@ -157,6 +157,7 @@ export interface Scenario {
   // Advanced Features
   buydown: BuydownConfig;
   dpa: DPAConfig;
+  dpa2?: DPAConfig; // Second DPA option
 }
 
 export interface CalculatedResults {
@@ -170,6 +171,7 @@ export interface CalculatedResults {
   monthlyMI: number;
   monthlyHOA: number;
   monthlyDPAPayment: number;
+  monthlyDPA2Payment: number;
   
   totalMonthlyPayment: number; // Standard full payment (or Year 1 if buydown active)
   baseMonthlyPayment: number; // The note rate payment (for comparison)

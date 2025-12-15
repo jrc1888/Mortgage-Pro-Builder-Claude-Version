@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, BrainCircuit, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight } from 'lucide-react';
 import { Scenario, LoanType, CalculatedResults, HistoryEntry, ClosingCostItem } from '../types';
 import { calculateScenario } from '../services/loanMath';
-import { analyzeScenario } from '../services/geminiService';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
@@ -78,11 +77,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   const { addToast } = useToast();
   const debouncedScenario = useDebounce(scenario, 300);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
-  
-  // AI Analysis State
-  const [aiAnalysis, setAiAnalysis] = useState<string>('');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [showAIModal, setShowAIModal] = useState(false);
   
   // Modals
   const [showLogModal, setShowLogModal] = useState(false);
@@ -283,14 +277,23 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
      });
   };
 
-  const handleDPAChange = (type: 'amount' | 'percent', value: number) => {
+  const handleDPAChange = (type: 'amount' | 'percent', value: number, isDPA2: boolean = false) => {
      setScenario(prev => {
+         const dpaKey = isDPA2 ? 'dpa2' : 'dpa';
+         const currentDPA = isDPA2 ? (prev.dpa2 || { active: false, amount: 0, percent: 0, rate: 7.5, termMonths: 120, payment: 0, isDeferred: false }) : prev.dpa;
+         
          if (type === 'amount') {
              const percent = prev.purchasePrice > 0 ? (value / prev.purchasePrice) * 100 : 0;
-             return { ...prev, dpa: { ...prev.dpa, amount: value, percent } };
+             const updated = { ...currentDPA, amount: value, percent };
+             return isDPA2 
+                 ? { ...prev, dpa2: updated }
+                 : { ...prev, dpa: updated };
          } else {
              const amount = prev.purchasePrice * (value / 100);
-             return { ...prev, dpa: { ...prev.dpa, amount, percent: value } };
+             const updated = { ...currentDPA, amount, percent: value };
+             return isDPA2 
+                 ? { ...prev, dpa2: updated }
+                 : { ...prev, dpa: updated };
          }
      });
   };
@@ -403,21 +406,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       addToast({ type: 'success', message: 'Version saved successfully!' });
   };
 
-  const handleAIAnalysis = async () => {
-    setAnalyzing(true);
-    setAiAnalysis('');
-    const text = await analyzeScenario(scenario, results);
-    setAiAnalysis(text);
-    setAnalyzing(false);
-  };
-
-  const openAIModal = () => {
-    setShowAIModal(true);
-    if (!aiAnalysis) {
-        handleAIAnalysis();
-    }
-  };
-
   const restoreSnapshot = (entry: HistoryEntry) => {
       if(confirm("Restore this version? Current unsaved changes will be lost.")) {
           setScenario(entry.snapshot);
@@ -488,12 +476,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         </div>
 
         <div className="flex gap-3 pl-6 border-l border-slate-800 ml-6">
-             <button 
-                onClick={openAIModal}
-                className="flex items-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
-            >
-                <BrainCircuit size={16} /> AI Review
-            </button>
              <button 
                 onClick={() => setShowPreApprovalOptionsModal(true)}
                 className="flex items-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
@@ -1063,7 +1045,20 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                              <h3 className="flex items-center gap-2 text-slate-900 font-bold text-sm uppercase tracking-wide">
                                 <Wallet size={16} className="text-slate-400" /> Down Payment Assistance
                             </h3>
-                            <CustomCheckbox checked={scenario.dpa.active} onChange={(c) => setScenario(prev => ({ ...prev, dpa: { ...prev.dpa, active: c } }))} label="Enable DPA" />
+                            <CustomCheckbox 
+                                checked={scenario.dpa.active} 
+                                onChange={(c) => {
+                                    setScenario(prev => {
+                                        // If disabling first DPA, also disable second DPA
+                                        const updated = { ...prev, dpa: { ...prev.dpa, active: c } };
+                                        if (!c && prev.dpa2?.active) {
+                                            updated.dpa2 = undefined;
+                                        }
+                                        return updated;
+                                    });
+                                }} 
+                                label="Enable DPA" 
+                            />
                         </div>
 
                          <div className={`space-y-5 transition-all ${!scenario.dpa.active ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1108,6 +1103,140 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                          <span className="font-mono font-bold text-slate-900">{formatMoney(results.monthlyDPAPayment)}</span>
                                      </div>
                                  )}
+                            </div>
+                         </div>
+                         
+                         {/* Second DPA Section */}
+                         <div className={`pt-6 border-t border-slate-200 ${!scenario.dpa.active ? 'opacity-50' : ''}`}>
+                            <div className="flex justify-between items-start mb-4">
+                                <h4 className="text-slate-700 font-semibold text-xs uppercase tracking-wide">Second DPA</h4>
+                                <div 
+                                    onClick={(e) => {
+                                        if (!scenario.dpa.active) {
+                                            e.stopPropagation();
+                                            return;
+                                        }
+                                    }}
+                                    className={!scenario.dpa.active ? 'cursor-not-allowed' : ''}
+                                >
+                                    <CustomCheckbox 
+                                        checked={scenario.dpa2?.active || false} 
+                                        onChange={(c) => {
+                                            if (!scenario.dpa.active) return; // Prevent enabling if first DPA is not active
+                                            setScenario(prev => ({ 
+                                                ...prev, 
+                                                dpa2: c ? {
+                                                    active: true,
+                                                    amount: 0,
+                                                    percent: 0,
+                                                    rate: 7.5,
+                                                    termMonths: 120,
+                                                    payment: 0,
+                                                    isDeferred: false
+                                                } : undefined
+                                            }));
+                                        }} 
+                                        label="Enable Second DPA" 
+                                    />
+                                </div>
+                            </div>
+                            {!scenario.dpa.active && (
+                                <p className="text-[9px] text-slate-400 mb-3 italic">Enable first DPA to use second DPA</p>
+                            )}
+                            
+                            <div className={`space-y-4 transition-all ${!scenario.dpa2?.active || !scenario.dpa.active ? 'opacity-40 pointer-events-none max-h-0 overflow-hidden' : 'max-h-[500px]'}`}>
+                                {scenario.dpa2?.active && (
+                                    <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-3 mb-4">
+                                        <p className="text-xs text-amber-900 font-semibold flex items-start gap-2">
+                                            <AlertTriangle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                            <span>⚠️ Using a second DPA - please verify program guidelines allow stacking multiple DPA programs</span>
+                                        </p>
+                                    </div>
+                                )}
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelClass}>Assistance Amount ($)</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput 
+                                                value={scenario.dpa2?.amount || 0} 
+                                                onChangeValue={(val) => handleDPAChange('amount', val, true)} 
+                                                className="h-full px-4 text-sm text-slate-900 font-medium" 
+                                            />
+                                        </div>
+                                        {scenario.dpa2?.active && (
+                                            <p className="text-[9px] text-amber-600 mt-1 ml-0.5 italic">Second DPA active - check guidelines</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Assistance Amount (%)</label>
+                                        <div className={inputGroupClass}>
+                                            <LiveDecimalInput 
+                                                value={scenario.dpa2?.percent || 0} 
+                                                onChange={(val) => handleDPAChange('percent', val, true)} 
+                                                className="h-full pl-4 pr-4 text-right text-sm text-slate-900 font-medium" 
+                                            />
+                                            <div className={symbolRightClass}>%</div>
+                                        </div>
+                                        {scenario.dpa2?.active && (
+                                            <p className="text-[9px] text-amber-600 mt-1 ml-0.5 italic">Second DPA active - check guidelines</p>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelClass}>Interest Rate</label>
+                                        <div className={inputGroupClass}>
+                                            <LiveDecimalInput 
+                                                value={scenario.dpa2?.rate || 0} 
+                                                onChange={(val) => setScenario(prev => ({
+                                                    ...prev, 
+                                                    dpa2: prev.dpa2 ? {...prev.dpa2, rate: val} : undefined
+                                                }))} 
+                                                step="0.125" 
+                                                precision={3} 
+                                                className="h-full pl-4 pr-4 text-right text-sm text-slate-900 font-medium" 
+                                            />
+                                            <div className={symbolRightClass}>%</div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Term (Months)</label>
+                                        <div className={inputGroupClass}>
+                                            <input 
+                                                type="number" 
+                                                value={scenario.dpa2?.termMonths || ''} 
+                                                onChange={(e) => setScenario(prev => ({
+                                                    ...prev, 
+                                                    dpa2: prev.dpa2 ? {...prev.dpa2, termMonths: parseFloat(e.target.value)} : undefined
+                                                }))} 
+                                                onWheel={handleWheel} 
+                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium" 
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                    <CustomCheckbox 
+                                        checked={scenario.dpa2?.isDeferred || false} 
+                                        onChange={(c) => setScenario(prev => ({
+                                            ...prev, 
+                                            dpa2: prev.dpa2 ? {...prev.dpa2, isDeferred: c} : undefined
+                                        }))} 
+                                        label="Deferred Payment (Silent Second)" 
+                                    />
+                                    {scenario.dpa2 && !scenario.dpa2.isDeferred && (
+                                        <div className="mt-3 flex justify-between items-center text-sm">
+                                            <span className="text-slate-500 font-medium">Monthly DPA2 Payment</span>
+                                            <span className="font-mono font-bold text-slate-900">
+                                                {results.monthlyDPA2Payment ? formatMoney(results.monthlyDPA2Payment) : '$0'}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                          </div>
                      </div>
@@ -1287,8 +1416,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </div>
                          {scenario.dpa.active && !scenario.dpa.isDeferred && (
                              <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
-                                <span>DPA Loan (2nd)</span>
+                                <span>DPA Loan (1st)</span>
                                 <span className="font-bold">{formatMoney(results.monthlyDPAPayment)}</span>
+                            </div>
+                        )}
+                         {scenario.dpa2?.active && !scenario.dpa2.isDeferred && (
+                             <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
+                                <span>DPA Loan (2nd)</span>
+                                <span className="font-bold">{formatMoney(results.monthlyDPA2Payment)}</span>
                             </div>
                         )}
                          {scenario.buydown.active && (
@@ -1404,28 +1539,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
       {/* --- Modals --- */}
       
-      {/* AI Analysis Modal */}
-      <Modal isOpen={showAIModal} onClose={() => setShowAIModal(false)} title="AI Scenario Analysis" maxWidth="max-w-2xl">
-          {analyzing ? (
-              <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-4">
-                  <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-xs font-bold uppercase tracking-widest animate-pulse">Analyzing Loan Structure...</p>
-              </div>
-          ) : (
-              <div className="prose prose-sm prose-slate max-w-none">
-                  {/* Render Markdown-like text safely */}
-                  {aiAnalysis.split('\n').map((line, i) => (
-                      <p key={i} className={`mb-2 ${line.startsWith('**') ? 'font-bold text-slate-800' : ''}`}>
-                          {line.replace(/\*\*/g, '')}
-                      </p>
-                  ))}
-                  <div className="mt-8 pt-4 border-t border-slate-100 text-[10px] text-slate-400 font-medium text-center">
-                      AI analysis is for informational purposes only and does not constitute a formal underwriting decision.
-                  </div>
-              </div>
-          )}
-      </Modal>
-
       {/* History Modal */}
       <Modal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} title="Scenario History" maxWidth="max-w-xl">
            <div className="space-y-4">

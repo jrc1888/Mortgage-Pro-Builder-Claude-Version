@@ -102,8 +102,23 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     }
   }
 
-  // Common fixed monthly costs (Tax, Ins, MI, HOA, DPA)
-  const fixedMonthlyCosts = (propertyTaxYearly / 12) + (homeInsuranceYearly / 12) + monthlyMI + hoaMonthly + dpaPayment;
+  // 5b. Second DPA
+  let dpa2Payment = 0;
+  if (scenario.dpa2?.active) {
+    if (scenario.dpa2.isDeferred) {
+        dpa2Payment = 0;
+    } else {
+        const dpa2Amount = safeNum(scenario.dpa2.amount);
+        const dpa2Rate = safeNum(scenario.dpa2.rate);
+        const dpa2Term = safeNum(scenario.dpa2.termMonths) || 120;
+        
+        const dpa2MonthlyRate = (dpa2Rate / 100) / 12;
+        dpa2Payment = calculatePMT(dpa2MonthlyRate, dpa2Term, dpa2Amount);
+    }
+  }
+
+  // Common fixed monthly costs (Tax, Ins, MI, HOA, DPA, DPA2)
+  const fixedMonthlyCosts = (propertyTaxYearly / 12) + (homeInsuranceYearly / 12) + monthlyMI + hoaMonthly + dpaPayment + dpa2Payment;
 
   // 6. Buydown Calculation (Subsidy)
   let buydownCost = 0;
@@ -225,14 +240,16 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
 
   // 10. Cash / Funds Required
   const dpaAmount = scenario.dpa.active ? safeNum(scenario.dpa.amount) : 0;
+  const dpa2Amount = scenario.dpa2?.active ? safeNum(scenario.dpa2.amount) : 0;
+  const totalDPAAmount = dpaAmount + dpa2Amount;
   
-  // Logic: Total funds required = down + net closing costs - dpa
-  const totalFundsRequired = downPaymentAmount + netClosingCosts - dpaAmount;
+  // Logic: Total funds required = down + net closing costs - dpa - dpa2
+  const totalFundsRequired = downPaymentAmount + netClosingCosts - totalDPAAmount;
   
   // Cash To Close = Funds Required - Earnest
   const cashToClose = totalFundsRequired - earnestMoney;
 
-  const isDPAExcessive = dpaAmount > (downPaymentAmount + Math.max(0, netClosingCosts)); 
+  const isDPAExcessive = totalDPAAmount > (downPaymentAmount + Math.max(0, netClosingCosts)); 
 
   // 11. Total Monthly Payment Display
   const baseMonthlyPayment = monthlyPrincipalAndInterest + fixedMonthlyCosts;
@@ -324,6 +341,7 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     monthlyMI,
     monthlyHOA: hoaMonthly,
     monthlyDPAPayment: dpaPayment,
+    monthlyDPA2Payment: dpa2Payment,
     totalMonthlyPayment,
     baseMonthlyPayment,
     totalClosingCosts,

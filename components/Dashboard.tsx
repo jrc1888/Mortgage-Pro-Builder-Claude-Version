@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp } from 'lucide-react';
+import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp, CheckSquare, Plus as PlusIcon, X } from 'lucide-react';
 import { Scenario, ScenarioDefaults } from '../types';
 import { FormattedNumberInput, LiveDecimalInput } from './CommonInputs';
 import { Modal } from './Modal';
@@ -40,6 +40,28 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
   const [showSettings, setShowSettings] = useState(false);
   const [localDefaults, setLocalDefaults] = useState<ScenarioDefaults | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; scenarioId: string } | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'defaults' | 'todos'>('defaults');
+  
+  // Todo List State
+  interface TodoItem {
+    id: string;
+    text: string;
+    dateAdded: string;
+  }
+  
+  const [todos, setTodos] = useState<TodoItem[]>(() => {
+    const saved = localStorage.getItem('mortgage_todos');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    // Initialize with AI Review idea
+    const today = new Date().toISOString().split('T')[0];
+    return [{
+      id: crypto.randomUUID(),
+      text: 'AI Review feature - Analyze loan structure, DTI impact, loan efficiency, and provide expert recommendations',
+      dateAdded: today
+    }];
+  });
   
 
   // Group Scenarios by Client
@@ -136,6 +158,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
               validationThresholds: userDefaults.validationThresholds || DEFAULT_VALIDATION_THRESHOLDS
           };
           setLocalDefaults(defaults);
+          setSettingsTab('defaults');
           setShowSettings(true);
       }
   };
@@ -515,9 +538,34 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                 isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
                 title="App Settings"
-                subtitle="Configure system defaults"
+                subtitle={settingsTab === 'defaults' ? "Configure system defaults" : "Track feature ideas"}
              >
-                {localDefaults && (
+                {/* Tabs */}
+                <div className="flex gap-2 mb-6 border-b border-slate-200">
+                    <button
+                        onClick={() => setSettingsTab('defaults')}
+                        className={`px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors border-b-2 ${
+                            settingsTab === 'defaults'
+                                ? 'text-indigo-600 border-indigo-600'
+                                : 'text-slate-400 border-transparent hover:text-slate-600'
+                        }`}
+                    >
+                        Defaults
+                    </button>
+                    <button
+                        onClick={() => setSettingsTab('todos')}
+                        className={`px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors border-b-2 ${
+                            settingsTab === 'todos'
+                                ? 'text-indigo-600 border-indigo-600'
+                                : 'text-slate-400 border-transparent hover:text-slate-600'
+                        }`}
+                    >
+                        <CheckSquare size={14} className="inline mr-1.5" />
+                        Todo List
+                    </button>
+                </div>
+
+                {settingsTab === 'defaults' && localDefaults && (
                     <div className="space-y-6">
                         {/* User Email Display */}
                         {userEmail && (
@@ -759,6 +807,68 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             <button onClick={saveSettings} className="w-full h-11 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-slate-200 text-xs uppercase tracking-wide">
                                 <Save size={16} /> Save Changes
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                {settingsTab === 'todos' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Feature Ideas</h4>
+                            <button
+                                onClick={() => {
+                                    const newTodo: TodoItem = {
+                                        id: crypto.randomUUID(),
+                                        text: '',
+                                        dateAdded: new Date().toISOString().split('T')[0]
+                                    };
+                                    setTodos([...todos, newTodo]);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                title="Add new todo"
+                            >
+                                <PlusIcon size={16} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                            {todos.map((todo, index) => (
+                                <div key={todo.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                    <div className="flex-1">
+                                        <input
+                                            type="text"
+                                            value={todo.text}
+                                            onChange={(e) => {
+                                                const updated = [...todos];
+                                                updated[index].text = e.target.value;
+                                                setTodos(updated);
+                                                localStorage.setItem('mortgage_todos', JSON.stringify(updated));
+                                            }}
+                                            placeholder="Enter feature idea..."
+                                            className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                                        />
+                                        <div className="text-[9px] text-slate-400 mt-1 ml-0.5">
+                                            Added: {new Date(todo.dateAdded).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            const updated = todos.filter((_, i) => i !== index);
+                                            setTodos(updated);
+                                            localStorage.setItem('mortgage_todos', JSON.stringify(updated));
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                        title="Remove"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                            {todos.length === 0 && (
+                                <div className="text-center text-slate-400 py-8 text-sm italic">
+                                    No todos yet. Click the + button to add one.
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
