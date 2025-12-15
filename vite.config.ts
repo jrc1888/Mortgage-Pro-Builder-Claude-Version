@@ -18,15 +18,14 @@ export default defineConfig(({ mode }) => {
         {
           name: 'inject-build-info',
           transformIndexHtml(html) {
-            return html
-              .replace(
-                /window\.APP_VERSION = ['"]1\.0\.\d+['"];/g,
-                `window.APP_VERSION = '${buildVersion}'; window.BUILD_TIMESTAMP = ${buildTimestamp};`
-              )
-              .replace(
-                /window\.BUILD_TIMESTAMP = \d+;/g,
-                `window.BUILD_TIMESTAMP = ${buildTimestamp};`
-              );
+            // Remove any existing BUILD_TIMESTAMP
+            let result = html.replace(/window\.BUILD_TIMESTAMP = [^;]+;/g, '');
+            // Add BUILD_TIMESTAMP after APP_VERSION
+            result = result.replace(
+              /(window\.APP_VERSION = ['"][^'"]+['"];)/,
+              `$1\n      window.BUILD_TIMESTAMP = ${buildTimestamp};`
+            );
+            return result;
           }
         }
       ],
