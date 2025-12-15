@@ -254,7 +254,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         }
         
         if (field === 'isAddressTBD' && value === true) {
-             return { ...prev, [field]: value, propertyAddress: '', contractDate: undefined, faDate: undefined };
+             return { ...prev, [field]: value, propertyAddress: '', faDate: undefined, settlementDate: undefined };
         }
 
         return { ...prev, [field]: value };
@@ -589,17 +589,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             {!scenario.isAddressTBD && (
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className={labelClass}>Contract Date</label>
-                                        <div className={inputGroupClass}>
-                                            <input 
-                                                type="date" 
-                                                value={scenario.contractDate ? scenario.contractDate.split('T')[0] : ''} 
-                                                onChange={(e) => handleInputChange('contractDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)} 
-                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
                                         <label className={labelClass}>F&A Date</label>
                                         <div className={inputGroupClass}>
                                             <input 
@@ -611,6 +600,24 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                         handleInputChange('faDate', date.toISOString());
                                                     } else {
                                                         handleInputChange('faDate', undefined);
+                                                    }
+                                                }} 
+                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Settlement Date</label>
+                                        <div className={inputGroupClass}>
+                                            <input 
+                                                type="date" 
+                                                value={scenario.settlementDate ? scenario.settlementDate.split('T')[0] : ''} 
+                                                onChange={(e) => {
+                                                    if (e.target.value) {
+                                                        const date = new Date(e.target.value + 'T00:00:00');
+                                                        handleInputChange('settlementDate', date.toISOString());
+                                                    } else {
+                                                        handleInputChange('settlementDate', undefined);
                                                     }
                                                 }} 
                                                 className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
@@ -964,12 +971,23 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             {/* Cost Render Logic */}
                                             {cost.id === 'prepaid-interest' ? (
                                                 <div className="flex items-center gap-3">
-                                                     <div className="flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500">
-                                                        <input type="number" value={cost.days ?? 0} onChange={(e) => updateCostDays(cost.id, e.target.value)} onWheel={handleWheel} className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium" />
+                                                     <div className={`flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden ${scenario.settlementDate ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'focus-within:ring-1 focus-within:ring-indigo-500'}`}>
+                                                        <input 
+                                                            type="number" 
+                                                            value={scenario.settlementDate ? results.prepaidInterestDays : (cost.days ?? 0)} 
+                                                            onChange={(e) => {
+                                                                if (!scenario.settlementDate) {
+                                                                    updateCostDays(cost.id, e.target.value);
+                                                                }
+                                                            }} 
+                                                            onWheel={handleWheel} 
+                                                            disabled={!!scenario.settlementDate}
+                                                            className={`w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium ${scenario.settlementDate ? 'cursor-not-allowed text-slate-500' : ''}`} 
+                                                        />
                                                         <span className="px-3 text-slate-400 text-xs font-bold bg-slate-50 h-full flex items-center border-l border-slate-200">d</span>
                                                      </div>
                                                      <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
-                                                         {formatMoney((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0))}
+                                                         {formatMoney(scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)))}
                                                      </div>
                                                 </div>
                                             ) : (cost.id === 'prepaid-insurance' || cost.id === 'tax-reserves' || cost.id === 'insurance-reserves' || cost.id === 'hoa-prepay') ? (

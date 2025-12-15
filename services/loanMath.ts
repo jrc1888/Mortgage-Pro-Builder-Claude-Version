@@ -15,6 +15,55 @@ const safeNum = (val: any): number => {
   return isNaN(n) ? 0 : n;
 };
 
+// Calculate prepaid interest days from settlement date to end of month
+export const calculatePrepaidInterestDays = (settlementDateISO?: string): number => {
+  if (!settlementDateISO) return 0;
+  
+  try {
+    const settlementDate = new Date(settlementDateISO);
+    if (isNaN(settlementDate.getTime())) return 0;
+    
+    // Get the last day of the settlement month
+    const year = settlementDate.getFullYear();
+    const month = settlementDate.getMonth();
+    const lastDayOfMonth = new Date(year, month + 1, 0);
+    
+    // Calculate days from settlement date to end of month (inclusive)
+    const daysDiff = lastDayOfMonth.getDate() - settlementDate.getDate() + 1;
+    
+    return Math.max(0, daysDiff);
+  } catch {
+    return 0;
+  }
+};
+
+// Calculate prepaid interest amount
+export const calculatePrepaidInterest = (
+  loanAmount: number,
+  annualInterestRate: number,
+  settlementDateISO?: string,
+  manualDays?: number
+): number => {
+  if (loanAmount <= 0 || annualInterestRate <= 0) return 0;
+  
+  let days = 0;
+  if (settlementDateISO) {
+    days = calculatePrepaidInterestDays(settlementDateISO);
+  } else if (manualDays !== undefined) {
+    days = manualDays;
+  } else {
+    return 0;
+  }
+  
+  if (days === 0) return 0;
+  
+  // Daily interest = (Loan Amount × Annual Rate) / 365
+  const dailyInterest = (loanAmount * (annualInterestRate / 100)) / 365;
+  
+  // Prepaid interest = Daily Interest × Days
+  return dailyInterest * days;
+};
+
 export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // Ensure we work with numbers even if state has bad data
   const purchasePrice = safeNum(scenario.purchasePrice);
@@ -174,13 +223,25 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   }
 
   // 7. Closing Costs
+  // Calculate prepaid interest first (from settlement date if available, otherwise from manual input)
+  const prepaidInterestDays = calculatePrepaidInterestDays(scenario.settlementDate);
+  const prepaidInterest = scenario.settlementDate 
+    ? calculatePrepaidInterest(totalLoanAmount, interestRate, scenario.settlementDate)
+    : 0;
+  
   const totalClosingCosts = (scenario.closingCosts || []).reduce((sum, item) => {
     if (item.id === 'prepaid-interest') {
-        const days = item.days || 0;
-        const annualInterest = totalLoanAmount * (interestRate / 100);
-        const dailyInterest = annualInterest / 365;
-        const cost = dailyInterest * days;
-        return sum + cost;
+        // If settlement date exists, use calculated prepaid interest
+        // Otherwise, use manual days input
+        if (scenario.settlementDate) {
+            return sum + prepaidInterest;
+        } else {
+            const days = item.days || 0;
+            const annualInterest = totalLoanAmount * (interestRate / 100);
+            const dailyInterest = annualInterest / 365;
+            const cost = dailyInterest * days;
+            return sum + cost;
+        }
     }
     if (item.id === 'prepaid-insurance' || item.id === 'insurance-reserves') {
         const months = item.months || 0;
@@ -243,13 +304,24 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   const dpa2Amount = scenario.dpa2?.active ? safeNum(scenario.dpa2.amount) : 0;
   const totalDPAAmount = dpaAmount + dpa2Amount;
   
+  // 10. Cash / Funds Required
+  // Note: Prepaid interest is already included in netClosingCosts when settlement date exists
   // Logic: Total funds required = down + net closing costs - dpa - dpa2
   const totalFundsRequired = downPaymentAmount + netClosingCosts - totalDPAAmount;
   
   // Cash To Close = Funds Required - Earnest
   const cashToClose = totalFundsRequired - earnestMoney;
 
-  const isDPAExcessive = totalDPAAmount > (downPaymentAmount + Math.max(0, netClosingCosts)); 
+  const isDPAExcessive = totalDPAAmount > (downPaymentAmount + Math.max(0, netClosingCosts));
+  
+  // Calculate prepaid interest for results (for display purposes)
+  // Note: prepaidInterestDays and prepaidInterest are already calculated above in the closing costs section
+  const finalPrepaidInterestDays = scenario.settlementDate 
+    ? prepaidInterestDays 
+    : (scenario.closingCosts?.find(c => c.id === 'prepaid-interest')?.days || 0);
+  const finalPrepaidInterest = scenario.settlementDate 
+    ? prepaidInterest 
+    : calculatePrepaidInterest(totalLoanAmount, interestRate, undefined, finalPrepaidInterestDays); 
 
   // 11. Total Monthly Payment Display
   const baseMonthlyPayment = monthlyPrincipalAndInterest + fixedMonthlyCosts;
@@ -354,6 +426,8 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     maxConcessionsAllowed,
     lenderCreditsAmount,
     cashToClose,
+    prepaidInterest: finalPrepaidInterest,
+    prepaidInterestDays: finalPrepaidInterestDays,
     buydownSchedule: scenario.buydown.active ? buydownSchedule : undefined,
     ltv,
     miRatePercent,

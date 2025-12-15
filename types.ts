@@ -107,8 +107,8 @@ export interface Scenario {
   // Property Identity
   propertyAddress: string;
   isAddressTBD: boolean;
-  contractDate?: string; // ISO date string - only relevant if address is not TBD
   faDate?: string; // Funding & Approval date - only relevant if address is not TBD
+  settlementDate?: string; // Settlement/Closing date - only relevant if address is not TBD
   
   // Metadata
   dateCreated: string;
@@ -191,6 +191,8 @@ export interface CalculatedResults {
   lenderCreditsAmount: number; // Calculated amount
 
   cashToClose: number; // Total needed at table
+  prepaidInterest: number; // Prepaid interest from settlement to end of month
+  prepaidInterestDays: number; // Number of days of prepaid interest
 
   // Metadata for UI
   ltv: number;

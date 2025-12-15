@@ -6,8 +6,8 @@ interface StructuredSubmissionData {
     borrowerName: string;
     propertyAddress: string;
     transactionType: string;
-    contractDate?: string;
     faDate?: string;
+    settlementDate?: string;
     loanType: string;
     loanAmount: string;
     purchasePrice: string;
@@ -34,6 +34,7 @@ interface StructuredSubmissionData {
   cashToClose: {
     downPayment: string;
     closingCosts: string;
+    prepaidInterest?: string;
     credits: string;
     dpaAssistance: string;
     earnestMoney: string;
@@ -152,11 +153,11 @@ export async function generateSubmissionPDF(
   yPos += 0.1;
   addText(`Borrower: ${structuredData.executiveSummary.borrowerName}`, 10);
   addText(`Property: ${structuredData.executiveSummary.propertyAddress}`, 10);
-  if (structuredData.executiveSummary.contractDate) {
-    addText(`Contract Date: ${structuredData.executiveSummary.contractDate}`, 10);
-  }
   if (structuredData.executiveSummary.faDate) {
     addText(`F&A Date: ${structuredData.executiveSummary.faDate}`, 10);
+  }
+  if (structuredData.executiveSummary.settlementDate) {
+    addText(`Settlement Date: ${structuredData.executiveSummary.settlementDate}`, 10);
   }
   addText(`Generated: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, 9, false, [100, 100, 100]);
   yPos += sectionSpacing;
@@ -199,6 +200,9 @@ export async function generateSubmissionPDF(
   addSectionHeader('CASH TO CLOSE');
   addText(`Down Payment: ${structuredData.cashToClose.downPayment}`, 10);
   addText(`Closing Costs: ${structuredData.cashToClose.closingCosts}`, 10);
+  if (structuredData.cashToClose.prepaidInterest && structuredData.cashToClose.prepaidInterest !== '$0') {
+    addText(`Prepaid Interest: ${structuredData.cashToClose.prepaidInterest}`, 10);
+  }
   if (structuredData.cashToClose.credits !== '$0') {
     addText(`Credits Applied: ${structuredData.cashToClose.credits}`, 10);
   }

@@ -55,8 +55,8 @@ REQUIRED SECTIONS (provide structured JSON):
     "borrowerName": "...",
     "propertyAddress": "...",
     "transactionType": "...",
-    "contractDate": "...",
     "faDate": "...",
+    "settlementDate": "...",
     "loanType": "...",
     "loanAmount": "...",
     "purchasePrice": "...",
@@ -83,6 +83,7 @@ REQUIRED SECTIONS (provide structured JSON):
   "cashToClose": {
     "downPayment": "...",
     "closingCosts": "...",
+    "prepaidInterest": "...",
     "credits": "...",
     "dpaAssistance": "...",
     "earnestMoney": "...",
