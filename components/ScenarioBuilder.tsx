@@ -1409,7 +1409,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-3 px-8 flex justify-between items-center shrink-0">
           <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">MortgagePro © 2025</p>
-          <p className="text-[10px] text-slate-300 font-medium">v1.0.5</p>
+          <p className="text-[10px] text-slate-300 font-medium">v1.0.6</p>
       </footer>
 
       {/* --- Modals --- */}
