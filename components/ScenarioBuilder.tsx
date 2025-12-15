@@ -71,7 +71,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     transactionType: (initialScenario.transactionType || 'Purchase') as 'Purchase' | 'Refinance'
   };
   // Debug: Always log to verify code is running
-  console.log('🔍 ScenarioBuilder loaded - Version 1.0.6', {
+  console.log('🔍 ScenarioBuilder loaded - Version 1.0.7', {
     hasTransactionType: !!scenarioWithDefaults.transactionType,
     transactionType: scenarioWithDefaults.transactionType,
     scenarioId: initialScenario.id
@@ -1415,7 +1415,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-3 px-8 flex justify-between items-center shrink-0">
           <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">MortgagePro © 2025</p>
-          <p className="text-[10px] text-slate-300 font-medium">v1.0.6</p>
+          <p className="text-[10px] text-slate-300 font-medium">v1.0.7</p>
       </footer>
 
       {/* --- Modals --- */}

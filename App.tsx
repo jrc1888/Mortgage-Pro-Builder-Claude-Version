@@ -117,7 +117,7 @@ const App: React.FC = () => {
         propertyAddress: newScenarioData.isTBD ? '' : newScenarioData.address,
         isAddressTBD: newScenarioData.isTBD
     };
-    console.log('🔍 Creating new scenario - Version 1.0.6', {
+    console.log('🔍 Creating new scenario - Version 1.0.7', {
       transactionType: scenario.transactionType,
       clientName: scenario.clientName
     });
@@ -139,7 +139,7 @@ const App: React.FC = () => {
       ...scenario,
       transactionType: scenario.transactionType || 'Purchase'
     };
-    console.log('🔍 Selecting scenario - Version 1.0.6', {
+    console.log('🔍 Selecting scenario - Version 1.0.7', {
       hasTransactionType: !!scenario.transactionType,
       transactionType: scenarioWithDefaults.transactionType,
       scenarioId: scenario.id
