@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { Mic, Sparkles, Loader2, X, Edit2, AlertTriangle } from 'lucide-react';
 import { parseNaturalLanguage, ParsedScenarioData } from '../services/nlpParser';
@@ -25,12 +25,19 @@ export const NLPScenarioModal: React.FC<Props> = ({
   const [isListening, setIsListening] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState<ParsedScenarioData | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Pre-populate input with client name when modal opens
+  // Pre-populate input with client name when modal opens and focus textarea
   useEffect(() => {
-    if (isOpen && defaultClientName && !input.trim()) {
-      // If client name is provided and input is empty, pre-populate
-      setInput(defaultClientName + ', ');
+    if (isOpen) {
+      if (defaultClientName && !input.trim()) {
+        // If client name is provided and input is empty, pre-populate
+        setInput(defaultClientName + ', ');
+      }
+      // Focus textarea when modal opens
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 100);
     }
   }, [isOpen, defaultClientName]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -42,17 +49,48 @@ export const NLPScenarioModal: React.FC<Props> = ({
     try {
       const result = await parseNaturalLanguage(input, '');
       
-      // Apply smart defaults if price exists but down payment doesn't
-      if (result.purchasePrice && !result.downPaymentPercent && !result.downPaymentAmount) {
-        // Suggest common down payment percentages based on loan type
-        const suggestedPercent = result.loanType === 'FHA' ? 3.5 : 
-                                 result.loanType === 'VA' ? 0 : 
-                                 result.loanType === 'Conventional' ? 20 : 10;
-        result.downPaymentPercent = suggestedPercent;
-        result.clarifications = [
-          ...(result.clarifications || []),
-          `Suggested ${suggestedPercent}% down payment based on ${result.loanType || 'loan'} type. You can edit this.`
-        ];
+      // Detect transaction type from input if not already extracted
+      if (!result.transactionType) {
+        const inputLower = input.toLowerCase();
+        if (inputLower.includes('refinance') || inputLower.includes('refi') || inputLower.includes('cash out')) {
+          result.transactionType = 'Refinance';
+        } else if (inputLower.includes('buy') || inputLower.includes('purchase') || inputLower.includes('buying')) {
+          result.transactionType = 'Purchase';
+        }
+      }
+      
+      // Apply smart defaults based on loan type
+      if (result.loanType) {
+        // Smart down payment suggestions
+        if (result.purchasePrice && !result.downPaymentPercent && !result.downPaymentAmount) {
+          const suggestedPercent = result.loanType === 'FHA' ? 3.5 : 
+                                   result.loanType === 'VA' ? 0 : 
+                                   result.loanType === 'Conventional' ? 20 : 10;
+          result.downPaymentPercent = suggestedPercent;
+          result.clarifications = [
+            ...(result.clarifications || []),
+            `Suggested ${suggestedPercent}% down payment based on ${result.loanType} type. You can edit this.`
+          ];
+        }
+        
+        // Smart credit score suggestions
+        if (!result.creditScore) {
+          const suggestedScore = result.loanType === 'FHA' ? 640 : 
+                                 result.loanType === 'VA' ? 620 : 
+                                 result.loanType === 'Conventional' ? 740 : 680;
+          result.clarifications = [
+            ...(result.clarifications || []),
+            `Typical credit score for ${result.loanType}: ${suggestedScore}+. You can edit this.`
+          ];
+        }
+        
+        // Smart interest rate suggestions (if not provided)
+        if (!result.interestRate) {
+          result.clarifications = [
+            ...(result.clarifications || []),
+            `Current ${result.loanType} rates typically range from 6.5% - 7.5%. You can edit this.`
+          ];
+        }
       }
       
       setParsedData(result);
@@ -180,14 +218,25 @@ export const NLPScenarioModal: React.FC<Props> = ({
             ) : (
               <>Try: "Jane Doe buying $500k house, 10% down, FHA loan, 6.5% rate, credit 680"</>
             )}
+            <br />
+            <span className="text-slate-500 mt-1 block">💡 Tip: Press Cmd/Ctrl + Enter to parse quickly</span>
           </p>
         </div>
 
         {/* Input Area */}
         <div className="relative">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                if (!parsing && input.trim()) {
+                  handleParse();
+                }
+              }
+            }}
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"

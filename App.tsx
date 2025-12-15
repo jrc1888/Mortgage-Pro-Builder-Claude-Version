@@ -238,9 +238,20 @@ const App: React.FC = () => {
                             autoFocus
                             value={newScenarioData.clientName}
                             onChange={(e) => setNewScenarioData(prev => ({...prev, clientName: e.target.value}))}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newScenarioData.clientName) {
+                                    e.preventDefault();
+                                    startNewScenario();
+                                }
+                            }}
                             className="w-full pl-9 pr-4 h-10 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-sm"
                             placeholder="e.g. John Doe"
                         />
+                        <datalist id="existing-clients">
+                            {Array.from(new Set(scenarios.map(s => s.clientName).filter(Boolean))).slice(0, 20).map((name, idx) => (
+                                <option key={idx} value={name} />
+                            ))}
+                        </datalist>
                     </div>
                 </div>
                 
@@ -301,7 +312,8 @@ const App: React.FC = () => {
                             setIsModalOpen(false);
                             setShowAIModal(true);
                         }}
-                        className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-900/20 px-4"
+                        disabled={!newScenarioData.clientName}
+                        className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none bg-gradient-to-r from-purple-400 to-indigo-400 hover:from-purple-600 hover:to-indigo-600 disabled:from-purple-200 disabled:to-indigo-200 disabled:hover:from-purple-200 disabled:hover:to-indigo-200 text-white shadow-purple-900/20 px-4"
                     >
                         <Sparkles size={16} className="flex-shrink-0" />
                         <span>Create with AI</span>
@@ -309,9 +321,9 @@ const App: React.FC = () => {
                     <button 
                         onClick={startNewScenario} 
                         disabled={!newScenarioData.clientName} 
-                        className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20 px-4"
+                        className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none bg-emerald-400 hover:bg-emerald-600 disabled:bg-emerald-200 disabled:hover:bg-emerald-200 text-white shadow-emerald-900/20 px-4"
                     >
-                        <span>Create Scenario</span>
+                        <span>Manually Create</span>
                         <ArrowRight size={16} className="flex-shrink-0" />
                     </button>
                 </div>

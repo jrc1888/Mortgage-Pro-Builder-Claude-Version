@@ -1,11 +1,10 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp, Sparkles } from 'lucide-react';
+import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp } from 'lucide-react';
 import { Scenario, ScenarioDefaults } from '../types';
 import { FormattedNumberInput, LiveDecimalInput } from './CommonInputs';
 import { Modal } from './Modal';
 import { isSupabaseConfigured } from '../services/supabaseClient';
-import { NLPScenarioModal } from './NLPScenarioModal';
 import { DEFAULT_SCENARIO } from '../constants';
 import { DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
 
@@ -40,9 +39,8 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; type: 'folder' | 'scenario'; id: string; name: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [localDefaults, setLocalDefaults] = useState<ScenarioDefaults | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; scenarioId: string } | null>(null);
   
-  // NLP Modal State
-  const [showNLPModal, setShowNLPModal] = useState(false);
 
   // Group Scenarios by Client
   const clientGroups = useMemo<Record<string, Scenario[]>>(() => {
@@ -170,6 +168,10 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             key={scenario.id} 
                             className={`group bg-white rounded-xl border border-slate-300 shadow-md hover:shadow-xl hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col relative ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''}`}
                             onClick={() => onSelect(scenario)}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                setContextMenu({ x: e.clientX, y: e.clientY, scenarioId: scenario.id });
+                            }}
                         >
                             {/* Transaction Type Badge - Top Right */}
                             <div className="absolute top-4 right-4 z-10">
@@ -450,21 +452,13 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                  <span className="hidden xl:inline">Delete</span>
                              </button>
                              
-                             {/* New Scenario Button */}
-                             <button 
-                                onClick={() => onCreateNew(selectedClient!)}
-                                className="flex items-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 shadow-lg shadow-indigo-900/40 hover:shadow-indigo-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-indigo-500/50 transform hover:-translate-y-0.5"
-                            >
-                                <Plus size={18} strokeWidth={3} /> New Scenario
-                            </button>
-                            
-                            {/* Create with AI Button */}
+                            {/* New Scenario Button */}
                             <button 
-                                onClick={() => setShowNLPModal(true)}
-                                className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-900/40 hover:shadow-purple-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-purple-500/50 transform hover:-translate-y-0.5"
-                            >
-                                <Sparkles size={18} strokeWidth={2.5} /> Create with AI
-                            </button>
+                               onClick={() => onCreateNew(selectedClient!)}
+                               className="flex items-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 shadow-lg shadow-indigo-900/40 hover:shadow-indigo-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-indigo-500/50 transform hover:-translate-y-0.5"
+                           >
+                               <Plus size={18} strokeWidth={3} /> New Scenario
+                           </button>
                          </div>
                     </header>
 
@@ -770,40 +764,62 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                 )}
              </Modal>
              
-             {/* NLP Scenario Creation Modal */}
-             <NLPScenarioModal
-                isOpen={showNLPModal}
-                onClose={() => setShowNLPModal(false)}
-                onCreateScenario={async (scenarioData) => {
-                    // Create full scenario from AI-extracted data
-                    const fullScenario: Scenario = {
-                        ...DEFAULT_SCENARIO,
-                        ...userDefaults,
-                        ...scenarioData, // AI-extracted data takes precedence
-                        // Ensure all required fields are set
-                        id: scenarioData.id || crypto.randomUUID(),
-                        name: scenarioData.name || 'New Scenario',
-                        clientName: scenarioData.clientName || selectedClient || 'Unassigned',
-                        transactionType: scenarioData.transactionType || 'Purchase',
-                        // Calculate down payment if needed
-                        downPaymentAmount: scenarioData.downPaymentAmount || 
-                            (scenarioData.purchasePrice && scenarioData.downPaymentPercent 
-                                ? (scenarioData.purchasePrice * scenarioData.downPaymentPercent) / 100
-                                : (userDefaults?.purchasePrice || DEFAULT_SCENARIO.purchasePrice) * ((userDefaults?.downPaymentPercent || DEFAULT_SCENARIO.downPaymentPercent) / 100))
-                    };
-                    
-                    // Save scenario if save function is provided
-                    if (onSave) {
-                        await onSave(fullScenario);
-                    }
-                    
-                    // Open scenario in builder
-                    onSelect(fullScenario);
-                    setShowNLPModal(false);
-                }}
-                defaultScenario={userDefaults ? { ...DEFAULT_SCENARIO, ...userDefaults } : DEFAULT_SCENARIO}
-                defaultClientName={selectedClient || undefined}
-             />
+             {/* Context Menu */}
+             {contextMenu && (
+                 <div 
+                     className="fixed bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50 min-w-[180px]"
+                     style={{ left: contextMenu.x, top: contextMenu.y }}
+                     onMouseLeave={() => setContextMenu(null)}
+                 >
+                     {(() => {
+                         const scenario = scenarios.find(s => s.id === contextMenu.scenarioId);
+                         if (!scenario) return null;
+                         return (
+                             <>
+                                 <button
+                                     onClick={() => {
+                                         onSelect(scenario);
+                                         setContextMenu(null);
+                                     }}
+                                     className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2"
+                                 >
+                                     <ArrowRight size={14} />
+                                     Open Scenario
+                                 </button>
+                                 <button
+                                     onClick={() => {
+                                         onDuplicate(scenario.id);
+                                         setContextMenu(null);
+                                     }}
+                                     className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2"
+                                 >
+                                     <Copy size={14} />
+                                     Duplicate
+                                 </button>
+                                 <div className="h-px bg-slate-200 my-1" />
+                                 <button
+                                     onClick={() => {
+                                         requestDeleteScenario(scenario.id, scenario.name);
+                                         setContextMenu(null);
+                                     }}
+                                     className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                 >
+                                     <Trash2 size={14} />
+                                     Delete
+                                 </button>
+                             </>
+                         );
+                     })()}
+                 </div>
+             )}
+             
+             {/* Click outside to close context menu */}
+             {contextMenu && (
+                 <div 
+                     className="fixed inset-0 z-40"
+                     onClick={() => setContextMenu(null)}
+                 />
+             )}
         </div>
     </div>
   );
