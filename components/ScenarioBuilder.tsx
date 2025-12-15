@@ -71,7 +71,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     transactionType: initialScenario.transactionType || 'Purchase'
   };
   const [scenario, setScenario] = useState<Scenario>(scenarioWithDefaults);
-  const [results, setResults] = useState<CalculatedResults>(calculateScenario(initialScenario));
+  const [results, setResults] = useState<CalculatedResults>(calculateScenario(scenarioWithDefaults));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
   
   // NEW: Toast, Debounce, and Validation
@@ -1312,46 +1312,57 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
                 {/* Cash To Close Card */}
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-sm mt-4">
-                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}</h3>
+                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Cash to Close Statement</h3>
                      <div className="space-y-2 mb-3 text-sm">
-                         <div className="flex justify-between text-slate-600">
-                             <span>{scenario.transactionType === 'Purchase' ? 'Down Payment' : 'Cash Out'}</span>
-                             <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
-                         </div>
-                          <div className="flex justify-between text-slate-600">
-                             <span>Closing Costs (Net)</span>
-                             <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
-                         </div>
-                         {scenario.dpa.active && (
-                             <div className="flex justify-between text-emerald-600">
-                                 <span>DPA Funding</span>
-                                 <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
-                             </div>
+                         {scenario.transactionType === 'Purchase' ? (
+                             <>
+                                 <div className="flex justify-between text-slate-600">
+                                     <span>Down Payment</span>
+                                     <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
+                                 </div>
+                                  <div className="flex justify-between text-slate-600">
+                                     <span>Closing Costs (Net)</span>
+                                     <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
+                                 </div>
+                                 {scenario.dpa.active && (
+                                     <div className="flex justify-between text-emerald-600">
+                                         <span>DPA Funding</span>
+                                         <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
+                                     </div>
+                                 )}
+                                 
+                                 {/* Subtotal before Earnest Money */}
+                                 <div className="border-t border-slate-300 pt-2 mt-2 flex justify-between items-center">
+                                     <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
+                                     <span className="text-lg font-bold text-slate-900">
+                                         {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
+                                     </span>
+                                 </div>
+                                 
+                                 {/* Earnest Money Deduction */}
+                                 <div className="mb-4">
+                                     <div className="flex justify-between text-emerald-600 text-sm">
+                                         <span>Earnest Money</span>
+                                         <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
+                                     </div>
+                                 </div>
+                             </>
+                         ) : (
+                             <>
+                                 <div className="flex justify-between text-slate-600">
+                                     <span>Cash Out</span>
+                                     <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
+                                 </div>
+                                  <div className="flex justify-between text-slate-600">
+                                     <span>Closing Costs (Net)</span>
+                                     <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
+                                 </div>
+                             </>
                          )}
                      </div>
                      
-                     {/* Subtotal before Earnest Money (Purchase only) */}
-                     {scenario.transactionType === 'Purchase' && (
-                         <>
-                             <div className="border-t border-slate-300 pt-2 mb-3 flex justify-between items-center">
-                                 <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
-                                 <span className="text-lg font-bold text-slate-900">
-                                     {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
-                                 </span>
-                             </div>
-                             
-                             {/* Earnest Money Deduction */}
-                             <div className="mb-4">
-                                 <div className="flex justify-between text-emerald-600 text-sm">
-                                     <span>Earnest Money</span>
-                                     <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
-                                 </div>
-                             </div>
-                         </>
-                     )}
-                     
                      <div className="border-t border-slate-200 pt-3 flex justify-between items-end">
-                         <span className="text-xs font-bold text-slate-500 uppercase">Cash Required</span>
+                         <span className="text-xs font-bold text-slate-500 uppercase">{scenario.transactionType === 'Purchase' ? 'Cash Required' : 'Cash to Close'}</span>
                          <span className={`text-3xl font-black tracking-tight ${results.cashToClose < 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
                              {formatMoney(results.cashToClose)}
                          </span>
