@@ -130,7 +130,12 @@ const App: React.FC = () => {
   };
 
   const handleSelect = (scenario: Scenario) => {
-    setActiveScenario(scenario);
+    // Ensure transactionType exists for backward compatibility
+    const scenarioWithDefaults = {
+      ...scenario,
+      transactionType: scenario.transactionType || 'Purchase'
+    };
+    setActiveScenario(scenarioWithDefaults);
     setView('builder');
   };
 
