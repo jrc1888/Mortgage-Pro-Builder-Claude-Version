@@ -43,6 +43,8 @@ export const DEFAULT_SCENARIO: Scenario = {
   transactionType: 'Purchase',
   propertyAddress: '',
   isAddressTBD: false,
+  contractDate: undefined,
+  faDate: undefined,
   dateCreated: new Date().toISOString(),
   lastUpdated: new Date().toISOString(),
   history: [], 

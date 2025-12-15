@@ -107,6 +107,8 @@ export interface Scenario {
   // Property Identity
   propertyAddress: string;
   isAddressTBD: boolean;
+  contractDate?: string; // ISO date string - only relevant if address is not TBD
+  faDate?: string; // Funding & Approval date - only relevant if address is not TBD
   
   // Metadata
   dateCreated: string;

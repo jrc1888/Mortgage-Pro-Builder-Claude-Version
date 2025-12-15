@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2 } from 'lucide-react';
 import { Scenario, LoanType, CalculatedResults, HistoryEntry, ClosingCostItem } from '../types';
 import { calculateScenario } from '../services/loanMath';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
 import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
+import { generateSubmissionPDFPreview, downloadSubmissionPDF } from '../services/submissionPDF';
 import { useToast } from '../hooks/useToast';
 import { useDebounce } from '../hooks/useDebounce';
 import { validateScenario, ValidationError, ValidationThresholds, DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
@@ -85,6 +86,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   const [showPreApprovalOptionsModal, setShowPreApprovalOptionsModal] = useState(false);
   const [preApprovalPdfUrl, setPreApprovalPdfUrl] = useState<string | null>(null);
   const [preApprovalFilename, setPreApprovalFilename] = useState<string>('');
+  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+  const [submissionPdfUrl, setSubmissionPdfUrl] = useState<string | null>(null);
+  const [submissionFilename, setSubmissionFilename] = useState<string>('');
+  const [submissionMissingInfo, setSubmissionMissingInfo] = useState<any[]>([]);
+  const [generatingSubmission, setGeneratingSubmission] = useState(false);
   
   const [logNote, setLogNote] = useState('');
   const [currentChanges, setCurrentChanges] = useState<string[]>([]);
@@ -248,7 +254,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         }
         
         if (field === 'isAddressTBD' && value === true) {
-             return { ...prev, [field]: value, propertyAddress: '' };
+             return { ...prev, [field]: value, propertyAddress: '', contractDate: undefined, faDate: undefined };
         }
 
         return { ...prev, [field]: value };
@@ -482,6 +488,30 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
             >
                 <FileBadge size={16} /> Pre-Approval
             </button>
+             <button 
+                onClick={async () => {
+                    setGeneratingSubmission(true);
+                    setShowSubmissionModal(true);
+                    try {
+                        const { pdfUrl, filename, missingInfo } = await generateSubmissionPDFPreview(scenario, results);
+                        setSubmissionPdfUrl(pdfUrl);
+                        setSubmissionFilename(filename);
+                        setSubmissionMissingInfo(missingInfo);
+                    } catch (error) {
+                        console.error('Error generating submission PDF:', error);
+                        addToast({ 
+                            type: 'error', 
+                            message: error instanceof Error ? error.message : 'Failed to generate submission email' 
+                        });
+                        setShowSubmissionModal(false);
+                    } finally {
+                        setGeneratingSubmission(false);
+                    }
+                }}
+                className="flex items-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
+            >
+                <FileText size={16} /> Submission Email
+            </button>
             <button 
                 onClick={() => setShowHistoryModal(true)}
                 className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -555,6 +585,40 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     <input type="text" value={scenario.isAddressTBD ? "To Be Determined" : scenario.propertyAddress} disabled={scenario.isAddressTBD} onChange={(e) => handleInputChange('propertyAddress', e.target.value)} className={`w-full px-4 py-2 text-sm outline-none bg-transparent font-medium ${scenario.isAddressTBD ? 'text-slate-400 italic cursor-not-allowed' : 'text-slate-900'}`} />
                                 </div>
                             </div>
+                            
+                            {!scenario.isAddressTBD && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelClass}>Contract Date</label>
+                                        <div className={inputGroupClass}>
+                                            <input 
+                                                type="date" 
+                                                value={scenario.contractDate ? scenario.contractDate.split('T')[0] : ''} 
+                                                onChange={(e) => handleInputChange('contractDate', e.target.value ? new Date(e.target.value).toISOString() : undefined)} 
+                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>F&A Date</label>
+                                        <div className={inputGroupClass}>
+                                            <input 
+                                                type="date" 
+                                                value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
+                                                onChange={(e) => {
+                                                    if (e.target.value) {
+                                                        const date = new Date(e.target.value + 'T00:00:00');
+                                                        handleInputChange('faDate', date.toISOString());
+                                                    } else {
+                                                        handleInputChange('faDate', undefined);
+                                                    }
+                                                }} 
+                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             
                             <div>
                                 <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
@@ -1695,6 +1759,95 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                   </div>
               </button>
           </div>
+       </Modal>
+
+       {/* Submission Email Modal */}
+       <Modal 
+         isOpen={showSubmissionModal} 
+         onClose={() => {
+           setShowSubmissionModal(false);
+           if (submissionPdfUrl) {
+             URL.revokeObjectURL(submissionPdfUrl);
+             setSubmissionPdfUrl(null);
+           }
+           setSubmissionMissingInfo([]);
+         }} 
+         title="Submission Email PDF" 
+         maxWidth="max-w-6xl" 
+         noPadding={false}
+       >
+         {generatingSubmission ? (
+           <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-4">
+             <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+             <p className="text-xs font-bold uppercase tracking-widest animate-pulse">Generating Submission Email...</p>
+             <p className="text-xs text-slate-500 mt-2">AI is analyzing scenario and structuring content</p>
+           </div>
+         ) : submissionPdfUrl ? (
+           <div className="space-y-4">
+             {submissionMissingInfo.length > 0 && (
+               <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-4">
+                 <h4 className="text-sm font-bold text-amber-900 mb-2 flex items-center gap-2">
+                   <AlertTriangle size={16} />
+                   Missing Information Detected
+                 </h4>
+                 <div className="space-y-2 max-h-40 overflow-y-auto">
+                   {submissionMissingInfo
+                     .filter(item => item.priority === 'critical')
+                     .map((item, idx) => (
+                       <div key={idx} className="text-xs text-amber-800">
+                         <span className="font-bold">• {item.item}:</span> {item.question}
+                       </div>
+                     ))}
+                   {submissionMissingInfo.filter(item => item.priority === 'critical').length === 0 && (
+                     <p className="text-xs text-amber-700 italic">No critical missing information detected</p>
+                   )}
+                 </div>
+                 {submissionMissingInfo.length > submissionMissingInfo.filter(item => item.priority === 'critical').length && (
+                   <p className="text-xs text-amber-700 mt-2 italic">
+                     + {submissionMissingInfo.length - submissionMissingInfo.filter(item => item.priority === 'critical').length} additional items (see PDF)
+                   </p>
+                 )}
+               </div>
+             )}
+             
+             <div className="flex gap-3">
+               <button
+                 onClick={() => {
+                   const link = document.createElement('a');
+                   link.href = submissionPdfUrl;
+                   link.download = submissionFilename;
+                   document.body.appendChild(link);
+                   link.click();
+                   document.body.removeChild(link);
+                 }}
+                 className="flex-1 flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors text-xs uppercase tracking-wide"
+               >
+                 <Download size={16} />
+                 Download PDF
+               </button>
+               <button
+                 onClick={() => {
+                   setShowSubmissionModal(false);
+                   if (submissionPdfUrl) {
+                     URL.revokeObjectURL(submissionPdfUrl);
+                     setSubmissionPdfUrl(null);
+                   }
+                 }}
+                 className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-lg font-bold hover:bg-slate-200 transition-colors text-xs uppercase tracking-wide"
+               >
+                 Close
+               </button>
+             </div>
+             
+             <div className="border border-slate-200 rounded-lg overflow-hidden" style={{ height: '600px' }}>
+               <iframe
+                 src={submissionPdfUrl}
+                 className="w-full h-full"
+                 title="Submission Email Preview"
+               />
+             </div>
+           </div>
+         ) : null}
        </Modal>
 
        {/* Pre-Approval Preview Modal */}
