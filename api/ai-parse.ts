@@ -17,11 +17,11 @@ export default async function handler(
     return response.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.VITE_CLAUDE_API_KEY || process.env.CLAUDE_API_KEY;
+  const apiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     return response.status(500).json({ 
-      error: 'Claude API key not configured. Add VITE_CLAUDE_API_KEY to Vercel environment variables.' 
+      error: 'OpenAI API key not configured. Add VITE_OPENAI_API_KEY to Vercel environment variables.' 
     });
   }
 
@@ -50,39 +50,47 @@ Return this EXACT format:
 
 Return ONLY the JSON object, nothing else:`;
 
-    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
-        max_tokens: 1024,
-        temperature: 0.1,
+        model: 'gpt-3.5-turbo',
         messages: [{
           role: 'user',
           content: prompt
-        }]
+        }],
+        temperature: 0.1,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' }
       })
     });
 
-    if (!claudeResponse.ok) {
-      const errorText = await claudeResponse.text();
-      console.error('Claude API Error:', errorText);
+    if (!openaiResponse.ok) {
+      const errorText = await openaiResponse.text();
+      console.error('OpenAI API Error:', errorText);
       
-      return response.status(claudeResponse.status).json({ 
-        error: `Claude API error: ${errorText.substring(0, 200)}` 
+      let errorMessage = 'OpenAI API error';
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.error?.message || errorText.substring(0, 200);
+      } catch {
+        errorMessage = errorText.substring(0, 200);
+      }
+      
+      return response.status(openaiResponse.status).json({ 
+        error: errorMessage
       });
     }
 
-    const data = await claudeResponse.json();
-    const text = data.content?.[0]?.text;
+    const data = await openaiResponse.json();
+    const text = data.choices?.[0]?.message?.content;
 
     if (!text) {
       return response.status(500).json({ 
-        error: 'No response from Claude API' 
+        error: 'No response from OpenAI API' 
       });
     }
 

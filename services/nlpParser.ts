@@ -26,9 +26,9 @@ export const parseNaturalLanguage = async (
   try {
     console.log('📡 Calling Vercel API proxy...');
     
-    // Call our Vercel serverless function instead of Claude directly
+    // Call our Vercel serverless function instead of OpenAI directly
     // This avoids CORS issues
-    const apiUrl = '/api/claude-parse';
+    const apiUrl = '/api/ai-parse';
     
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -47,7 +47,7 @@ export const parseNaturalLanguage = async (
       if (response.status === 401) {
         return {
           confidence: 0,
-          clarifications: ['ERROR 401: Invalid API key. Check your Claude API key in Vercel settings.']
+          clarifications: ['ERROR 401: Invalid API key. Check your OpenAI API key in Vercel settings.']
         };
       } else if (response.status === 400) {
         return {
