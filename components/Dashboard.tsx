@@ -163,15 +163,28 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
                         ? (1 - (scenario.downPaymentAmount / scenario.purchasePrice)) * 100 
                         : 0;
 
+                    const transactionType = scenario.transactionType || 'Purchase';
+                    
                     return (
                         <div 
                             key={scenario.id} 
                             className={`group bg-white rounded-xl border border-slate-300 shadow-md hover:shadow-xl hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col relative ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''}`}
                             onClick={() => onSelect(scenario)}
                         >
+                            {/* Transaction Type Badge - Top Right */}
+                            <div className="absolute top-4 right-4 z-10">
+                                <span className={`inline-block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded border shadow-sm ${
+                                    transactionType === 'Refinance' 
+                                        ? 'bg-purple-50 text-purple-700 border-purple-200' 
+                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                }`}>
+                                    {transactionType}
+                                </span>
+                            </div>
+                            
                             <div className="p-6 flex-1">
                                 <div className="flex flex-col gap-2 mb-4">
-                                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">
+                                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight pr-16">
                                         <span className="font-normal text-slate-500 text-xs block mb-1 uppercase tracking-wider">{scenario.clientName}</span>
                                         {scenario.name || "Untitled Scenario"}
                                     </h3>

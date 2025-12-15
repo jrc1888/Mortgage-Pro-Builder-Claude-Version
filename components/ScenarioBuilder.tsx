@@ -1255,25 +1255,15 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
                             <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
                         </div>
-                        {scenario.transactionType === 'Refinance' ? (
-                            // More prominent LTV for Refinance
-                            <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Loan-to-Value (LTV)</span>
-                                    <span className="text-lg font-black text-indigo-600">
-                                        {results.ltv.toFixed(2)}%
-                                    </span>
-                                </div>
-                            </div>
-                        ) : (
-                            // Subtle LTV for Purchase
+                        {/* Prominent LTV display for both Purchase and Refinance */}
+                        <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
                             <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LTV</span>
-                                <span className="text-sm font-bold text-slate-600 font-mono">
+                                <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Loan-to-Value (LTV)</span>
+                                <span className="text-lg font-black text-indigo-600">
                                     {results.ltv.toFixed(2)}%
                                 </span>
                             </div>
-                        )}
+                        </div>
                     </div>
                 </div>
                 
