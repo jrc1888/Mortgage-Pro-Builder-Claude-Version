@@ -68,8 +68,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   // Backward compatibility: ensure transactionType exists
   const scenarioWithDefaults = {
     ...initialScenario,
-    transactionType: initialScenario.transactionType || 'Purchase'
+    transactionType: (initialScenario.transactionType || 'Purchase') as 'Purchase' | 'Refinance'
   };
+  // Debug: Log to verify transactionType is set
+  if (!scenarioWithDefaults.transactionType) {
+    console.warn('TransactionType missing, defaulting to Purchase', initialScenario);
+  }
   const [scenario, setScenario] = useState<Scenario>(scenarioWithDefaults);
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(scenarioWithDefaults));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
