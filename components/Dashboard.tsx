@@ -42,18 +42,6 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
   
   // NLP Modal State
   const [showNLPModal, setShowNLPModal] = useState(false);
-  const claudeApiKey = import.meta.env.VITE_CLAUDE_API_KEY || '';
-  
-  // Debug: Log API key status (only first 10 chars for security)
-  useEffect(() => {
-    if (showNLPModal) {
-      console.log('🔑 Claude API Key Status:', claudeApiKey ? `Present (${claudeApiKey.substring(0, 10)}...)` : 'MISSING');
-      console.log('🔍 Environment check:', {
-        hasEnv: !!import.meta.env.VITE_CLAUDE_API_KEY,
-        keyLength: claudeApiKey.length
-      });
-    }
-  }, [showNLPModal, claudeApiKey]);
 
   // Group Scenarios by Client
   const clientGroups = useMemo<Record<string, Scenario[]>>(() => {
@@ -790,7 +778,6 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onDelete
                     setShowNLPModal(false);
                 }}
                 defaultScenario={userDefaults ? { ...DEFAULT_SCENARIO, ...userDefaults } : DEFAULT_SCENARIO}
-                apiKey={claudeApiKey}
              />
         </div>
     </div>
