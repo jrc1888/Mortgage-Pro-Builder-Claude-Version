@@ -117,6 +117,10 @@ const App: React.FC = () => {
         propertyAddress: newScenarioData.isTBD ? '' : newScenarioData.address,
         isAddressTBD: newScenarioData.isTBD
     };
+    console.log('🔍 Creating new scenario - Version 1.0.6', {
+      transactionType: scenario.transactionType,
+      clientName: scenario.clientName
+    });
     
     // Optimistic Update
     setScenarios(prev => [scenario, ...prev]);
@@ -135,6 +139,11 @@ const App: React.FC = () => {
       ...scenario,
       transactionType: scenario.transactionType || 'Purchase'
     };
+    console.log('🔍 Selecting scenario - Version 1.0.6', {
+      hasTransactionType: !!scenario.transactionType,
+      transactionType: scenarioWithDefaults.transactionType,
+      scenarioId: scenario.id
+    });
     setActiveScenario(scenarioWithDefaults);
     setView('builder');
   };
