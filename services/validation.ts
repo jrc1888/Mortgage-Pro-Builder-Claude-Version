@@ -135,10 +135,16 @@ export const validateScenario = (
       });
     }
 
-    if (results.ltv > ltvRule.maxLTV) {
+    // For FHA loans, LTV validation uses baseLoanAmount (excluding UFMIP)
+    // For other loan types, use the standard LTV (which includes UFMIP/funding fees)
+    const ltvForValidation = scenario.loanType === LoanType.FHA
+      ? (scenario.purchasePrice > 0 ? (results.baseLoanAmount / scenario.purchasePrice) * 100 : 0)
+      : results.ltv;
+
+    if (ltvForValidation > ltvRule.maxLTV) {
       errors.push({
         field: 'downPaymentPercent',
-        message: `LTV (${results.ltv.toFixed(1)}%) exceeds maximum ${ltvRule.maxLTV}% for ${scenario.loanType}`,
+        message: `LTV (${ltvForValidation.toFixed(1)}%) exceeds maximum ${ltvRule.maxLTV}% for ${scenario.loanType}`,
         severity: 'error'
       });
     }
