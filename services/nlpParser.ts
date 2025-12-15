@@ -17,23 +17,23 @@ export interface ParsedScenarioData {
 
 export const parseNaturalLanguage = async (
   input: string,
-  geminiApiKey: string
+  apiKey: string
 ): Promise<ParsedScenarioData> => {
   
   console.log('🤖 NLP Parser Starting...');
   console.log('📝 Input:', input);
-  console.log('🔑 API Key:', geminiApiKey ? `${geminiApiKey.substring(0, 10)}...` : 'MISSING');
+  console.log('🔑 API Key:', apiKey ? `${apiKey.substring(0, 10)}...` : 'MISSING');
 
   // Validate API key
-  if (!geminiApiKey || geminiApiKey.trim() === '') {
+  if (!apiKey || apiKey.trim() === '') {
     console.error('❌ No API key provided');
     return {
       confidence: 0,
-      clarifications: ['ERROR: Gemini API key not configured. Add VITE_GEMINI_API_KEY to Vercel environment variables.']
+      clarifications: ['ERROR: Claude API key not configured. Add VITE_CLAUDE_API_KEY to Vercel environment variables.']
     };
   }
 
-  const prompt = `Extract mortgage scenario data from this text. Return ONLY valid JSON, no markdown, no code blocks.
+  const prompt = `Extract mortgage scenario data from this text. Return ONLY valid JSON, no markdown, no code blocks, no explanations.
 
 Input: "${input}"
 
@@ -49,24 +49,28 @@ Extract if present:
 Return this EXACT format:
 {"purchasePrice":500000,"downPaymentPercent":10,"loanType":"FHA","clientName":"John Smith","confidence":90,"clarifications":["What interest rate?"]}
 
-Now parse and return JSON only:`;
+Return ONLY the JSON object, nothing else:`;
 
   try {
-    console.log('📡 Calling Gemini API...');
+    console.log('📡 Calling Claude API...');
     
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+      'https://api.anthropic.com/v1/messages',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 1024,
-          }
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 1024,
+          temperature: 0.1,
+          messages: [{
+            role: 'user',
+            content: prompt
+          }]
         })
       }
     );
@@ -77,20 +81,20 @@ Now parse and return JSON only:`;
       const errorText = await response.text();
       console.error('❌ API Error:', errorText);
       
-      if (response.status === 404) {
+      if (response.status === 401) {
         return {
           confidence: 0,
-          clarifications: ['ERROR 404: Invalid API endpoint. Check Gemini API configuration.']
+          clarifications: ['ERROR 401: Invalid API key. Check your Claude API key in Vercel settings.']
         };
       } else if (response.status === 400) {
         return {
           confidence: 0,
-          clarifications: ['ERROR 400: Invalid API request. Check your Gemini API key in Vercel settings.']
+          clarifications: ['ERROR 400: Invalid API request. Check your Claude API key format.']
         };
-      } else if (response.status === 403) {
+      } else if (response.status === 429) {
         return {
           confidence: 0,
-          clarifications: ['ERROR 403: API key rejected. Verify VITE_GEMINI_API_KEY in Vercel is correct.']
+          clarifications: ['ERROR 429: Rate limit exceeded. Please try again in a moment.']
         };
       }
       
@@ -103,7 +107,7 @@ Now parse and return JSON only:`;
     const data = await response.json();
     console.log('📦 Full response:', JSON.stringify(data, null, 2));
     
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = data.content?.[0]?.text;
     
     if (!text) {
       console.error('❌ No text in response');

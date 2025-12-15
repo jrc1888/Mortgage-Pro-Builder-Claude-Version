@@ -9,7 +9,7 @@ interface Props {
   onClose: () => void;
   onCreateScenario: (data: Partial<Scenario>) => void;
   defaultScenario: Scenario;
-  geminiApiKey: string;
+  apiKey: string;
 }
 
 export const NLPScenarioModal: React.FC<Props> = ({
@@ -17,7 +17,7 @@ export const NLPScenarioModal: React.FC<Props> = ({
   onClose,
   onCreateScenario,
   defaultScenario,
-  geminiApiKey
+  apiKey
 }) => {
   const [input, setInput] = useState('');
   const [parsing, setParsing] = useState(false);
@@ -29,7 +29,7 @@ export const NLPScenarioModal: React.FC<Props> = ({
 
     setParsing(true);
     try {
-      const result = await parseNaturalLanguage(input, geminiApiKey);
+      const result = await parseNaturalLanguage(input, apiKey);
       setParsedData(result);
     } catch (error) {
       console.error('Parse error:', error);
