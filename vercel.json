@@ -1,4 +1,5 @@
 {
+  "buildCommand": "rm -rf .vercel && npm run build",
   "headers": [
     {
       "source": "/index.html",
