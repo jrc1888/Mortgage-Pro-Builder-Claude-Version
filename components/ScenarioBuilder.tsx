@@ -1038,20 +1038,42 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                         />
                                                     </div>
                                                 </div>
-                                            ) : (cost.id === 'closing-protection-letter' || cost.id === 'endorsement-fee' || cost.id === 'e-recording-fee' || cost.id === 'recording-fee' || cost.id === 'settlement-fee') ? (
-                                                // Fixed title fees - non-editable
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex items-center w-48 h-10 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden opacity-60 cursor-not-allowed">
-                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-100 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
-                                                        <div className="w-full px-3 pr-5 text-right text-sm text-slate-500 font-medium">
-                                                            {formatMoney(cost.amount)}
-                                                        </div>
-                                                    </div>
-                                                </div>
                                             ) : (
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                                                        {cost.isFixed ? (
+                                                        {/* Only discount-points and Other Fees can toggle between $ and %} */}
+                                                        {(cost.id === 'discount-points' || (cost.category === 'Other Fees' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay')) ? (
+                                                            <>
+                                                                {cost.isFixed ? (
+                                                                    <>
+                                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
+                                                                        <FormattedNumberInput 
+                                                                            value={cost.amount} 
+                                                                            onChangeValue={(val) => updateCost(cost.id, val)} 
+                                                                            className="w-full px-3 pr-5 text-right text-sm text-slate-900 font-medium" 
+                                                                        />
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <LiveDecimalInput 
+                                                                            value={cost.amount} 
+                                                                            onChange={(val) => updateCost(cost.id, val)} 
+                                                                            className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium"
+                                                                            precision={3}
+                                                                        />
+                                                                         <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">%</div>
+                                                                    </>
+                                                                )}
+                                                                <button 
+                                                                    onClick={() => toggleCostFixed(cost.id)}
+                                                                    className="h-full px-2 border-l border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                                    title="Toggle Unit"
+                                                                >
+                                                                    <ArrowLeftRight size={14} />
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            /* All other fields are fixed dollar amounts only */
                                                             <>
                                                                 <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
                                                                 <FormattedNumberInput 
@@ -1060,24 +1082,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                                     className="w-full px-3 pr-5 text-right text-sm text-slate-900 font-medium" 
                                                                 />
                                                             </>
-                                                        ) : (
-                                                            <>
-                                                                <LiveDecimalInput 
-                                                                    value={cost.amount} 
-                                                                    onChange={(val) => updateCost(cost.id, val)} 
-                                                                    className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium"
-                                                                    precision={3}
-                                                                />
-                                                                 <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">%</div>
-                                                            </>
                                                         )}
-                                                        <button 
-                                                            onClick={() => toggleCostFixed(cost.id)}
-                                                            className="h-full px-2 border-l border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                                                            title="Toggle Unit"
-                                                        >
-                                                            <ArrowLeftRight size={14} />
-                                                        </button>
                                                     </div>
                                                 </div>
                                             )}
