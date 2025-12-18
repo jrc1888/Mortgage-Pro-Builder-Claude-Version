@@ -145,13 +145,14 @@ export const NLPScenarioModal: React.FC<Props> = ({
     if (dataToUse.purchasePrice && dataToUse.purchasePrice > 0) {
       if (downPaymentAmount && !downPaymentPercent) {
         // If amount is provided but not percent, calculate percent from amount
-        downPaymentPercent = (downPaymentAmount / dataToUse.purchasePrice) * 100;
+        downPaymentPercent = Number(((downPaymentAmount / dataToUse.purchasePrice) * 100).toFixed(2));
       } else if (downPaymentPercent && !downPaymentAmount) {
-        // If percent is provided but not amount, calculate amount from percent
-        downPaymentAmount = (dataToUse.purchasePrice * downPaymentPercent) / 100;
+        // If percent is provided but not amount, calculate amount from percent (round percent first)
+        downPaymentPercent = Number(Number(downPaymentPercent).toFixed(2));
+        downPaymentAmount = Number(((dataToUse.purchasePrice * downPaymentPercent) / 100).toFixed(2));
       } else if (downPaymentAmount && downPaymentPercent) {
         // If both are provided, recalculate percent from amount to ensure accuracy
-        downPaymentPercent = (downPaymentAmount / dataToUse.purchasePrice) * 100;
+        downPaymentPercent = Number(((downPaymentAmount / dataToUse.purchasePrice) * 100).toFixed(2));
       }
     }
 
@@ -167,8 +168,8 @@ export const NLPScenarioModal: React.FC<Props> = ({
       propertyAddress: dataToUse.propertyAddress || defaultScenario.propertyAddress,
       isAddressTBD: !dataToUse.propertyAddress,
       purchasePrice: dataToUse.purchasePrice || defaultScenario.purchasePrice,
-      downPaymentPercent: downPaymentPercent || defaultScenario.downPaymentPercent,
-      downPaymentAmount: downPaymentAmount || defaultScenario.downPaymentAmount,
+      downPaymentPercent: downPaymentPercent ? Number(downPaymentPercent.toFixed(2)) : Number(defaultScenario.downPaymentPercent.toFixed(2)),
+      downPaymentAmount: downPaymentAmount ? Number(downPaymentAmount.toFixed(2)) : Number(defaultScenario.downPaymentAmount.toFixed(2)),
       loanType: dataToUse.loanType || defaultScenario.loanType,
       interestRate: dataToUse.interestRate || defaultScenario.interestRate,
       creditScore: dataToUse.creditScore || defaultScenario.creditScore,

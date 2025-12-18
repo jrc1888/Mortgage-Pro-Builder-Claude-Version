@@ -361,17 +361,17 @@ const App: React.FC = () => {
                 }
                 return userDefaults.purchasePrice * (userDefaults.downPaymentPercent / 100);
               })(),
-              downPaymentPercent: (() => {
+              downPaymentPercent: Number((() => {
                 const price = data.purchasePrice || userDefaults.purchasePrice;
                 if (data.downPaymentAmount && price > 0) {
                   // If amount is provided, calculate percent from it
-                  return (data.downPaymentAmount / price) * 100;
+                  return ((data.downPaymentAmount / price) * 100).toFixed(2);
                 } else if (data.downPaymentPercent) {
-                  // If percent is provided, use it
-                  return data.downPaymentPercent;
+                  // If percent is provided, use it (rounded)
+                  return Number(data.downPaymentPercent).toFixed(2);
                 }
-                return userDefaults.downPaymentPercent;
-              })()
+                return userDefaults.downPaymentPercent.toFixed(2);
+              })())
             };
             
             // Optimistic Update

@@ -216,28 +216,31 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     setScenario(prev => {
         if (field === 'purchasePrice') {
             const price = Number(value);
+            const roundedPercent = Number(prev.downPaymentPercent.toFixed(2));
             return {
                 ...prev,
                 purchasePrice: price,
-                downPaymentAmount: price * (prev.downPaymentPercent / 100)
+                downPaymentAmount: Number((price * (roundedPercent / 100)).toFixed(2))
             };
         }
         if (field === 'downPaymentPercent') {
             const percent = Number(value);
-            const calculatedAmount = prev.purchasePrice * (percent / 100);
+            const roundedPercent = Number(percent.toFixed(2));
+            const calculatedAmount = prev.purchasePrice * (roundedPercent / 100);
             return {
                 ...prev,
-                downPaymentPercent: percent,
+                downPaymentPercent: roundedPercent,
                 downPaymentAmount: Number(calculatedAmount.toFixed(2))
             };
         }
         if (field === 'downPaymentAmount') {
              const amt = Number(value);
              const calculatedPercent = prev.purchasePrice > 0 ? (amt / prev.purchasePrice) * 100 : 0;
+             const roundedPercent = Number(calculatedPercent.toFixed(2));
              return {
                  ...prev,
                  downPaymentAmount: amt,
-                 downPaymentPercent: Number(calculatedPercent.toFixed(2))
+                 downPaymentPercent: roundedPercent
              };
         }
         if (field === 'loanType') {
@@ -362,12 +365,27 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       }));
   };
 
+  // Auto-update scenario name when down payment or loan type changes
+  useEffect(() => {
+    if (scenario.name && scenario.name.trim() !== '' && scenario.name.trim() !== 'New Scenario') {
+      // Check if name matches the auto-generated pattern
+      const namePattern = /^(Conv|FHA|VA|JUMBO) - \d+\.\d+% Down$/;
+      if (namePattern.test(scenario.name)) {
+        const typeLabel = scenario.loanType === LoanType.CONVENTIONAL ? 'Conv' : scenario.loanType;
+        const newName = `${typeLabel} - ${Number(scenario.downPaymentPercent).toFixed(2)}% Down`;
+        if (newName !== scenario.name) {
+          setScenario(prev => ({ ...prev, name: newName }));
+        }
+      }
+    }
+  }, [scenario.downPaymentPercent, scenario.loanType]);
+
   // --- Auto-Naming & Exit Logic ---
   const handleExit = () => {
     let finalScenario = { ...scenario };
     if (!finalScenario.name || finalScenario.name.trim() === 'New Scenario' || finalScenario.name.trim() === '') {
         const typeLabel = finalScenario.loanType === LoanType.CONVENTIONAL ? 'Conv' : finalScenario.loanType;
-        finalScenario.name = `${typeLabel} - ${finalScenario.downPaymentPercent.toFixed(2)}% Down`;
+        finalScenario.name = `${typeLabel} - ${Number(finalScenario.downPaymentPercent).toFixed(2)}% Down`;
         setScenario(finalScenario);
         onSave(finalScenario);
     }
@@ -734,14 +752,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </div>
 
                         {/* Number of Units Toggle */}
-                        <div className="mb-4">
+                        <div className="mb-3">
                             <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Number of Units</label>
                             <div className="flex bg-slate-100 p-1 rounded-lg">
                                 {([1, 2, 3, 4] as const).map((units) => (
                                     <button 
                                         key={units} 
                                         onClick={() => handleInputChange('numberOfUnits', units)} 
-                                        className={`flex-1 py-2.5 text-sm font-bold rounded-md transition-all ${(scenario.numberOfUnits || 1) === units ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                                        className={`flex-1 py-2 px-2 text-sm font-bold rounded-md transition-all ${(scenario.numberOfUnits || 1) === units ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
                                     >
                                         {units}
                                     </button>
