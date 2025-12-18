@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2 } from 'lucide-react';
 import { Scenario, LoanType, CalculatedResults, HistoryEntry, ClosingCostItem } from '../types';
-import { calculateScenario } from '../services/loanMath';
+import { calculateScenario, calculateLendersTitleInsurance } from '../services/loanMath';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
@@ -1022,6 +1022,31 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                           {cost.id === 'insurance-reserves' && formatMoney((scenario.homeInsuranceYearly/12) * (cost.months || 0))}
                                                           {cost.id === 'hoa-prepay' && formatMoney(scenario.hoaMonthly * (cost.months || 0))}
                                                      </div>
+                                                </div>
+                                            ) : cost.id === 'title-insurance' ? (
+                                                // Lenders Title Insurance - calculated based on loan amount, but editable with calculated hint
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
+                                                        <div className="flex items-center justify-center h-full px-2 bg-slate-50 border-r border-slate-200 text-slate-300 text-[9px] font-normal min-w-[3.5rem]">
+                                                            {Math.round(calculateLendersTitleInsurance(results.totalLoanAmount)).toLocaleString()}
+                                                        </div>
+                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
+                                                        <FormattedNumberInput 
+                                                            value={cost.amount || calculateLendersTitleInsurance(results.totalLoanAmount)} 
+                                                            onChangeValue={(val) => updateCost(cost.id, val)} 
+                                                            className="w-full px-3 pr-5 text-right text-sm text-slate-900 font-medium" 
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ) : (cost.id === 'closing-protection-letter' || cost.id === 'endorsement-fee' || cost.id === 'e-recording-fee' || cost.id === 'recording-fee' || cost.id === 'settlement-fee') ? (
+                                                // Fixed title fees - non-editable
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center w-48 h-10 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden opacity-60 cursor-not-allowed">
+                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-100 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
+                                                        <div className="w-full px-3 pr-5 text-right text-sm text-slate-500 font-medium">
+                                                            {formatMoney(cost.amount)}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-3">

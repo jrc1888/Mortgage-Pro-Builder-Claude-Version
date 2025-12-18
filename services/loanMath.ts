@@ -64,6 +64,22 @@ export const calculatePrepaidInterest = (
   return dailyInterest * days;
 };
 
+// Calculate Lenders Title Insurance based on loan amount tiers
+export const calculateLendersTitleInsurance = (loanAmount: number): number => {
+  if (loanAmount <= 0) return 0;
+  
+  if (loanAmount <= 250000) {
+    // ≤ $250,000: 0.37% × loan amount
+    return loanAmount * 0.0037;
+  } else if (loanAmount <= 550000) {
+    // $250,000–$550,000: 0.30% × loan amount
+    return loanAmount * 0.0030;
+  } else {
+    // ≥ $550,000: $1,650 flat
+    return 1650;
+  }
+};
+
 export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // Ensure we work with numbers even if state has bad data
   const purchasePrice = safeNum(scenario.purchasePrice);
@@ -242,6 +258,14 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
             const cost = dailyInterest * days;
             return sum + cost;
         }
+    }
+    if (item.id === 'title-insurance') {
+        // Use manual amount if set, otherwise calculate based on loan amount tiers
+        const manualAmount = safeNum(item.amount);
+        if (manualAmount > 0) {
+            return sum + manualAmount;
+        }
+        return sum + calculateLendersTitleInsurance(totalLoanAmount);
     }
     if (item.id === 'prepaid-insurance' || item.id === 'insurance-reserves') {
         const months = item.months || 0;
