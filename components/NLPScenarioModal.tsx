@@ -139,14 +139,20 @@ export const NLPScenarioModal: React.FC<Props> = ({
 
     // Calculate down payment amount if we have percentage and price
     let downPaymentAmount = dataToUse.downPaymentAmount;
-    if (!downPaymentAmount && dataToUse.downPaymentPercent && dataToUse.purchasePrice) {
-      downPaymentAmount = (dataToUse.purchasePrice * dataToUse.downPaymentPercent) / 100;
-    }
-
-    // Calculate down payment percent if we have amount and price but not percent
     let downPaymentPercent = dataToUse.downPaymentPercent;
-    if (!downPaymentPercent && downPaymentAmount && dataToUse.purchasePrice) {
-      downPaymentPercent = (downPaymentAmount / dataToUse.purchasePrice) * 100;
+    
+    // Ensure both values are properly synced - prioritize amount if both are provided
+    if (dataToUse.purchasePrice && dataToUse.purchasePrice > 0) {
+      if (downPaymentAmount && !downPaymentPercent) {
+        // If amount is provided but not percent, calculate percent from amount
+        downPaymentPercent = (downPaymentAmount / dataToUse.purchasePrice) * 100;
+      } else if (downPaymentPercent && !downPaymentAmount) {
+        // If percent is provided but not amount, calculate amount from percent
+        downPaymentAmount = (dataToUse.purchasePrice * downPaymentPercent) / 100;
+      } else if (downPaymentAmount && downPaymentPercent) {
+        // If both are provided, recalculate percent from amount to ensure accuracy
+        downPaymentPercent = (downPaymentAmount / dataToUse.purchasePrice) * 100;
+      }
     }
 
     // Use default client name if AI didn't extract one

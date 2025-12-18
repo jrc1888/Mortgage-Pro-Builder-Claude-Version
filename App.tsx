@@ -349,10 +349,29 @@ const App: React.FC = () => {
               transactionType: data.transactionType || newScenarioData.transactionType || 'Purchase',
               propertyAddress: data.propertyAddress || (newScenarioData.isTBD ? '' : newScenarioData.address),
               isAddressTBD: data.isAddressTBD !== undefined ? data.isAddressTBD : newScenarioData.isTBD,
-              // Ensure down payment is calculated if we have price and percent
-              downPaymentAmount: data.downPaymentAmount || (data.purchasePrice && data.downPaymentPercent 
-                ? (data.purchasePrice * data.downPaymentPercent) / 100 
-                : userDefaults.purchasePrice * (userDefaults.downPaymentPercent / 100))
+              // Ensure down payment amount and percent are always synced
+              downPaymentAmount: (() => {
+                const price = data.purchasePrice || userDefaults.purchasePrice;
+                if (data.downPaymentAmount && price > 0) {
+                  // If amount is provided, calculate percent from it
+                  return data.downPaymentAmount;
+                } else if (data.downPaymentPercent && price > 0) {
+                  // If percent is provided, calculate amount from it
+                  return (price * data.downPaymentPercent) / 100;
+                }
+                return userDefaults.purchasePrice * (userDefaults.downPaymentPercent / 100);
+              })(),
+              downPaymentPercent: (() => {
+                const price = data.purchasePrice || userDefaults.purchasePrice;
+                if (data.downPaymentAmount && price > 0) {
+                  // If amount is provided, calculate percent from it
+                  return (data.downPaymentAmount / price) * 100;
+                } else if (data.downPaymentPercent) {
+                  // If percent is provided, use it
+                  return data.downPaymentPercent;
+                }
+                return userDefaults.downPaymentPercent;
+              })()
             };
             
             // Optimistic Update
