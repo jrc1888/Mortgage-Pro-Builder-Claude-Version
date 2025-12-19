@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, BrainCircuit, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight } from 'lucide-react';
 import { Scenario, LoanType, CalculatedResults, HistoryEntry, ClosingCostItem } from '../types';
-import { calculateScenario, calculateLendersTitleInsurance } from '../services/loanMath';
+import { calculateScenario } from '../services/loanMath';
+import { analyzeScenario } from '../services/geminiService';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
 import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
-import { generateSubmissionPDFPreview, downloadSubmissionPDF } from '../services/submissionPDF';
 import { useToast } from '../hooks/useToast';
 import { useDebounce } from '../hooks/useDebounce';
 import { validateScenario, ValidationError, ValidationThresholds, DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
@@ -65,19 +65,19 @@ const CompactTypeToggleInput: React.FC<{
 };
 
 const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, validationThresholds = DEFAULT_VALIDATION_THRESHOLDS }) => {
-  // Backward compatibility: ensure transactionType exists
-  const scenarioWithDefaults = {
-    ...initialScenario,
-    transactionType: (initialScenario.transactionType || 'Purchase') as 'Purchase' | 'Refinance'
-  };
-  const [scenario, setScenario] = useState<Scenario>(scenarioWithDefaults);
-  const [results, setResults] = useState<CalculatedResults>(calculateScenario(scenarioWithDefaults));
+  const [scenario, setScenario] = useState<Scenario>(initialScenario);
+  const [results, setResults] = useState<CalculatedResults>(calculateScenario(initialScenario));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
   
   // NEW: Toast, Debounce, and Validation
   const { addToast } = useToast();
   const debouncedScenario = useDebounce(scenario, 300);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  
+  // AI Analysis State
+  const [aiAnalysis, setAiAnalysis] = useState<string>('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
   
   // Modals
   const [showLogModal, setShowLogModal] = useState(false);
@@ -86,11 +86,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   const [showPreApprovalOptionsModal, setShowPreApprovalOptionsModal] = useState(false);
   const [preApprovalPdfUrl, setPreApprovalPdfUrl] = useState<string | null>(null);
   const [preApprovalFilename, setPreApprovalFilename] = useState<string>('');
-  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
-  const [submissionPdfUrl, setSubmissionPdfUrl] = useState<string | null>(null);
-  const [submissionFilename, setSubmissionFilename] = useState<string>('');
-  const [submissionMissingInfo, setSubmissionMissingInfo] = useState<any[]>([]);
-  const [generatingSubmission, setGeneratingSubmission] = useState(false);
   
   const [logNote, setLogNote] = useState('');
   const [currentChanges, setCurrentChanges] = useState<string[]>([]);
@@ -216,31 +211,26 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     setScenario(prev => {
         if (field === 'purchasePrice') {
             const price = Number(value);
-            const roundedPercent = Number(prev.downPaymentPercent.toFixed(2));
             return {
                 ...prev,
                 purchasePrice: price,
-                downPaymentAmount: Number((price * (roundedPercent / 100)).toFixed(2))
+                downPaymentAmount: price * (prev.downPaymentPercent / 100)
             };
         }
         if (field === 'downPaymentPercent') {
             const percent = Number(value);
-            const roundedPercent = Number(percent.toFixed(2));
-            const calculatedAmount = prev.purchasePrice * (roundedPercent / 100);
             return {
                 ...prev,
-                downPaymentPercent: roundedPercent,
-                downPaymentAmount: Number(calculatedAmount.toFixed(2))
+                downPaymentPercent: percent,
+                downPaymentAmount: prev.purchasePrice * (percent / 100)
             };
         }
         if (field === 'downPaymentAmount') {
              const amt = Number(value);
-             const calculatedPercent = prev.purchasePrice > 0 ? (amt / prev.purchasePrice) * 100 : 0;
-             const roundedPercent = Number(calculatedPercent.toFixed(2));
              return {
                  ...prev,
                  downPaymentAmount: amt,
-                 downPaymentPercent: roundedPercent
+                 downPaymentPercent: prev.purchasePrice > 0 ? (amt / prev.purchasePrice) * 100 : 0
              };
         }
         if (field === 'loanType') {
@@ -259,7 +249,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         }
         
         if (field === 'isAddressTBD' && value === true) {
-             return { ...prev, [field]: value, propertyAddress: '', faDate: undefined, settlementDate: undefined };
+             return { ...prev, [field]: value, propertyAddress: '' };
         }
 
         return { ...prev, [field]: value };
@@ -288,23 +278,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
      });
   };
 
-  const handleDPAChange = (type: 'amount' | 'percent', value: number, isDPA2: boolean = false) => {
+  const handleDPAChange = (type: 'amount' | 'percent', value: number) => {
      setScenario(prev => {
-         const dpaKey = isDPA2 ? 'dpa2' : 'dpa';
-         const currentDPA = isDPA2 ? (prev.dpa2 || { active: false, amount: 0, percent: 0, rate: 7.5, termMonths: 120, payment: 0, isDeferred: false }) : prev.dpa;
-         
          if (type === 'amount') {
              const percent = prev.purchasePrice > 0 ? (value / prev.purchasePrice) * 100 : 0;
-             const updated = { ...currentDPA, amount: value, percent };
-             return isDPA2 
-                 ? { ...prev, dpa2: updated }
-                 : { ...prev, dpa: updated };
+             return { ...prev, dpa: { ...prev.dpa, amount: value, percent } };
          } else {
              const amount = prev.purchasePrice * (value / 100);
-             const updated = { ...currentDPA, amount, percent: value };
-             return isDPA2 
-                 ? { ...prev, dpa2: updated }
-                 : { ...prev, dpa: updated };
+             return { ...prev, dpa: { ...prev.dpa, amount, percent: value } };
          }
      });
   };
@@ -365,27 +346,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       }));
   };
 
-  // Auto-update scenario name when down payment or loan type changes
-  useEffect(() => {
-    if (scenario.name && scenario.name.trim() !== '' && scenario.name.trim() !== 'New Scenario') {
-      // Check if name matches the auto-generated pattern
-      const namePattern = /^(Conv|FHA|VA|JUMBO) - \d+\.\d+% Down$/;
-      if (namePattern.test(scenario.name)) {
-        const typeLabel = scenario.loanType === LoanType.CONVENTIONAL ? 'Conv' : scenario.loanType;
-        const newName = `${typeLabel} - ${Number(scenario.downPaymentPercent).toFixed(2)}% Down`;
-        if (newName !== scenario.name) {
-          setScenario(prev => ({ ...prev, name: newName }));
-        }
-      }
-    }
-  }, [scenario.downPaymentPercent, scenario.loanType]);
-
   // --- Auto-Naming & Exit Logic ---
   const handleExit = () => {
     let finalScenario = { ...scenario };
     if (!finalScenario.name || finalScenario.name.trim() === 'New Scenario' || finalScenario.name.trim() === '') {
         const typeLabel = finalScenario.loanType === LoanType.CONVENTIONAL ? 'Conv' : finalScenario.loanType;
-        finalScenario.name = `${typeLabel} - ${Number(finalScenario.downPaymentPercent).toFixed(2)}% Down`;
+        finalScenario.name = `${typeLabel} - ${finalScenario.downPaymentPercent}% Down`;
         setScenario(finalScenario);
         onSave(finalScenario);
     }
@@ -430,6 +396,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       
       // Show success toast
       addToast({ type: 'success', message: 'Version saved successfully!' });
+  };
+
+  const handleAIAnalysis = async () => {
+    setAnalyzing(true);
+    setAiAnalysis('');
+    const text = await analyzeScenario(scenario, results);
+    setAiAnalysis(text);
+    setAnalyzing(false);
+  };
+
+  const openAIModal = () => {
+    setShowAIModal(true);
+    if (!aiAnalysis) {
+        handleAIAnalysis();
+    }
   };
 
   const restoreSnapshot = (entry: HistoryEntry) => {
@@ -503,34 +484,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
         <div className="flex gap-3 pl-6 border-l border-slate-800 ml-6">
              <button 
+                onClick={openAIModal}
+                className="flex items-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
+            >
+                <BrainCircuit size={16} /> AI Review
+            </button>
+             <button 
                 onClick={() => setShowPreApprovalOptionsModal(true)}
                 className="flex items-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
             >
                 <FileBadge size={16} /> Pre-Approval
-            </button>
-             <button 
-                onClick={async () => {
-                    setGeneratingSubmission(true);
-                    setShowSubmissionModal(true);
-                    try {
-                        const { pdfUrl, filename, missingInfo } = await generateSubmissionPDFPreview(scenario, results);
-                        setSubmissionPdfUrl(pdfUrl);
-                        setSubmissionFilename(filename);
-                        setSubmissionMissingInfo(missingInfo);
-                    } catch (error) {
-                        console.error('Error generating submission PDF:', error);
-                        addToast({ 
-                            type: 'error', 
-                            message: error instanceof Error ? error.message : 'Failed to generate submission email' 
-                        });
-                        setShowSubmissionModal(false);
-                    } finally {
-                        setGeneratingSubmission(false);
-                    }
-                }}
-                className="flex items-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
-            >
-                <FileText size={16} /> Submission Email
             </button>
             <button 
                 onClick={() => setShowHistoryModal(true)}
@@ -576,24 +539,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </h3>
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Transaction Type</label>
-                                <div className="flex bg-slate-100 p-1 rounded-lg">
-                                    <button 
-                                        onClick={() => handleInputChange('transactionType', 'Purchase')}
-                                        className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${scenario.transactionType === 'Purchase' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                                    >
-                                        Purchase
-                                    </button>
-                                    <button 
-                                        onClick={() => handleInputChange('transactionType', 'Refinance')}
-                                        className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${scenario.transactionType === 'Refinance' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                                    >
-                                        Refinance
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div>
                                 <div className="flex justify-between items-center mb-1.5">
                                     <label className={labelClass}>Address</label>
                                     <CustomCheckbox checked={scenario.isAddressTBD} onChange={(checked) => handleInputChange('isAddressTBD', checked)} label="TBD" />
@@ -606,93 +551,30 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 </div>
                             </div>
                             
-                            {!scenario.isAddressTBD && (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={labelClass}>F&A Date</label>
-                                        <div className={inputGroupClass}>
-                                            <input 
-                                                type="date" 
-                                                value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
-                                                onChange={(e) => {
-                                                    if (e.target.value) {
-                                                        const date = new Date(e.target.value + 'T00:00:00');
-                                                        handleInputChange('faDate', date.toISOString());
-                                                    } else {
-                                                        handleInputChange('faDate', undefined);
-                                                    }
-                                                }} 
-                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Settlement Date</label>
-                                        <div className={inputGroupClass}>
-                                            <input 
-                                                type="date" 
-                                                value={scenario.settlementDate ? scenario.settlementDate.split('T')[0] : ''} 
-                                                onChange={(e) => {
-                                                    if (e.target.value) {
-                                                        const date = new Date(e.target.value + 'T00:00:00');
-                                                        handleInputChange('settlementDate', date.toISOString());
-                                                    } else {
-                                                        handleInputChange('settlementDate', undefined);
-                                                    }
-                                                }} 
-                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            
                             <div>
-                                <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
+                                <label className={labelClass}>Purchase Price</label>
                                 <div className={inputGroupClass}>
                                     <div className={symbolClass}>$</div>
                                     <FormattedNumberInput value={scenario.purchasePrice || 0} onChangeValue={(val) => handleInputChange('purchasePrice', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                 </div>
                             </div>
 
-                            {scenario.transactionType === 'Purchase' ? (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={labelClass}>Down Pmt ($)</label>
-                                        <div className={inputGroupClass}>
-                                            <div className={symbolClass}>$</div>
-                                            <FormattedNumberInput value={scenario.downPaymentAmount || 0} onChangeValue={(val) => handleInputChange('downPaymentAmount', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Down Pmt (%)</label>
-                                        <div className={inputGroupClass}>
-                                            <LiveDecimalInput value={scenario.downPaymentPercent} onChange={(val) => handleInputChange('downPaymentPercent', val)} step="0.01" precision={2} className="h-full pl-4 pr-4 text-sm text-slate-900 font-medium text-right" />
-                                            <div className={symbolRightClass}>%</div>
-                                        </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={labelClass}>Down Pmt ($)</label>
+                                    <div className={inputGroupClass}>
+                                        <div className={symbolClass}>$</div>
+                                        <FormattedNumberInput value={scenario.downPaymentAmount || 0} onChangeValue={(val) => handleInputChange('downPaymentAmount', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                     </div>
                                 </div>
-                            ) : (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={labelClass}>Cash Out ($)</label>
-                                        <div className={inputGroupClass}>
-                                            <div className={symbolClass}>$</div>
-                                            <FormattedNumberInput value={scenario.downPaymentAmount || 0} onChangeValue={(val) => handleInputChange('downPaymentAmount', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Loan Amount</label>
-                                        <div className={inputGroupClass}>
-                                            <div className={symbolClass}>$</div>
-                                            <FormattedNumberInput value={(scenario.purchasePrice || 0) - (scenario.downPaymentAmount || 0)} onChangeValue={(val) => {
-                                                const newDownPayment = (scenario.purchasePrice || 0) - val;
-                                                handleInputChange('downPaymentAmount', newDownPayment);
-                                            }} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                        </div>
+                                <div>
+                                    <label className={labelClass}>Down Pmt (%)</label>
+                                    <div className={inputGroupClass}>
+                                        <LiveDecimalInput value={scenario.downPaymentPercent} onChange={(val) => handleInputChange('downPaymentPercent', val)} step="0.01" precision={2} className="h-full pl-4 pr-4 text-sm text-slate-900 font-medium text-right" />
+                                        <div className={symbolRightClass}>%</div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
                             
                             <div>
                                 <label className={labelClass}>Property Taxes (Yearly)</label>
@@ -752,14 +634,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </div>
 
                         {/* Number of Units Toggle */}
-                        <div className="mb-3">
+                        <div className="mb-4">
                             <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Number of Units</label>
-                            <div className="flex bg-slate-100 p-1 rounded-lg">
+                            <div className="grid grid-cols-4 gap-2">
                                 {([1, 2, 3, 4] as const).map((units) => (
                                     <button 
                                         key={units} 
                                         onClick={() => handleInputChange('numberOfUnits', units)} 
-                                        className={`flex-1 py-2 px-2 text-sm font-bold rounded-md transition-all ${(scenario.numberOfUnits || 1) === units ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                                        className={`py-2.5 text-sm font-bold rounded-md transition-all ${(scenario.numberOfUnits || 1) === units ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                                     >
                                         {units}
                                     </button>
@@ -886,21 +768,18 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     </h3>
                     
                     {/* Header Grid */}
-                    <div className={`mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 ${scenario.transactionType === 'Refinance' ? 'md:grid-cols-2' : ''}`}>
-                        {/* Earnest Money - Only show for Purchase */}
-                        {scenario.transactionType === 'Purchase' && (
-                            <div className="col-span-1 bg-emerald-50/50 p-4 rounded-lg border border-emerald-100/60 h-28 flex flex-col justify-between">
-                                 <label className="block text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-0.5">Earnest Money</label>
-                                 <div className="flex items-center w-full bg-white border border-emerald-200 rounded-lg shadow-sm h-10 overflow-hidden mt-auto">
-                                    <div className="flex items-center justify-center h-full px-3 bg-emerald-50 border-r border-emerald-100 text-emerald-600 text-xs font-bold">$</div>
-                                    <FormattedNumberInput value={scenario.earnestMoney || 0} onChangeValue={(val) => handleInputChange('earnestMoney', val)} className="h-full px-4 text-sm text-emerald-900 font-medium" />
-                                </div>
+                    <div className="mb-8 grid grid-cols-1 md:grid-cols-4 gap-4">
+                        {/* Earnest Money */}
+                        <div className="col-span-1 bg-emerald-50/50 p-4 rounded-lg border border-emerald-100/60 h-28 flex flex-col justify-between">
+                             <label className="block text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-0.5">Earnest Money</label>
+                             <div className="flex items-center w-full bg-white border border-emerald-200 rounded-lg shadow-sm h-10 overflow-hidden mt-auto">
+                                <div className="flex items-center justify-center h-full px-3 bg-emerald-50 border-r border-emerald-100 text-emerald-600 text-xs font-bold">$</div>
+                                <FormattedNumberInput value={scenario.earnestMoney || 0} onChangeValue={(val) => handleInputChange('earnestMoney', val)} className="h-full px-4 text-sm text-emerald-900 font-medium" />
                             </div>
-                        )}
+                        </div>
 
-                        {/* Seller Concessions - Only show for Purchase */}
-                        {scenario.transactionType === 'Purchase' && (
-                            <div className="col-span-1 md:col-span-2 bg-indigo-50/50 p-4 rounded-lg border border-indigo-100/60 h-28 flex flex-col justify-between">
+                        {/* Seller Concessions */}
+                        <div className="col-span-1 md:col-span-2 bg-indigo-50/50 p-4 rounded-lg border border-indigo-100/60 h-28 flex flex-col justify-between">
                             <div className="flex justify-between items-start">
                                 <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest ml-0.5">Seller Concessions</label>
                                 <button onClick={() => setScenario(prev => ({ ...prev, showSellerConcessions: !prev.showSellerConcessions }))} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showSellerConcessions ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
@@ -934,8 +813,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             ) : (
                                 <div className="h-10 mt-auto w-full bg-slate-200/20 rounded-lg border border-transparent flex items-center justify-center text-xs text-slate-400 italic font-medium">Disabled</div>
                             )}
-                            </div>
-                        )}
+                        </div>
 
                         {/* Lender Credit */}
                         <div className="col-span-1 bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between">
@@ -991,23 +869,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             {/* Cost Render Logic */}
                                             {cost.id === 'prepaid-interest' ? (
                                                 <div className="flex items-center gap-3">
-                                                     <div className={`flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden ${scenario.settlementDate ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'focus-within:ring-1 focus-within:ring-indigo-500'}`}>
-                                                        <input 
-                                                            type="number" 
-                                                            value={scenario.settlementDate ? results.prepaidInterestDays : (cost.days ?? 0)} 
-                                                            onChange={(e) => {
-                                                                if (!scenario.settlementDate) {
-                                                                    updateCostDays(cost.id, e.target.value);
-                                                                }
-                                                            }} 
-                                                            onWheel={handleWheel} 
-                                                            disabled={!!scenario.settlementDate}
-                                                            className={`w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium ${scenario.settlementDate ? 'cursor-not-allowed text-slate-500' : ''}`} 
-                                                        />
+                                                     <div className="flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500">
+                                                        <input type="number" value={cost.days ?? 0} onChange={(e) => updateCostDays(cost.id, e.target.value)} onWheel={handleWheel} className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium" />
                                                         <span className="px-3 text-slate-400 text-xs font-bold bg-slate-50 h-full flex items-center border-l border-slate-200">d</span>
                                                      </div>
                                                      <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
-                                                         {formatMoney(scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)))}
+                                                         {formatMoney((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0))}
                                                      </div>
                                                 </div>
                                             ) : (cost.id === 'prepaid-insurance' || cost.id === 'tax-reserves' || cost.id === 'insurance-reserves' || cost.id === 'hoa-prepay') ? (
@@ -1023,57 +890,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                           {cost.id === 'hoa-prepay' && formatMoney(scenario.hoaMonthly * (cost.months || 0))}
                                                      </div>
                                                 </div>
-                                            ) : cost.id === 'title-insurance' ? (
-                                                // Lenders Title Insurance - calculated based on loan amount, but editable with calculated hint
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                                                        <div className="flex items-center justify-center h-full px-2 bg-slate-50 border-r border-slate-200 text-slate-300 text-[9px] font-normal min-w-[3.5rem]">
-                                                            {Math.round(calculateLendersTitleInsurance(results.totalLoanAmount)).toLocaleString()}
-                                                        </div>
-                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
-                                                        <FormattedNumberInput 
-                                                            value={cost.amount || calculateLendersTitleInsurance(results.totalLoanAmount)} 
-                                                            onChangeValue={(val) => updateCost(cost.id, val)} 
-                                                            className="w-full px-3 pr-5 text-right text-sm text-slate-900 font-medium" 
-                                                        />
-                                                    </div>
-                                                </div>
                                             ) : (
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                                                        {/* Only discount-points and Other Fees can toggle between $ and %} */}
-                                                        {(cost.id === 'discount-points' || (cost.category === 'Other Fees' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay')) ? (
-                                                            <>
-                                                                {cost.isFixed ? (
-                                                                    <>
-                                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
-                                                                        <FormattedNumberInput 
-                                                                            value={cost.amount} 
-                                                                            onChangeValue={(val) => updateCost(cost.id, val)} 
-                                                                            className="w-full px-3 pr-5 text-right text-sm text-slate-900 font-medium" 
-                                                                        />
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <LiveDecimalInput 
-                                                                            value={cost.amount} 
-                                                                            onChange={(val) => updateCost(cost.id, val)} 
-                                                                            className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium"
-                                                                            precision={3}
-                                                                        />
-                                                                         <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">%</div>
-                                                                    </>
-                                                                )}
-                                                                <button 
-                                                                    onClick={() => toggleCostFixed(cost.id)}
-                                                                    className="h-full px-2 border-l border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                                                                    title="Toggle Unit"
-                                                                >
-                                                                    <ArrowLeftRight size={14} />
-                                                                </button>
-                                                            </>
-                                                        ) : (
-                                                            /* All other fields are fixed dollar amounts only */
+                                                        {cost.isFixed ? (
                                                             <>
                                                                 <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
                                                                 <FormattedNumberInput 
@@ -1082,7 +902,24 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                                     className="w-full px-3 pr-5 text-right text-sm text-slate-900 font-medium" 
                                                                 />
                                                             </>
+                                                        ) : (
+                                                            <>
+                                                                <LiveDecimalInput 
+                                                                    value={cost.amount} 
+                                                                    onChange={(val) => updateCost(cost.id, val)} 
+                                                                    className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium"
+                                                                    precision={3}
+                                                                />
+                                                                 <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">%</div>
+                                                            </>
                                                         )}
+                                                        <button 
+                                                            onClick={() => toggleCostFixed(cost.id)}
+                                                            className="h-full px-2 border-l border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                            title="Toggle Unit"
+                                                        >
+                                                            <ArrowLeftRight size={14} />
+                                                        </button>
                                                     </div>
                                                 </div>
                                             )}
@@ -1177,20 +1014,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                              <h3 className="flex items-center gap-2 text-slate-900 font-bold text-sm uppercase tracking-wide">
                                 <Wallet size={16} className="text-slate-400" /> Down Payment Assistance
                             </h3>
-                            <CustomCheckbox 
-                                checked={scenario.dpa.active} 
-                                onChange={(c) => {
-                                    setScenario(prev => {
-                                        // If disabling first DPA, also disable second DPA
-                                        const updated = { ...prev, dpa: { ...prev.dpa, active: c } };
-                                        if (!c && prev.dpa2?.active) {
-                                            updated.dpa2 = undefined;
-                                        }
-                                        return updated;
-                                    });
-                                }} 
-                                label="Enable DPA" 
-                            />
+                            <CustomCheckbox checked={scenario.dpa.active} onChange={(c) => setScenario(prev => ({ ...prev, dpa: { ...prev.dpa, active: c } }))} label="Enable DPA" />
                         </div>
 
                          <div className={`space-y-5 transition-all ${!scenario.dpa.active ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1237,140 +1061,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                  )}
                             </div>
                          </div>
-                         
-                         {/* Second DPA Section */}
-                         <div className={`pt-6 border-t border-slate-200 ${!scenario.dpa.active ? 'opacity-50' : ''}`}>
-                            <div className="flex justify-between items-start mb-4">
-                                <h4 className="text-slate-700 font-semibold text-xs uppercase tracking-wide">Second DPA</h4>
-                                <div 
-                                    onClick={(e) => {
-                                        if (!scenario.dpa.active) {
-                                            e.stopPropagation();
-                                            return;
-                                        }
-                                    }}
-                                    className={!scenario.dpa.active ? 'cursor-not-allowed' : ''}
-                                >
-                                    <CustomCheckbox 
-                                        checked={scenario.dpa2?.active || false} 
-                                        onChange={(c) => {
-                                            if (!scenario.dpa.active) return; // Prevent enabling if first DPA is not active
-                                            setScenario(prev => ({ 
-                                                ...prev, 
-                                                dpa2: c ? {
-                                                    active: true,
-                                                    amount: 0,
-                                                    percent: 0,
-                                                    rate: 7.5,
-                                                    termMonths: 120,
-                                                    payment: 0,
-                                                    isDeferred: false
-                                                } : undefined
-                                            }));
-                                        }} 
-                                        label="Enable Second DPA" 
-                                    />
-                                </div>
-                            </div>
-                            {!scenario.dpa.active && (
-                                <p className="text-[9px] text-slate-400 mb-3 italic">Enable first DPA to use second DPA</p>
-                            )}
-                            
-                            <div className={`space-y-4 transition-all ${!scenario.dpa2?.active || !scenario.dpa.active ? 'opacity-40 pointer-events-none max-h-0 overflow-hidden' : 'max-h-[500px]'}`}>
-                                {scenario.dpa2?.active && (
-                                    <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-3 mb-4">
-                                        <p className="text-xs text-amber-900 font-semibold flex items-start gap-2">
-                                            <AlertTriangle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                                            <span>⚠️ Using a second DPA - please verify program guidelines allow stacking multiple DPA programs</span>
-                                        </p>
-                                    </div>
-                                )}
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={labelClass}>Assistance Amount ($)</label>
-                                        <div className={inputGroupClass}>
-                                            <div className={symbolClass}>$</div>
-                                            <FormattedNumberInput 
-                                                value={scenario.dpa2?.amount || 0} 
-                                                onChangeValue={(val) => handleDPAChange('amount', val, true)} 
-                                                className="h-full px-4 text-sm text-slate-900 font-medium" 
-                                            />
-                                        </div>
-                                        {scenario.dpa2?.active && (
-                                            <p className="text-[9px] text-amber-600 mt-1 ml-0.5 italic">Second DPA active - check guidelines</p>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Assistance Amount (%)</label>
-                                        <div className={inputGroupClass}>
-                                            <LiveDecimalInput 
-                                                value={scenario.dpa2?.percent || 0} 
-                                                onChange={(val) => handleDPAChange('percent', val, true)} 
-                                                className="h-full pl-4 pr-4 text-right text-sm text-slate-900 font-medium" 
-                                            />
-                                            <div className={symbolRightClass}>%</div>
-                                        </div>
-                                        {scenario.dpa2?.active && (
-                                            <p className="text-[9px] text-amber-600 mt-1 ml-0.5 italic">Second DPA active - check guidelines</p>
-                                        )}
-                                    </div>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={labelClass}>Interest Rate</label>
-                                        <div className={inputGroupClass}>
-                                            <LiveDecimalInput 
-                                                value={scenario.dpa2?.rate || 0} 
-                                                onChange={(val) => setScenario(prev => ({
-                                                    ...prev, 
-                                                    dpa2: prev.dpa2 ? {...prev.dpa2, rate: val} : undefined
-                                                }))} 
-                                                step="0.125" 
-                                                precision={3} 
-                                                className="h-full pl-4 pr-4 text-right text-sm text-slate-900 font-medium" 
-                                            />
-                                            <div className={symbolRightClass}>%</div>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Term (Months)</label>
-                                        <div className={inputGroupClass}>
-                                            <input 
-                                                type="number" 
-                                                value={scenario.dpa2?.termMonths || ''} 
-                                                onChange={(e) => setScenario(prev => ({
-                                                    ...prev, 
-                                                    dpa2: prev.dpa2 ? {...prev.dpa2, termMonths: parseFloat(e.target.value)} : undefined
-                                                }))} 
-                                                onWheel={handleWheel} 
-                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium" 
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                    <CustomCheckbox 
-                                        checked={scenario.dpa2?.isDeferred || false} 
-                                        onChange={(c) => setScenario(prev => ({
-                                            ...prev, 
-                                            dpa2: prev.dpa2 ? {...prev.dpa2, isDeferred: c} : undefined
-                                        }))} 
-                                        label="Deferred Payment (Silent Second)" 
-                                    />
-                                    {scenario.dpa2 && !scenario.dpa2.isDeferred && (
-                                        <div className="mt-3 flex justify-between items-center text-sm">
-                                            <span className="text-slate-500 font-medium">Monthly DPA2 Payment</span>
-                                            <span className="font-mono font-bold text-slate-900">
-                                                {results.monthlyDPA2Payment ? formatMoney(results.monthlyDPA2Payment) : '$0'}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                         </div>
                      </div>
                 </div>
             )}
@@ -1382,62 +1072,104 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         <Briefcase size={16} className="text-slate-400" /> Income & Eligibility
                     </h3>
                     
+                    {/* DSCR Loan Toggle (Investment Properties Only) */}
+                    {scenario.occupancyType === 'Investment Property' && (
+                        <div className="mb-6 p-4 rounded-lg border-2 bg-indigo-50 border-indigo-200">
+                            <CustomCheckbox 
+                                checked={scenario.isDSCRLoan || false} 
+                                onChange={(checked) => handleInputChange('isDSCRLoan', checked)} 
+                                label="DSCR Loan" 
+                                warning="Borrower income and debt information will be ignored. Only rental income and DSCR ratio will be used for qualification." 
+                            />
+                        </div>
+                    )}
+                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                          <div className="space-y-4">
                              <h4 className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Monthly Income</h4>
-                             <div>
-                                <label className={labelClass}>Borrower 1 Income</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.income?.borrower1 || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, borrower1: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className={labelClass}>Borrower 2 Income</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.income?.borrower2 || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, borrower2: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                </div>
-                            </div>
+                             {!scenario.isDSCRLoan && (
+                                 <>
+                                     <div>
+                                        <label className={labelClass}>Borrower 1 Income</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput value={scenario.income?.borrower1 || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, borrower1: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>Borrower 2 Income</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput value={scenario.income?.borrower2 || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, borrower2: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                        </div>
+                                    </div>
+                                 </>
+                             )}
+                             {scenario.isDSCRLoan && (
+                                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                     <p className="text-[10px] text-slate-500 italic">Borrower income not used for DSCR loans</p>
+                                 </div>
+                             )}
                             <div>
                                 <div className="flex justify-between items-end mb-1.5">
                                     <label className={labelClass}>Rental Income / ADU</label>
-                                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                                        Used: {formatMoney(results.income.effectiveRental)}
-                                    </span>
+                                    {scenario.isDSCRLoan ? (
+                                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                            DSCR: {results.dscr?.ratio.toFixed(2) || '0.00'}
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                            Used: {formatMoney(results.income.effectiveRental)} <span className="text-emerald-500">(75%)</span>
+                                        </span>
+                                    )}
                                 </div>
                                 <div className={inputGroupClass}>
                                     <div className={symbolClass}>$</div>
                                     <FormattedNumberInput value={scenario.income?.rental || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, rental: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                 </div>
-                                <p className="text-[10px] text-slate-400 mt-1 italic">75% vacancy factor applied automatically</p>
+                                <p className="text-[10px] text-slate-400 mt-1 italic">
+                                    {scenario.isDSCRLoan 
+                                        ? 'Gross monthly rental income used for DSCR calculation only.' 
+                                        : scenario.occupancyType === 'Investment Property' 
+                                        ? '75% used for DTI calculation. Gross amount used for DSCR.' 
+                                        : '75% vacancy factor applied automatically'}
+                                </p>
                             </div>
                          </div>
 
                          <div className="space-y-4">
                             <h4 className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">Monthly Debts</h4>
-                             <div>
-                                <label className={labelClass}>Total Monthly Liabilities</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.debts?.monthlyTotal || 0} onChangeValue={(val) => setScenario(prev => ({...prev, debts: {...prev.debts, monthlyTotal: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1">Credit cards, auto loans, student loans, etc.</p>
-                            </div>
-                            
-                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-6">
-                                <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">DTI Ratios</h5>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-slate-600">Front-End (Housing)</span>
-                                        <span className={`font-bold ${results.dti.frontEnd > 47 ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.frontEnd.toFixed(2)}%</span>
+                             {!scenario.isDSCRLoan && (
+                                 <>
+                                     <div>
+                                        <label className={labelClass}>Total Monthly Liabilities</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput value={scenario.debts?.monthlyTotal || 0} onChangeValue={(val) => setScenario(prev => ({...prev, debts: {...prev.debts, monthlyTotal: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-1">Credit cards, auto loans, student loans, etc.</p>
                                     </div>
-                                     <div className="flex justify-between text-sm">
-                                        <span className="text-slate-600">Back-End (Total)</span>
-                                        <span className={`font-bold ${results.dti.backEnd > 50 ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.backEnd.toFixed(2)}%</span>
+                                    
+                                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-6">
+                                        <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">DTI Ratios</h5>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-slate-600">Front-End (Housing)</span>
+                                                <span className={`font-bold ${results.dti.frontEnd > 47 ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.frontEnd.toFixed(2)}%</span>
+                                            </div>
+                                             <div className="flex justify-between text-sm">
+                                                <span className="text-slate-600">Back-End (Total)</span>
+                                                <span className={`font-bold ${results.dti.backEnd > 50 ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.backEnd.toFixed(2)}%</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
+                                 </>
+                             )}
+                             {scenario.isDSCRLoan && (
+                                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                     <p className="text-[10px] text-slate-500 italic">Debt information not used for DSCR loans</p>
+                                 </div>
+                             )}
                          </div>
                     </div>
 
@@ -1488,14 +1220,28 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             {formatMoney(results.totalMonthlyPayment)}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 mb-1.5">
-                             <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.frontEnd > 47 ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                 <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
-                                 <span>{results.dti.frontEnd.toFixed(1)}%</span>
-                             </div>
-                             <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.backEnd > 50 ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                 <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
-                                 <span>{results.dti.backEnd.toFixed(1)}%</span>
-                             </div>
+                             {scenario.occupancyType === 'Investment Property' && results.dscr ? (
+                                 <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg bg-slate-50 border-2 ${results.dscr.passes ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                                     <span className="text-slate-500 uppercase text-[10px] font-bold tracking-wider">DSCR</span>
+                                     <span className={`text-2xl font-black ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
+                                         {results.dscr.ratio.toFixed(2)}
+                                     </span>
+                                     <span className={`text-[9px] font-bold uppercase ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
+                                         {results.dscr.passes ? 'Pass' : 'Fail'}
+                                     </span>
+                                 </div>
+                             ) : !scenario.isDSCRLoan ? (
+                                 <>
+                                     <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.frontEnd > 47 ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
+                                         <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
+                                         <span>{results.dti.frontEnd.toFixed(1)}%</span>
+                                     </div>
+                                     <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.backEnd > 50 ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
+                                         <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
+                                         <span>{results.dti.backEnd.toFixed(1)}%</span>
+                                     </div>
+                                 </>
+                             ) : null}
                         </div>
                     </div>
                     {scenario.buydown.active && (
@@ -1504,21 +1250,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                          </div>
                     )}
 
-                     {/* Total Loan Amount & LTV Display */}
-                    <div className="mt-3 pt-3 border-t border-slate-100/50 space-y-2">
-                        <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
-                            <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
-                        </div>
-                        {/* Prominent LTV display for both Purchase and Refinance */}
-                        <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
-                            <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Loan-to-Value (LTV)</span>
-                                <span className="text-lg font-black text-indigo-600">
-                                    {results.ltv.toFixed(2)}%
-                                </span>
-                            </div>
-                        </div>
+                     {/* NEW: Total Loan Amount Subtle Display */}
+                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-100/50">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
+                        <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
                     </div>
                 </div>
                 
@@ -1548,14 +1283,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </div>
                          {scenario.dpa.active && !scenario.dpa.isDeferred && (
                              <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
-                                <span>DPA Loan (1st)</span>
-                                <span className="font-bold">{formatMoney(results.monthlyDPAPayment)}</span>
-                            </div>
-                        )}
-                         {scenario.dpa2?.active && !scenario.dpa2.isDeferred && (
-                             <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
                                 <span>DPA Loan (2nd)</span>
-                                <span className="font-bold">{formatMoney(results.monthlyDPA2Payment)}</span>
+                                <span className="font-bold">{formatMoney(results.monthlyDPAPayment)}</span>
                             </div>
                         )}
                          {scenario.buydown.active && (
@@ -1569,57 +1298,42 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
                 {/* Cash To Close Card */}
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-sm mt-4">
-                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}</h3>
+                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Cash to Close Statement</h3>
                      <div className="space-y-2 mb-3 text-sm">
-                         {scenario.transactionType === 'Purchase' ? (
-                             <>
-                                 <div className="flex justify-between text-slate-600">
-                                     <span>Down Payment</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
-                                 </div>
-                                  <div className="flex justify-between text-slate-600">
-                                     <span>Closing Costs (Net)</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
-                                 </div>
-                                 {scenario.dpa.active && (
-                                     <div className="flex justify-between text-emerald-600">
-                                         <span>DPA Funding</span>
-                                         <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
-                                     </div>
-                                 )}
-                                 
-                                 {/* Subtotal before Earnest Money */}
-                                 <div className="border-t border-slate-300 pt-2 mt-2 flex justify-between items-center">
-                                     <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
-                                     <span className="text-lg font-bold text-slate-900">
-                                         {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
-                                     </span>
-                                 </div>
-                                 
-                                 {/* Earnest Money Deduction */}
-                                 <div className="mb-4">
-                                     <div className="flex justify-between text-emerald-600 text-sm">
-                                         <span>Earnest Money</span>
-                                         <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
-                                     </div>
-                                 </div>
-                             </>
-                         ) : (
-                             <>
-                                 <div className="flex justify-between text-slate-600">
-                                     <span>Cash Out</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
-                                 </div>
-                                  <div className="flex justify-between text-slate-600">
-                                     <span>Closing Costs (Net)</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
-                                 </div>
-                             </>
+                         <div className="flex justify-between text-slate-600">
+                             <span>Down Payment</span>
+                             <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
+                         </div>
+                          <div className="flex justify-between text-slate-600">
+                             <span>Closing Costs (Net)</span>
+                             <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
+                         </div>
+                         {scenario.dpa.active && (
+                             <div className="flex justify-between text-emerald-600">
+                                 <span>DPA Funding</span>
+                                 <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
+                             </div>
                          )}
                      </div>
                      
+                     {/* Subtotal before Earnest Money */}
+                     <div className="border-t border-slate-300 pt-2 mb-3 flex justify-between items-center">
+                         <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
+                         <span className="text-lg font-bold text-slate-900">
+                             {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
+                         </span>
+                     </div>
+                     
+                     {/* Earnest Money Deduction */}
+                     <div className="mb-4">
+                         <div className="flex justify-between text-emerald-600 text-sm">
+                             <span>Earnest Money</span>
+                             <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
+                         </div>
+                     </div>
+                     
                      <div className="border-t border-slate-200 pt-3 flex justify-between items-end">
-                         <span className="text-xs font-bold text-slate-500 uppercase">{scenario.transactionType === 'Purchase' ? 'Cash Required' : 'Cash to Close'}</span>
+                         <span className="text-xs font-bold text-slate-500 uppercase">Cash Required</span>
                          <span className={`text-3xl font-black tracking-tight ${results.cashToClose < 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
                              {formatMoney(results.cashToClose)}
                          </span>
@@ -1671,6 +1385,28 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
       {/* --- Modals --- */}
       
+      {/* AI Analysis Modal */}
+      <Modal isOpen={showAIModal} onClose={() => setShowAIModal(false)} title="AI Scenario Analysis" maxWidth="max-w-2xl">
+          {analyzing ? (
+              <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-4">
+                  <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs font-bold uppercase tracking-widest animate-pulse">Analyzing Loan Structure...</p>
+              </div>
+          ) : (
+              <div className="prose prose-sm prose-slate max-w-none">
+                  {/* Render Markdown-like text safely */}
+                  {aiAnalysis.split('\n').map((line, i) => (
+                      <p key={i} className={`mb-2 ${line.startsWith('**') ? 'font-bold text-slate-800' : ''}`}>
+                          {line.replace(/\*\*/g, '')}
+                      </p>
+                  ))}
+                  <div className="mt-8 pt-4 border-t border-slate-100 text-[10px] text-slate-400 font-medium text-center">
+                      AI analysis is for informational purposes only and does not constitute a formal underwriting decision.
+                  </div>
+              </div>
+          )}
+      </Modal>
+
       {/* History Modal */}
       <Modal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} title="Scenario History" maxWidth="max-w-xl">
            <div className="space-y-4">
@@ -1827,95 +1563,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                   </div>
               </button>
           </div>
-       </Modal>
-
-       {/* Submission Email Modal */}
-       <Modal 
-         isOpen={showSubmissionModal} 
-         onClose={() => {
-           setShowSubmissionModal(false);
-           if (submissionPdfUrl) {
-             URL.revokeObjectURL(submissionPdfUrl);
-             setSubmissionPdfUrl(null);
-           }
-           setSubmissionMissingInfo([]);
-         }} 
-         title="Submission Email PDF" 
-         maxWidth="max-w-6xl" 
-         noPadding={false}
-       >
-         {generatingSubmission ? (
-           <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-4">
-             <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-             <p className="text-xs font-bold uppercase tracking-widest animate-pulse">Generating Submission Email...</p>
-             <p className="text-xs text-slate-500 mt-2">AI is analyzing scenario and structuring content</p>
-           </div>
-         ) : submissionPdfUrl ? (
-           <div className="space-y-4">
-             {submissionMissingInfo.length > 0 && (
-               <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-4">
-                 <h4 className="text-sm font-bold text-amber-900 mb-2 flex items-center gap-2">
-                   <AlertTriangle size={16} />
-                   Missing Information Detected
-                 </h4>
-                 <div className="space-y-2 max-h-40 overflow-y-auto">
-                   {submissionMissingInfo
-                     .filter(item => item.priority === 'critical')
-                     .map((item, idx) => (
-                       <div key={idx} className="text-xs text-amber-800">
-                         <span className="font-bold">• {item.item}:</span> {item.question}
-                       </div>
-                     ))}
-                   {submissionMissingInfo.filter(item => item.priority === 'critical').length === 0 && (
-                     <p className="text-xs text-amber-700 italic">No critical missing information detected</p>
-                   )}
-                 </div>
-                 {submissionMissingInfo.length > submissionMissingInfo.filter(item => item.priority === 'critical').length && (
-                   <p className="text-xs text-amber-700 mt-2 italic">
-                     + {submissionMissingInfo.length - submissionMissingInfo.filter(item => item.priority === 'critical').length} additional items (see PDF)
-                   </p>
-                 )}
-               </div>
-             )}
-             
-             <div className="flex gap-3">
-               <button
-                 onClick={() => {
-                   const link = document.createElement('a');
-                   link.href = submissionPdfUrl;
-                   link.download = submissionFilename;
-                   document.body.appendChild(link);
-                   link.click();
-                   document.body.removeChild(link);
-                 }}
-                 className="flex-1 flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors text-xs uppercase tracking-wide"
-               >
-                 <Download size={16} />
-                 Download PDF
-               </button>
-               <button
-                 onClick={() => {
-                   setShowSubmissionModal(false);
-                   if (submissionPdfUrl) {
-                     URL.revokeObjectURL(submissionPdfUrl);
-                     setSubmissionPdfUrl(null);
-                   }
-                 }}
-                 className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-lg font-bold hover:bg-slate-200 transition-colors text-xs uppercase tracking-wide"
-               >
-                 Close
-               </button>
-             </div>
-             
-             <div className="border border-slate-200 rounded-lg overflow-hidden" style={{ height: '600px' }}>
-               <iframe
-                 src={submissionPdfUrl}
-                 className="w-full h-full"
-                 title="Submission Email Preview"
-               />
-             </div>
-           </div>
-         ) : null}
        </Modal>
 
        {/* Pre-Approval Preview Modal */}

@@ -15,12 +15,9 @@ export const DEFAULT_CLOSING_COSTS = [
   { id: 'flood-cert', category: 'Third Party Fees', name: 'Flood Certification', amount: 15, isFixed: true },
   
   // Title / Gov
-  { id: 'closing-protection-letter', category: 'Title & Government', name: 'Closing Protection Letter Fee', amount: 25, isFixed: true },
-  { id: 'endorsement-fee', category: 'Title & Government', name: 'Endorsement Fee', amount: 55, isFixed: true },
-  { id: 'e-recording-fee', category: 'Title & Government', name: 'E-recording Fee', amount: 10, isFixed: true },
-  { id: 'recording-fee', category: 'Title & Government', name: 'Recording Fee', amount: 80, isFixed: true },
-  { id: 'settlement-fee', category: 'Title & Government', name: 'Settlement Fee', amount: 395, isFixed: true },
-  { id: 'title-insurance', category: 'Title & Government', name: 'Lenders Title Insurance', amount: 0, isFixed: true }, // Calculated based on loan amount tiers, but editable
+  { id: 'title-insurance', category: 'Title & Government', name: 'Title Insurance (Lender)', amount: 0.5, isFixed: false }, // Percentage of loan
+  { id: 'recording', category: 'Title & Government', name: 'Recording Fees', amount: 150, isFixed: true },
+  { id: 'settlement', category: 'Title & Government', name: 'Settlement / Closing Fee', amount: 500, isFixed: true },
 
   // Escrows & Prepaids
   { id: 'prepaid-interest', category: 'Escrows/Prepaids', name: 'Prepaid Interest', amount: 0, isFixed: true, days: 15 },
@@ -43,11 +40,8 @@ export const DEFAULT_SCENARIO: Scenario = {
   id: '',
   name: 'New Scenario',
   clientName: '',
-  transactionType: 'Purchase',
   propertyAddress: '',
   isAddressTBD: false,
-  faDate: undefined,
-  settlementDate: undefined,
   dateCreated: new Date().toISOString(),
   lastUpdated: new Date().toISOString(),
   history: [], 
@@ -73,6 +67,7 @@ export const DEFAULT_SCENARIO: Scenario = {
   interestRate: 6.5,
   loanTermMonths: 360,
   interestOnly: false,
+  isDSCRLoan: false,
   creditScore: 740,
   manualMI: null,
   
