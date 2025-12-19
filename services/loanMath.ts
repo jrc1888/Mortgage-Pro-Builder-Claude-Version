@@ -15,6 +15,71 @@ const safeNum = (val: any): number => {
   return isNaN(n) ? 0 : n;
 };
 
+// Calculate prepaid interest days from settlement date to end of month
+export const calculatePrepaidInterestDays = (settlementDateISO?: string): number => {
+  if (!settlementDateISO) return 0;
+  
+  try {
+    const settlementDate = new Date(settlementDateISO);
+    if (isNaN(settlementDate.getTime())) return 0;
+    
+    // Get the last day of the settlement month
+    const year = settlementDate.getFullYear();
+    const month = settlementDate.getMonth();
+    const lastDayOfMonth = new Date(year, month + 1, 0);
+    
+    // Calculate days from settlement date to end of month (inclusive)
+    const daysDiff = lastDayOfMonth.getDate() - settlementDate.getDate() + 1;
+    
+    return Math.max(0, daysDiff);
+  } catch {
+    return 0;
+  }
+};
+
+// Calculate prepaid interest amount
+export const calculatePrepaidInterest = (
+  loanAmount: number,
+  annualInterestRate: number,
+  settlementDateISO?: string,
+  manualDays?: number
+): number => {
+  if (loanAmount <= 0 || annualInterestRate <= 0) return 0;
+  
+  let days = 0;
+  if (settlementDateISO) {
+    days = calculatePrepaidInterestDays(settlementDateISO);
+  } else if (manualDays !== undefined) {
+    days = manualDays;
+  } else {
+    return 0;
+  }
+  
+  if (days === 0) return 0;
+  
+  // Daily interest = (Loan Amount × Annual Rate) / 365
+  const dailyInterest = (loanAmount * (annualInterestRate / 100)) / 365;
+  
+  // Prepaid interest = Daily Interest × Days
+  return dailyInterest * days;
+};
+
+// Calculate Lenders Title Insurance based on loan amount tiers
+export const calculateLendersTitleInsurance = (loanAmount: number): number => {
+  if (loanAmount <= 0) return 0;
+  
+  if (loanAmount <= 250000) {
+    // ≤ $250,000: 0.37% × loan amount
+    return loanAmount * 0.0037;
+  } else if (loanAmount < 550000) {
+    // $250,000–$550,000 (exclusive of $550k): 0.30% × loan amount
+    return loanAmount * 0.0030;
+  } else {
+    // ≥ $550,000: $1,650 flat
+    return 1650;
+  }
+};
+
 export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // Ensure we work with numbers even if state has bad data
   const purchasePrice = safeNum(scenario.purchasePrice);
@@ -102,8 +167,23 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     }
   }
 
-  // Common fixed monthly costs (Tax, Ins, MI, HOA, DPA)
-  const fixedMonthlyCosts = (propertyTaxYearly / 12) + (homeInsuranceYearly / 12) + monthlyMI + hoaMonthly + dpaPayment;
+  // 5b. Second DPA
+  let dpa2Payment = 0;
+  if (scenario.dpa2?.active) {
+    if (scenario.dpa2.isDeferred) {
+        dpa2Payment = 0;
+    } else {
+        const dpa2Amount = safeNum(scenario.dpa2.amount);
+        const dpa2Rate = safeNum(scenario.dpa2.rate);
+        const dpa2Term = safeNum(scenario.dpa2.termMonths) || 120;
+        
+        const dpa2MonthlyRate = (dpa2Rate / 100) / 12;
+        dpa2Payment = calculatePMT(dpa2MonthlyRate, dpa2Term, dpa2Amount);
+    }
+  }
+
+  // Common fixed monthly costs (Tax, Ins, MI, HOA, DPA, DPA2)
+  const fixedMonthlyCosts = (propertyTaxYearly / 12) + (homeInsuranceYearly / 12) + monthlyMI + hoaMonthly + dpaPayment + dpa2Payment;
 
   // 6. Buydown Calculation (Subsidy)
   let buydownCost = 0;
@@ -159,13 +239,33 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   }
 
   // 7. Closing Costs
+  // Calculate prepaid interest first (from settlement date if available, otherwise from manual input)
+  const prepaidInterestDays = calculatePrepaidInterestDays(scenario.settlementDate);
+  const prepaidInterest = scenario.settlementDate 
+    ? calculatePrepaidInterest(totalLoanAmount, interestRate, scenario.settlementDate)
+    : 0;
+  
   const totalClosingCosts = (scenario.closingCosts || []).reduce((sum, item) => {
     if (item.id === 'prepaid-interest') {
-        const days = item.days || 0;
-        const annualInterest = totalLoanAmount * (interestRate / 100);
-        const dailyInterest = annualInterest / 365;
-        const cost = dailyInterest * days;
-        return sum + cost;
+        // If settlement date exists, use calculated prepaid interest
+        // Otherwise, use manual days input
+        if (scenario.settlementDate) {
+            return sum + prepaidInterest;
+        } else {
+            const days = item.days || 0;
+            const annualInterest = totalLoanAmount * (interestRate / 100);
+            const dailyInterest = annualInterest / 365;
+            const cost = dailyInterest * days;
+            return sum + cost;
+        }
+    }
+    if (item.id === 'title-insurance') {
+        // Use manual amount if set, otherwise calculate based on loan amount tiers
+        const manualAmount = safeNum(item.amount);
+        if (manualAmount > 0) {
+            return sum + manualAmount;
+        }
+        return sum + calculateLendersTitleInsurance(totalLoanAmount);
     }
     if (item.id === 'prepaid-insurance' || item.id === 'insurance-reserves') {
         const months = item.months || 0;
@@ -225,14 +325,27 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
 
   // 10. Cash / Funds Required
   const dpaAmount = scenario.dpa.active ? safeNum(scenario.dpa.amount) : 0;
+  const dpa2Amount = scenario.dpa2?.active ? safeNum(scenario.dpa2.amount) : 0;
+  const totalDPAAmount = dpaAmount + dpa2Amount;
   
-  // Logic: Total funds required = down + net closing costs - dpa
-  const totalFundsRequired = downPaymentAmount + netClosingCosts - dpaAmount;
+  // 10. Cash / Funds Required
+  // Note: Prepaid interest is already included in netClosingCosts when settlement date exists
+  // Logic: Total funds required = down + net closing costs - dpa - dpa2
+  const totalFundsRequired = downPaymentAmount + netClosingCosts - totalDPAAmount;
   
   // Cash To Close = Funds Required - Earnest
   const cashToClose = totalFundsRequired - earnestMoney;
 
-  const isDPAExcessive = dpaAmount > (downPaymentAmount + Math.max(0, netClosingCosts)); 
+  const isDPAExcessive = totalDPAAmount > (downPaymentAmount + Math.max(0, netClosingCosts));
+  
+  // Calculate prepaid interest for results (for display purposes)
+  // Note: prepaidInterestDays and prepaidInterest are already calculated above in the closing costs section
+  const finalPrepaidInterestDays = scenario.settlementDate 
+    ? prepaidInterestDays 
+    : (scenario.closingCosts?.find(c => c.id === 'prepaid-interest')?.days || 0);
+  const finalPrepaidInterest = scenario.settlementDate 
+    ? prepaidInterest 
+    : calculatePrepaidInterest(totalLoanAmount, interestRate, undefined, finalPrepaidInterestDays); 
 
   // 11. Total Monthly Payment Display
   const baseMonthlyPayment = monthlyPrincipalAndInterest + fixedMonthlyCosts;
@@ -249,19 +362,15 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // Rental Income 75%
   const effectiveRentalIncome = safeNum(income.rental) * 0.75;
   
-  // For DSCR loans, ignore borrower income and debts
-  const totalIncome = scenario.isDSCRLoan 
-    ? 0 // DSCR loans don't use borrower income for DTI
-    : safeNum(income.borrower1) + safeNum(income.borrower2) + effectiveRentalIncome + safeNum(income.other);
+  const totalIncome = safeNum(income.borrower1) + safeNum(income.borrower2) + effectiveRentalIncome + safeNum(income.other);
   
   const debts = scenario.debts || { monthlyTotal: 0 };
-  const totalMonthlyDebt = scenario.isDSCRLoan ? 0 : safeNum(debts.monthlyTotal); // DSCR loans ignore debts
+  const totalMonthlyDebt = safeNum(debts.monthlyTotal);
 
   let frontEndDTI = 0;
   let backEndDTI = 0;
 
-  // Only calculate DTI if not a DSCR loan
-  if (!scenario.isDSCRLoan && totalIncome > 0) {
+  if (totalIncome > 0) {
       // Use Note Rate Payment (baseMonthlyPayment) for qualification
       frontEndDTI = (baseMonthlyPayment / totalIncome) * 100;
       backEndDTI = ((baseMonthlyPayment + totalMonthlyDebt) / totalIncome) * 100;
@@ -311,13 +420,12 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
       return { maxHousingPayment, maxPrice, maxLoan, math };
   };
 
-  // Only calculate affordability if not a DSCR loan
-  const convAffordability = scenario.isDSCRLoan ? { maxHousingPayment: 0, maxPrice: 0, maxLoan: 0, math: [] } : calculateAffordability(46.99, 49.99); 
-  const fhaAffordability = scenario.isDSCRLoan ? { maxHousingPayment: 0, maxPrice: 0, maxLoan: 0, math: [] } : calculateAffordability(46.99, 57.00);
+  const convAffordability = calculateAffordability(46.99, 49.99); 
+  const fhaAffordability = calculateAffordability(46.99, 57.00);
 
-  // Check current scenario fit (always false for DSCR loans since DTI is not applicable)
-  const convPass = scenario.isDSCRLoan ? false : (frontEndDTI <= 46.99 && backEndDTI <= 49.99);
-  const fhaPass = scenario.isDSCRLoan ? false : (frontEndDTI <= 46.99 && backEndDTI <= 57.00);
+  // Check current scenario fit
+  const convPass = frontEndDTI <= 46.99 && backEndDTI <= 49.99;
+  const fhaPass = frontEndDTI <= 46.99 && backEndDTI <= 57.00;
 
   return {
     baseLoanAmount,
@@ -329,6 +437,7 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     monthlyMI,
     monthlyHOA: hoaMonthly,
     monthlyDPAPayment: dpaPayment,
+    monthlyDPA2Payment: dpa2Payment,
     totalMonthlyPayment,
     baseMonthlyPayment,
     totalClosingCosts,
@@ -341,6 +450,8 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     maxConcessionsAllowed,
     lenderCreditsAmount,
     cashToClose,
+    prepaidInterest: finalPrepaidInterest,
+    prepaidInterestDays: finalPrepaidInterestDays,
     buydownSchedule: scenario.buydown.active ? buydownSchedule : undefined,
     ltv,
     miRatePercent,
@@ -373,20 +484,6 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     },
     netClosingCosts,
     unusedCredits,
-    totalFundsRequired,
-    
-    // DSCR Calculation for Investment Properties
-    dscr: scenario.occupancyType === 'Investment Property' ? (() => {
-        const grossRentalIncome = safeNum(income.rental); // Monthly gross rental
-        const debtService = baseMonthlyPayment; // Total monthly payment (P&I + Tax + Ins + MI + HOA + DPA)
-        const dscrRatio = debtService > 0 ? grossRentalIncome / debtService : 0;
-        
-        return {
-            ratio: dscrRatio,
-            grossRentalIncome,
-            debtService,
-            passes: dscrRatio >= 1.0
-        };
-    })() : undefined
+    totalFundsRequired
   };
 };
