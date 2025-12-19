@@ -1382,11 +1382,25 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         <Briefcase size={16} className="text-slate-400" /> Income & Eligibility
                     </h3>
                     
+                    {/* DSCR Loan Toggle (Investment Properties Only) */}
+                    {scenario.occupancyType === 'Investment Property' && (
+                        <div className="mb-6 p-4 rounded-lg border-2 bg-indigo-50 border-indigo-200">
+                            <CustomCheckbox 
+                                checked={scenario.isDSCRLoan || false} 
+                                onChange={(checked) => handleInputChange('isDSCRLoan', checked)} 
+                                label="DSCR Loan" 
+                                warning="Borrower income and debt information will be ignored. Only rental income and DSCR ratio will be used for qualification." 
+                            />
+                        </div>
+                    )}
+                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                          <div className="space-y-4">
                              <h4 className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Monthly Income</h4>
-                             <div>
-                                <label className={labelClass}>Borrower 1 Income</label>
+                             {!scenario.isDSCRLoan && (
+                                 <>
+                                     <div>
+                                        <label className={labelClass}>Borrower 1 Income</label>
                                 <div className={inputGroupClass}>
                                     <div className={symbolClass}>$</div>
                                     <FormattedNumberInput value={scenario.income?.borrower1 || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, borrower1: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
@@ -1399,45 +1413,89 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     <FormattedNumberInput value={scenario.income?.borrower2 || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, borrower2: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                 </div>
                             </div>
+                                 </>
+                             )}
+                             {scenario.isDSCRLoan && (
+                                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                     <p className="text-[10px] text-slate-500 italic">Borrower income not used for DSCR loans</p>
+                                 </div>
+                             )}
                             <div>
                                 <div className="flex justify-between items-end mb-1.5">
                                     <label className={labelClass}>Rental Income / ADU</label>
-                                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                                        Used: {formatMoney(results.income.effectiveRental)}
-                                    </span>
+                                    {scenario.isDSCRLoan ? (
+                                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                            DSCR: {results.dscr?.ratio.toFixed(2) || '0.00'}
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                            Used: {formatMoney(results.income.effectiveRental)} <span className="text-emerald-500">(75%)</span>
+                                        </span>
+                                    )}
                                 </div>
                                 <div className={inputGroupClass}>
                                     <div className={symbolClass}>$</div>
                                     <FormattedNumberInput value={scenario.income?.rental || 0} onChangeValue={(val) => setScenario(prev => ({...prev, income: {...prev.income, rental: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                 </div>
-                                <p className="text-[10px] text-slate-400 mt-1 italic">75% vacancy factor applied automatically</p>
+                                <p className="text-[10px] text-slate-400 mt-1 italic">
+                                    {scenario.isDSCRLoan 
+                                        ? 'Gross monthly rental income used for DSCR calculation only.' 
+                                        : scenario.occupancyType === 'Investment Property' 
+                                        ? '75% used for DTI calculation. Gross amount used for DSCR.' 
+                                        : '75% vacancy factor applied automatically'}
+                                </p>
                             </div>
                          </div>
 
                          <div className="space-y-4">
                             <h4 className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">Monthly Debts</h4>
-                             <div>
-                                <label className={labelClass}>Total Monthly Liabilities</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.debts?.monthlyTotal || 0} onChangeValue={(val) => setScenario(prev => ({...prev, debts: {...prev.debts, monthlyTotal: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1">Credit cards, auto loans, student loans, etc.</p>
-                            </div>
-                            
-                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-6">
-                                <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">DTI Ratios</h5>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-slate-600">Front-End (Housing)</span>
-                                        <span className={`font-bold ${results.dti.frontEnd > 47 ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.frontEnd.toFixed(2)}%</span>
+                             {!scenario.isDSCRLoan && (
+                                 <>
+                                     <div>
+                                        <label className={labelClass}>Total Monthly Liabilities</label>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
+                                            <FormattedNumberInput value={scenario.debts?.monthlyTotal || 0} onChangeValue={(val) => setScenario(prev => ({...prev, debts: {...prev.debts, monthlyTotal: val}}))} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-1">Credit cards, auto loans, student loans, etc.</p>
                                     </div>
-                                     <div className="flex justify-between text-sm">
-                                        <span className="text-slate-600">Back-End (Total)</span>
-                                        <span className={`font-bold ${results.dti.backEnd > 50 ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.backEnd.toFixed(2)}%</span>
-                                    </div>
-                                </div>
-                            </div>
+                                    
+                                    {(() => {
+                                        // Check if we should show DTI (skip if no borrower income but rental income exists)
+                                        const hasBorrowerIncome = (scenario.income?.borrower1 || 0) > 0 || 
+                                                                 (scenario.income?.borrower2 || 0) > 0 || 
+                                                                 (scenario.income?.other || 0) > 0;
+                                        const hasRentalIncome = (scenario.income?.rental || 0) > 0;
+                                        const shouldShowDTI = hasBorrowerIncome || !hasRentalIncome;
+                                        
+                                        if (!shouldShowDTI) return null;
+                                        
+                                        const frontEndWarning = validationThresholds.dtiFrontEndWarning || 47;
+                                        const backEndMax = validationThresholds.dtiBackEndMax || 50;
+                                        
+                                        return (
+                                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-6">
+                                                <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">DTI Ratios</h5>
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between text-sm">
+                                                        <span className="text-slate-600">Front-End (Housing)</span>
+                                                        <span className={`font-bold ${results.dti.frontEnd > frontEndWarning ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.frontEnd.toFixed(2)}%</span>
+                                                    </div>
+                                                     <div className="flex justify-between text-sm">
+                                                        <span className="text-slate-600">Back-End (Total)</span>
+                                                        <span className={`font-bold ${results.dti.backEnd > backEndMax ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.backEnd.toFixed(2)}%</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                 </>
+                             )}
+                             {scenario.isDSCRLoan && (
+                                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                     <p className="text-[10px] text-slate-500 italic">Debt information not used for DSCR loans</p>
+                                 </div>
+                             )}
                          </div>
                     </div>
 
@@ -1488,14 +1546,43 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             {formatMoney(results.totalMonthlyPayment)}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 mb-1.5">
-                             <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.frontEnd > 47 ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                 <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
-                                 <span>{results.dti.frontEnd.toFixed(1)}%</span>
-                             </div>
-                             <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.backEnd > 50 ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                 <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
-                                 <span>{results.dti.backEnd.toFixed(1)}%</span>
-                             </div>
+                             {scenario.occupancyType === 'Investment Property' && results.dscr ? (
+                                 <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg bg-slate-50 border-2 ${results.dscr.passes ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                                     <span className="text-slate-500 uppercase text-[10px] font-bold tracking-wider">DSCR</span>
+                                     <span className={`text-2xl font-black ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
+                                         {results.dscr.ratio.toFixed(2)}
+                                     </span>
+                                     <span className={`text-[9px] font-bold uppercase ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
+                                         {results.dscr.passes ? 'Pass' : 'Fail'}
+                                     </span>
+                                 </div>
+                             ) : !scenario.isDSCRLoan ? (() => {
+                                 // Check if we should show DTI (skip if no borrower income but rental income exists)
+                                 const hasBorrowerIncome = (scenario.income?.borrower1 || 0) > 0 || 
+                                                          (scenario.income?.borrower2 || 0) > 0 || 
+                                                          (scenario.income?.other || 0) > 0;
+                                 const hasRentalIncome = (scenario.income?.rental || 0) > 0;
+                                 const shouldShowDTI = hasBorrowerIncome || !hasRentalIncome;
+                                 
+                                 if (!shouldShowDTI) return null;
+                                 
+                                 // Determine if DTI should show warnings (only if borrower income exists)
+                                 const frontEndWarning = validationThresholds.dtiFrontEndWarning || 47;
+                                 const backEndMax = validationThresholds.dtiBackEndMax || 50;
+                                 
+                                 return (
+                                     <>
+                                         <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.frontEnd > frontEndWarning ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
+                                             <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
+                                             <span>{results.dti.frontEnd.toFixed(1)}%</span>
+                                         </div>
+                                         <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.backEnd > backEndMax ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
+                                             <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
+                                             <span>{results.dti.backEnd.toFixed(1)}%</span>
+                                         </div>
+                                     </>
+                                 );
+                             })() : null}
                         </div>
                     </div>
                     {scenario.buydown.active && (

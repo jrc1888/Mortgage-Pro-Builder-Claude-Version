@@ -362,15 +362,19 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // Rental Income 75%
   const effectiveRentalIncome = safeNum(income.rental) * 0.75;
   
-  const totalIncome = safeNum(income.borrower1) + safeNum(income.borrower2) + effectiveRentalIncome + safeNum(income.other);
+  // For DSCR loans, ignore borrower income and debts
+  const totalIncome = scenario.isDSCRLoan 
+    ? 0 // DSCR loans don't use borrower income for DTI
+    : safeNum(income.borrower1) + safeNum(income.borrower2) + effectiveRentalIncome + safeNum(income.other);
   
   const debts = scenario.debts || { monthlyTotal: 0 };
-  const totalMonthlyDebt = safeNum(debts.monthlyTotal);
+  const totalMonthlyDebt = scenario.isDSCRLoan ? 0 : safeNum(debts.monthlyTotal); // DSCR loans ignore debts
 
   let frontEndDTI = 0;
   let backEndDTI = 0;
 
-  if (totalIncome > 0) {
+  // Only calculate DTI if not a DSCR loan
+  if (!scenario.isDSCRLoan && totalIncome > 0) {
       // Use Note Rate Payment (baseMonthlyPayment) for qualification
       frontEndDTI = (baseMonthlyPayment / totalIncome) * 100;
       backEndDTI = ((baseMonthlyPayment + totalMonthlyDebt) / totalIncome) * 100;
@@ -420,12 +424,13 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
       return { maxHousingPayment, maxPrice, maxLoan, math };
   };
 
-  const convAffordability = calculateAffordability(46.99, 49.99); 
-  const fhaAffordability = calculateAffordability(46.99, 57.00);
+  // Only calculate affordability if not a DSCR loan
+  const convAffordability = scenario.isDSCRLoan ? { maxHousingPayment: 0, maxPrice: 0, maxLoan: 0, math: [] } : calculateAffordability(46.99, 49.99); 
+  const fhaAffordability = scenario.isDSCRLoan ? { maxHousingPayment: 0, maxPrice: 0, maxLoan: 0, math: [] } : calculateAffordability(46.99, 57.00);
 
-  // Check current scenario fit
-  const convPass = frontEndDTI <= 46.99 && backEndDTI <= 49.99;
-  const fhaPass = frontEndDTI <= 46.99 && backEndDTI <= 57.00;
+  // Check current scenario fit (always false for DSCR loans since DTI is not applicable)
+  const convPass = scenario.isDSCRLoan ? false : (frontEndDTI <= 46.99 && backEndDTI <= 49.99);
+  const fhaPass = scenario.isDSCRLoan ? false : (frontEndDTI <= 46.99 && backEndDTI <= 57.00);
 
   return {
     baseLoanAmount,
@@ -484,6 +489,20 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     },
     netClosingCosts,
     unusedCredits,
-    totalFundsRequired
+    totalFundsRequired,
+    
+    // DSCR Calculation for Investment Properties
+    dscr: scenario.occupancyType === 'Investment Property' ? (() => {
+        const grossRentalIncome = safeNum(income.rental); // Monthly gross rental
+        const debtService = baseMonthlyPayment; // Total monthly payment (P&I + Tax + Ins + MI + HOA + DPA)
+        const dscrRatio = debtService > 0 ? grossRentalIncome / debtService : 0;
+        
+        return {
+            ratio: dscrRatio,
+            grossRentalIncome,
+            debtService,
+            passes: dscrRatio >= 1.0
+        };
+    })() : undefined
   };
 };
