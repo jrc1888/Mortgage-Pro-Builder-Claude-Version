@@ -36,13 +36,15 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
     };
   });
 
-  const metrics = [
+  type MetricFormatter = (v: number | string) => string;
+  
+  const metrics: Array<{ label: string; key: keyof typeof comparisonData[0]; format: MetricFormatter }> = [
     { label: 'Purchase Price', key: 'purchasePrice', format: formatMoney },
     { label: 'Down Payment', key: 'downPayment', format: formatMoney },
     { label: 'Total Closing Costs', key: 'totalClosingCosts', format: formatMoney },
-    { label: 'Interest Rate', key: 'interestRate', format: (v: number) => `${v.toFixed(3)}%` },
+    { label: 'Interest Rate', key: 'interestRate', format: (v: number | string) => `${Number(v).toFixed(3)}%` },
     { label: 'Monthly Payment', key: 'monthlyPayment', format: formatMoney },
-    { label: 'Loan Type', key: 'loanType', format: (v: string) => v }
+    { label: 'Loan Type', key: 'loanType', format: (v: number | string) => String(v) }
   ];
 
   return (
