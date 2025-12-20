@@ -1145,6 +1145,15 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                             </>
                                                         )}
                                                     </div>
+                                                    {/* Show calculated dollar amount for discount points and buyer's agent commission */}
+                                                    {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission') && (
+                                                        <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
+                                                            {cost.id === 'buyers-agent-commission' 
+                                                                ? formatMoney(cost.isFixed ? cost.amount : (scenario.purchasePrice * (cost.amount || 0)) / 100)
+                                                                : formatMoney(cost.isFixed ? cost.amount : (results.totalLoanAmount * (cost.amount || 0)) / 100)
+                                                            }
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
