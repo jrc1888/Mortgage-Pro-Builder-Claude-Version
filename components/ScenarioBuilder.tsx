@@ -112,12 +112,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     }
 
     // 2. Add New Required Items
-    const hasHOATransfer = updatedCosts.some(c => c.id === 'hoa-transfer');
-    const hasHOAPrepay = updatedCosts.some(c => c.id === 'hoa-prepay');
-    const hasDiscountPoints = updatedCosts.some(c => c.id === 'discount-points');
-    const hasMisc3 = updatedCosts.some(c => c.id === 'misc-3');
-    const hasMisc4 = updatedCosts.some(c => c.id === 'misc-4');
-    const hasMisc5 = updatedCosts.some(c => c.id === 'misc-5');
+    const hasHOATransfer = updatedCosts.some(c => c && c.id === 'hoa-transfer');
+    const hasHOAPrepay = updatedCosts.some(c => c && c.id === 'hoa-prepay');
+    const hasDiscountPoints = updatedCosts.some(c => c && c.id === 'discount-points');
+    const hasBuyersAgentCommission = updatedCosts.some(c => c && c.id === 'buyers-agent-commission');
+    const hasMisc1 = updatedCosts.some(c => c && c.id === 'misc-1');
+    const hasMisc2 = updatedCosts.some(c => c && c.id === 'misc-2');
+    const hasMisc3 = updatedCosts.some(c => c && c.id === 'misc-3');
+    const hasMisc4 = updatedCosts.some(c => c && c.id === 'misc-4');
+    
+    // Remove misc-5 if it exists (deprecated)
+    const hasMisc5 = updatedCosts.some(c => c && c.id === 'misc-5');
+    if (hasMisc5) {
+        updatedCosts = updatedCosts.filter(c => !c || c.id !== 'misc-5');
+        changed = true;
+    }
     
     if (!hasHOATransfer) {
         const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'hoa-transfer');
@@ -134,10 +143,28 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         if (def) updatedCosts.push(def);
         changed = true;
     }
-    // Add Misc
-    if (!hasMisc3) { updatedCosts.push(DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-3')!); changed = true; }
-    if (!hasMisc4) { updatedCosts.push(DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-4')!); changed = true; }
-    if (!hasMisc5) { updatedCosts.push(DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-5')!); changed = true; }
+    if (!hasBuyersAgentCommission) {
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'buyers-agent-commission');
+        if (def) updatedCosts.push(def);
+        changed = true;
+    }
+    // Add Misc fees (only misc-1 through misc-4)
+    if (!hasMisc1) { 
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-1');
+        if (def) { updatedCosts.push(def); changed = true; }
+    }
+    if (!hasMisc2) { 
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-2');
+        if (def) { updatedCosts.push(def); changed = true; }
+    }
+    if (!hasMisc3) { 
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-3');
+        if (def) { updatedCosts.push(def); changed = true; }
+    }
+    if (!hasMisc4) { 
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-4');
+        if (def) { updatedCosts.push(def); changed = true; }
+    }
 
     
     // 3. Ensure Income/Debt Objects exist
@@ -188,8 +215,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
   // Group closing costs by category
   const costGroups = useMemo(() => {
-      // Filter out HOA items if monthly HOA is 0
+      // Ensure closingCosts exists and is an array
+      if (!scenario.closingCosts || !Array.isArray(scenario.closingCosts)) {
+          return [];
+      }
+      
+      // Filter out HOA items if monthly HOA is 0, and filter out any undefined/null items
       const visibleCosts = scenario.closingCosts.filter(item => {
+          // Safety check: ensure item exists and has an id
+          if (!item || !item.id) return false;
+          
           if (item.id === 'hoa-transfer' || item.id === 'hoa-prepay') {
               return scenario.hoaMonthly > 0;
           }
@@ -198,6 +233,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
       const groups: Record<string, ClosingCostItem[]> = {};
       visibleCosts.forEach(item => {
+          // Additional safety check
+          if (!item || !item.id) return;
+          
           const cat = item.category || 'Other Fees';
           if (!groups[cat]) groups[cat] = [];
           groups[cat].push(item);
@@ -984,7 +1022,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{group.category}</h4>
                                 </div>
                                 <div className="divide-y divide-slate-100">
-                                    {group.items.map((cost) => (
+                                    {group.items.filter(cost => cost && cost.id).map((cost) => (
                                         <div key={cost.id} className="flex items-center gap-4 py-3 px-4 hover:bg-slate-50 transition-colors group">
                                             {/* Editable name for misc fees (misc-1 through misc-4) */}
                                             {(cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') ? (
