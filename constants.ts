@@ -29,6 +29,7 @@ export const DEFAULT_CLOSING_COSTS = [
   { id: 'insurance-reserves', category: 'Escrows/Prepaids', name: 'Homeowners Insurance Reserves', amount: 0, isFixed: true, months: 2 },
 
   // Other Fees
+  { id: 'buyers-agent-commission', category: 'Other Fees', name: "Buyer's Agent Commission", amount: 0, isFixed: false }, // Percentage of sale price
   { id: 'realtor-admin', category: 'Other Fees', name: 'Realtor Admin Fee', amount: 495, isFixed: true },
   { id: 'hoa-transfer', category: 'Other Fees', name: 'HOA Transfer Fee', amount: 0, isFixed: true },
   { id: 'hoa-prepay', category: 'Other Fees', name: 'HOA Monthly Dues (Prepay)', amount: 0, isFixed: true, months: 1 },
@@ -36,7 +37,6 @@ export const DEFAULT_CLOSING_COSTS = [
   { id: 'misc-2', category: 'Other Fees', name: 'Other Fee 2', amount: 0, isFixed: true },
   { id: 'misc-3', category: 'Other Fees', name: 'Other Fee 3', amount: 0, isFixed: true },
   { id: 'misc-4', category: 'Other Fees', name: 'Other Fee 4', amount: 0, isFixed: true },
-  { id: 'misc-5', category: 'Other Fees', name: 'Other Fee 5', amount: 0, isFixed: true },
 ];
 
 export const DEFAULT_SCENARIO: Scenario = {

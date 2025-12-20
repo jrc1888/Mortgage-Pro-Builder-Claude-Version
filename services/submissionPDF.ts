@@ -200,9 +200,7 @@ export async function generateSubmissionPDF(
   addSectionHeader('CASH TO CLOSE');
   addText(`Down Payment: ${structuredData.cashToClose.downPayment}`, 10);
   addText(`Closing Costs: ${structuredData.cashToClose.closingCosts}`, 10);
-  if (structuredData.cashToClose.prepaidInterest && structuredData.cashToClose.prepaidInterest !== '$0') {
-    addText(`Prepaid Interest: ${structuredData.cashToClose.prepaidInterest}`, 10);
-  }
+  // Prepaid Interest removed - already included in closing costs
   if (structuredData.cashToClose.credits !== '$0') {
     addText(`Credits Applied: ${structuredData.cashToClose.credits}`, 10);
   }

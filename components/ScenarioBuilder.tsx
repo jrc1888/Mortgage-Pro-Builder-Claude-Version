@@ -986,7 +986,25 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 <div className="divide-y divide-slate-100">
                                     {group.items.map((cost) => (
                                         <div key={cost.id} className="flex items-center gap-4 py-3 px-4 hover:bg-slate-50 transition-colors group">
-                                            <label className="flex-1 text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
+                                            {/* Editable name for misc fees (misc-1 through misc-4) */}
+                                            {(cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') ? (
+                                                <input
+                                                    type="text"
+                                                    value={cost.name}
+                                                    onChange={(e) => {
+                                                        setScenario(prev => ({
+                                                            ...prev,
+                                                            closingCosts: prev.closingCosts.map(item =>
+                                                                item.id === cost.id ? { ...item, name: e.target.value } : item
+                                                            )
+                                                        }));
+                                                    }}
+                                                    className="flex-1 text-sm font-medium text-slate-700 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 transition-colors"
+                                                    placeholder={`Other Fee ${cost.id.slice(-1)}`}
+                                                />
+                                            ) : (
+                                                <label className="flex-1 text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
+                                            )}
                                             
                                             {/* Cost Render Logic */}
                                             {cost.id === 'prepaid-interest' ? (
@@ -1038,11 +1056,27 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                         />
                                                     </div>
                                                 </div>
+                                            ) : cost.id === 'buyers-agent-commission' ? (
+                                                // Buyer's Agent Commission - always percentage of sale price (no toggle)
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
+                                                        <LiveDecimalInput 
+                                                            value={cost.amount} 
+                                                            onChange={(val) => updateCost(cost.id, val)} 
+                                                            className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium"
+                                                            precision={3}
+                                                        />
+                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">%</div>
+                                                    </div>
+                                                    <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
+                                                        {formatMoney((scenario.purchasePrice * (cost.amount || 0)) / 100)}
+                                                    </div>
+                                                </div>
                                             ) : (
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                                                        {/* Only discount-points and Other Fees can toggle between $ and %} */}
-                                                        {(cost.id === 'discount-points' || (cost.category === 'Other Fees' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay')) ? (
+                                                        {/* Only discount-points and Other Fees can toggle between $ and % (except Buyer's Agent Commission which is always % of sale price) */}
+                                                        {(cost.id === 'discount-points' || (cost.category === 'Other Fees' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay' && cost.id !== 'buyers-agent-commission')) ? (
                                                             <>
                                                                 {cost.isFixed ? (
                                                                     <>
@@ -1649,6 +1683,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                              <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
                                 <span>Buydown Subsidy (Yr 1)</span>
                                 <span className="font-bold">-{formatMoney(results.baseMonthlyPayment - results.totalMonthlyPayment)}</span>
+                            </div>
+                        )}
+                         {scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 && (
+                             <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
+                                <span>ADU Income Credit</span>
+                                <span className="font-bold">-{formatMoney(results.income.effectiveRental)}</span>
                             </div>
                         )}
                     </div>

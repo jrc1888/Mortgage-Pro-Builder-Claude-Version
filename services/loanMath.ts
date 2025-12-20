@@ -283,7 +283,18 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
         return sum + cost;
     }
     const val = safeNum(item.amount);
-    const cost = item.isFixed ? val : (totalLoanAmount * (val / 100));
+    let cost = 0;
+    if (item.isFixed) {
+      cost = val;
+    } else {
+      // For percentage-based fees, check if it's Buyer's Agent Commission (uses purchase price)
+      if (item.id === 'buyers-agent-commission') {
+        cost = purchasePrice * (val / 100);
+      } else {
+        // All other percentage fees use loan amount
+        cost = totalLoanAmount * (val / 100);
+      }
+    }
     return sum + cost;
   }, 0) + buydownCost;
   
