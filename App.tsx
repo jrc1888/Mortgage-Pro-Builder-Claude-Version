@@ -153,6 +153,15 @@ const App: React.FC = () => {
     await deleteScenario(id);
   };
 
+  const handlePin = async (id: string, isPinned: boolean) => {
+    const scenario = scenarios.find(s => s.id === id);
+    if (!scenario) return;
+    
+    const updatedScenario = { ...scenario, isPinned };
+    setScenarios(prev => prev.map(s => s.id === id ? updatedScenario : s));
+    await saveScenario(updatedScenario);
+  };
+
   const handleDeleteClient = async (clientName: string) => {
       setScenarios(prev => prev.filter(s => s.clientName !== clientName));
       await deleteClientFolder(clientName);

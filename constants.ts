@@ -52,6 +52,7 @@ export const DEFAULT_SCENARIO: Scenario = {
   lastUpdated: new Date().toISOString(),
   history: [], 
   preApprovals: [],
+  isPinned: false,
   
   purchasePrice: 500000,
   earnestMoney: 0,

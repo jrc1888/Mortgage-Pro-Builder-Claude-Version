@@ -115,7 +115,7 @@ export interface Scenario {
   lastUpdated: string;
   history: HistoryEntry[];
   preApprovals: PreApproval[]; // New field
-  pinned?: boolean; // Pinned scenario appears at top of client folder
+  isPinned?: boolean; // Pinned scenarios appear first in client folder
   
   // Property Financials
   purchasePrice: number;

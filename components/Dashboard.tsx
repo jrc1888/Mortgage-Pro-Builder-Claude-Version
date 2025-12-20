@@ -1,12 +1,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp, CheckSquare, Plus as PlusIcon, X } from 'lucide-react';
+import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowRight, Home, ArrowDownAZ, ArrowUpZA, AlertTriangle, Settings, Save, LogOut, Target, Briefcase, FolderOpen, ArrowDown, ArrowUp, CheckSquare, Plus as PlusIcon, X, Star, GitCompare } from 'lucide-react';
 import { Scenario, ScenarioDefaults } from '../types';
 import { FormattedNumberInput, LiveDecimalInput } from './CommonInputs';
 import { Modal } from './Modal';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { DEFAULT_SCENARIO } from '../constants';
 import { DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
+import { ScenarioComparison } from './ScenarioComparison';
 
 interface Props {
   scenarios: Scenario[];
@@ -172,7 +173,14 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
 
   const renderScenarioList = () => {
       const list = clientGroups[selectedClient!] || [];
-      const sortedList = [...list].sort((a,b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime());
+      // Sort: pinned first, then by last updated
+      const sortedList = [...list].sort((a, b) => {
+        const aPinned = a.isPinned || false;
+        const bPinned = b.isPinned || false;
+        if (aPinned && !bPinned) return -1;
+        if (!aPinned && bPinned) return 1;
+        return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
+      });
 
       return (
           <div className="animate-fadeIn p-8 max-w-[1600px] mx-auto">
@@ -189,15 +197,60 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                     return (
                         <div 
                             key={scenario.id} 
-                            className={`group bg-white rounded-xl border border-slate-300 shadow-md hover:shadow-xl hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col relative ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''}`}
+                            className={`group bg-white rounded-xl border border-slate-300 shadow-md hover:shadow-xl hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col relative ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''} ${scenario.isPinned ? 'border-amber-300 bg-amber-50/30' : ''}`}
                             onClick={() => onSelect(scenario)}
                             onContextMenu={(e) => {
                                 e.preventDefault();
                                 setContextMenu({ x: e.clientX, y: e.clientY, scenarioId: scenario.id });
                             }}
                         >
-                            {/* Transaction Type Badge - Top Right */}
-                            <div className="absolute top-4 right-4 z-10">
+                            {/* Pin/Star Button - Top Left */}
+                            <div className="absolute top-4 left-4 z-10">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (onPin) {
+                                            onPin(scenario.id, !scenario.isPinned);
+                                        }
+                                    }}
+                                    className={`p-1.5 rounded-lg transition-all ${
+                                        scenario.isPinned 
+                                            ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' 
+                                            : 'bg-white/80 text-slate-400 hover:text-amber-500 hover:bg-amber-50'
+                                    }`}
+                                    title={scenario.isPinned ? "Unpin scenario" : "Pin scenario to top"}
+                                >
+                                    <Star size={16} className={scenario.isPinned ? 'fill-current' : ''} />
+                                </button>
+                            </div>
+                            
+                            {/* Comparison Checkbox and Transaction Type Badge - Top Right */}
+                            <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isSelected) {
+                                            setSelectedForComparison(prev => prev.filter(id => id !== scenario.id));
+                                        } else {
+                                            if (selectedForComparison.length < 3) {
+                                                setSelectedForComparison(prev => [...prev, scenario.id]);
+                                            }
+                                        }
+                                    }}
+                                    className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                                        isSelected 
+                                            ? 'bg-indigo-600 border-indigo-600 text-white' 
+                                            : selectedForComparison.length >= 3
+                                            ? 'bg-slate-100 border-slate-300 text-slate-300 cursor-not-allowed'
+                                            : 'bg-white border-slate-300 hover:border-indigo-400'
+                                    }`}
+                                    disabled={!isSelected && selectedForComparison.length >= 3}
+                                    title={isSelected ? "Remove from comparison" : selectedForComparison.length >= 3 ? "Maximum 3 scenarios" : "Add to comparison"}
+                                >
+                                    {isSelected && <CheckSquare size={12} />}
+                                </button>
+                                
+                                {/* Transaction Type Badge */}
                                 <span className={`inline-block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded border shadow-sm ${
                                     transactionType === 'Refinance' 
                                         ? 'bg-purple-50 text-purple-700 border-purple-200' 
@@ -209,7 +262,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             
                             <div className="p-6 flex-1">
                                 <div className="flex flex-col gap-2 mb-4">
-                                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight pr-16">
+                                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight pr-20">
                                         <span className="font-normal text-slate-500 text-xs block mb-1 uppercase tracking-wider">{scenario.clientName}</span>
                                         {scenario.name || "Untitled Scenario"}
                                     </h3>
@@ -467,6 +520,15 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                          </div>
 
                          <div className="flex items-center gap-4 relative z-10 shrink-0 ml-4 pl-8 border-l border-slate-800/50">
+                             {selectedForComparison.length > 0 && (
+                                 <button 
+                                    onClick={() => setIsComparing(true)}
+                                    className="flex items-center gap-2 px-4 py-3 text-indigo-300 hover:text-indigo-200 hover:bg-indigo-900/30 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
+                                 >
+                                     <GitCompare size={16} />
+                                     <span className="hidden xl:inline">Compare ({selectedForComparison.length})</span>
+                                 </button>
+                             )}
                              <button 
                                 onClick={requestDeleteFolder}
                                 className="flex items-center gap-2 px-4 py-3 text-slate-500 hover:text-red-400 hover:bg-slate-900 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide group/del"
@@ -488,7 +550,13 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                     {/* Scrollable Grid */}
                     <div className="flex-1 overflow-y-auto scrollbar-custom">
                          {isComparing ? (
-                            <div className="p-8 text-center text-slate-400 italic">Comparison View</div>
+                            <ScenarioComparison 
+                                scenarios={scenarios.filter(s => selectedForComparison.includes(s.id))}
+                                onClose={() => {
+                                    setIsComparing(false);
+                                    setSelectedForComparison([]);
+                                }}
+                            />
                         ) : renderScenarioList()}
                     </div>
 
