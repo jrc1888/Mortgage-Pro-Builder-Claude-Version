@@ -496,41 +496,46 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     <div className="flex flex-col h-full bg-slate-50">
       
       {/* Header - Dark Theme - Desktop Only on Mobile */}
-      <header className="desktop-only scenario-header-desktop bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-28">
+      <header className="desktop-only scenario-header-desktop bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-32">
         <div className="flex items-center gap-6 flex-1">
           <button onClick={handleExit} className="p-2.5 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800">
             <ArrowLeft size={20} />
           </button>
           
-          <div className="flex items-center gap-6 w-full max-w-4xl">
+          <div className="flex items-center gap-8 w-full max-w-5xl">
               {/* Client Name */}
-              <div className="min-w-[150px]">
-                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-0.5">Borrower</label>
-                   <div className="text-lg font-bold text-white tracking-tight truncate">{scenario.clientName || "Client Name"}</div>
+              <div className="min-w-[200px]">
+                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Borrower</label>
+                   <div className="text-4xl font-black text-indigo-400 tracking-tight truncate">{scenario.clientName || "Client Name"}</div>
               </div>
 
               {/* Divider */}
-              <div className="h-8 w-px bg-slate-800"></div>
+              <div className="h-12 w-px bg-slate-800"></div>
 
               {/* Scenario Name Input */}
               <div className="flex-1">
-                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-0.5">Scenario Name</label>
+                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Scenario Name</label>
                    <input 
                         value={scenario.name} 
                         onChange={(e) => handleInputChange('name', e.target.value)}
-                        className="bg-transparent border-none p-0 text-base font-medium text-white placeholder-slate-600 w-full outline-none focus:ring-0"
+                        className="bg-transparent border-none p-0 text-4xl font-black text-emerald-400 placeholder-slate-600 w-full outline-none focus:ring-0"
                         placeholder="Scenario Name"
                     />
               </div>
 
                {/* Divider */}
-               <div className="h-8 w-px bg-slate-800"></div>
+               <div className="h-12 w-px bg-slate-800"></div>
 
-               {/* Property & Date */}
-               <div className="min-w-[180px] text-right">
-                    <div className="flex items-center justify-end gap-1.5 text-xs text-indigo-400 font-medium mb-0.5">
-                        <MapPin size={12} />
-                        {scenario.isAddressTBD ? "TBD" : (scenario.propertyAddress || "No Address")}
+               {/* Property, Price & Date */}
+               <div className="min-w-[220px] text-right">
+                    <div className="flex flex-col items-end gap-1 mb-1">
+                        <div className="flex items-center justify-end gap-1.5 text-sm text-indigo-400 font-medium">
+                            <MapPin size={14} />
+                            <span className="truncate max-w-[180px]">{scenario.isAddressTBD ? "TBD" : (scenario.propertyAddress || "No Address")}</span>
+                        </div>
+                        <div className="text-xl font-bold text-white">
+                            {formatMoney(scenario.purchasePrice)}
+                        </div>
                     </div>
                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
                         Updated {formatTime(scenario.lastUpdated)}
@@ -1094,27 +1099,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                         />
                                                     </div>
                                                 </div>
-                                            ) : cost.id === 'buyers-agent-commission' ? (
-                                                // Buyer's Agent Commission - always percentage of sale price (no toggle) - matches discount points style
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                                                        <LiveDecimalInput 
-                                                            value={cost.amount} 
-                                                            onChange={(val) => updateCost(cost.id, val)} 
-                                                            className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium"
-                                                            precision={3}
-                                                        />
-                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">%</div>
-                                                    </div>
-                                                    <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
-                                                        {formatMoney((scenario.purchasePrice * (cost.amount || 0)) / 100)}
-                                                    </div>
-                                                </div>
                                             ) : (
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                                                        {/* Only discount-points and Other Fees can toggle between $ and % (except Buyer's Agent Commission which is always % of sale price) */}
-                                                        {(cost.id === 'discount-points' || (cost.category === 'Other Fees' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay' && cost.id !== 'buyers-agent-commission')) ? (
+                                                        {/* Discount points, Buyer's Agent Commission, and Other Fees can toggle between $ and %} */}
+                                                        {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission' || (cost.category === 'Other Fees' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay')) ? (
                                                             <>
                                                                 {cost.isFixed ? (
                                                                     <>
