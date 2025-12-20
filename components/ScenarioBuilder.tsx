@@ -544,10 +544,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 pl-8 border-l border-slate-800 ml-8">
+        <div className="flex gap-3 pl-6 border-l border-slate-800 ml-6">
              <button 
                 onClick={() => setShowPreApprovalOptionsModal(true)}
-                className="flex items-center justify-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
+                className="flex items-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
             >
                 <FileBadge size={16} /> Pre-Approval
             </button>
@@ -571,7 +571,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         setGeneratingSubmission(false);
                     }
                 }}
-                className="flex items-center justify-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
+                className="flex items-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
             >
                 <FileText size={16} /> Submission Email
             </button>
