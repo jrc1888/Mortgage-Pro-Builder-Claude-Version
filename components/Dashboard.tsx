@@ -198,7 +198,11 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                     return (
                         <div 
                             key={scenario.id} 
-                            className={`group bg-white rounded-xl border border-slate-300 shadow-md hover:shadow-xl hover:border-indigo-300 hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col relative ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''} ${scenario.isPinned ? 'border-amber-300 bg-amber-50/30' : ''}`}
+                            className={`group rounded-xl border shadow-md hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col relative ${
+                                scenario.isPinned 
+                                    ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-amber-100/50 ring-2 ring-amber-300 shadow-amber-200/50' 
+                                    : 'bg-white border-slate-300 hover:border-indigo-300'
+                            } ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''}`}
                             onClick={() => onSelect(scenario)}
                             onContextMenu={(e) => {
                                 e.preventDefault();
@@ -214,14 +218,14 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                             onPin(scenario.id, !scenario.isPinned);
                                         }
                                     }}
-                                    className={`p-1.5 rounded-lg transition-all ${
+                                    className={`p-2 rounded-lg transition-all shadow-sm ${
                                         scenario.isPinned 
-                                            ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' 
-                                            : 'bg-white/80 text-slate-400 hover:text-amber-500 hover:bg-amber-50'
+                                            ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber-300/50' 
+                                            : 'bg-white/90 backdrop-blur-sm text-slate-400 hover:text-amber-500 hover:bg-amber-50 border border-slate-200'
                                     }`}
                                     title={scenario.isPinned ? "Unpin scenario" : "Pin scenario to top"}
                                 >
-                                    <Star size={16} className={scenario.isPinned ? 'fill-current' : ''} />
+                                    <Star size={18} className={scenario.isPinned ? 'fill-current' : ''} strokeWidth={scenario.isPinned ? 0 : 2} />
                                 </button>
                             </div>
                             

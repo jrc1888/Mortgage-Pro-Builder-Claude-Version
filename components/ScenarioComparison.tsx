@@ -80,9 +80,10 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
         </button>
       </header>
 
-      {/* Comparison Table */}
+      {/* Comparison Content */}
       <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-[1800px] mx-auto">
+        <div className="max-w-[1800px] mx-auto space-y-6">
+          {/* Summary Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
             <table className="w-full">
               <thead>
@@ -120,6 +121,164 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Detailed Breakdowns - Side by Side */}
+          <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${scenarios.length}, 1fr)` }}>
+            {comparisonData.map((data) => {
+              const { scenario, results } = data;
+              const hasDPA = scenario.dpa.active && !scenario.dpa.isDeferred;
+              const hasDPA2 = scenario.dpa2?.active && !scenario.dpa2.isDeferred;
+              const hasBuydown = scenario.buydown.active;
+              const hasADUCredit = scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0;
+              const totalCredits = (scenario.showSellerConcessions ? results.sellerConcessionsAmount : 0) + 
+                                   (scenario.showLenderCredits ? results.lenderCreditsAmount : 0);
+              const grossClosingCosts = results.totalClosingCosts;
+              const netClosingCosts = results.netClosingCosts;
+              const cashToClose = results.downPaymentRequired + netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0) - (scenario.dpa2?.active ? scenario.dpa2.amount : 0);
+              const netCashToClose = cashToClose - results.earnestMoney;
+
+              return (
+                <div key={scenario.id} className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
+                  <div className="p-6 space-y-6">
+                    {/* Monthly Breakdown */}
+                    <div className="border-t border-slate-100 pt-4">
+                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
+                      <div className="space-y-2 text-base">
+                        <div className="flex justify-between items-center text-slate-600">
+                          <span>Principal & Interest</span>
+                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyPrincipalAndInterest)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-600">
+                          <span>Property Taxes</span>
+                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyTax)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-600">
+                          <span>Home Insurance</span>
+                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyInsurance)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-600">
+                          <span>Mortgage Insurance</span>
+                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyMI)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-600">
+                          <span>HOA Dues</span>
+                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyHOA)}</span>
+                        </div>
+                        {hasDPA && (
+                          <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
+                            <span>DPA Loan (1st)</span>
+                            <span className="font-bold">{formatMoney(results.monthlyDPAPayment)}</span>
+                          </div>
+                        )}
+                        {hasDPA2 && (
+                          <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
+                            <span>DPA Loan (2nd)</span>
+                            <span className="font-bold">{formatMoney(results.monthlyDPA2Payment)}</span>
+                          </div>
+                        )}
+                        {hasBuydown && (
+                          <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
+                            <span>Buydown Subsidy (Yr 1)</span>
+                            <span className="font-bold">-{formatMoney(results.baseMonthlyPayment - results.totalMonthlyPayment)}</span>
+                          </div>
+                        )}
+                        {hasADUCredit && (
+                          <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
+                            <span>ADU Income Credit</span>
+                            <span className="font-bold">-{formatMoney(scenario.income?.rental || 0)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Cash to Close Breakdown */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-sm">
+                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                        {scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}
+                      </h3>
+                      <div className="space-y-2 mb-3 text-sm">
+                        {scenario.transactionType === 'Purchase' ? (
+                          <>
+                            <div className="flex justify-between text-slate-600">
+                              <span>Down Payment</span>
+                              <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-600">
+                              <span>Gross Closing Costs</span>
+                              <span className="font-bold text-slate-900">{formatMoney(grossClosingCosts)}</span>
+                            </div>
+                            {scenario.showSellerConcessions && results.sellerConcessionsAmount > 0 && (
+                              <div className="flex justify-between text-emerald-600">
+                                <span>Seller Concessions</span>
+                                <span className="font-bold">-{formatMoney(results.sellerConcessionsAmount)}</span>
+                              </div>
+                            )}
+                            {scenario.showLenderCredits && results.lenderCreditsAmount > 0 && (
+                              <div className="flex justify-between text-emerald-600">
+                                <span>Lender Credit</span>
+                                <span className="font-bold">-{formatMoney(results.lenderCreditsAmount)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-slate-600">
+                              <span>Closing Costs (Net)</span>
+                              <span className="font-bold text-slate-900">{formatMoney(netClosingCosts)}</span>
+                            </div>
+                            {scenario.dpa.active && (
+                              <div className="flex justify-between text-emerald-600">
+                                <span>DPA Funding</span>
+                                <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
+                              </div>
+                            )}
+                            {scenario.dpa2?.active && (
+                              <div className="flex justify-between text-emerald-600">
+                                <span>DPA Funding (2nd)</span>
+                                <span className="font-bold">-{formatMoney(scenario.dpa2.amount)}</span>
+                              </div>
+                            )}
+                            
+                            {/* Subtotal before Earnest Money */}
+                            <div className="border-t border-slate-300 pt-2 mt-2 flex justify-between items-center">
+                              <span className="text-xs font-bold text-slate-600 uppercase">Total Cash to Close</span>
+                              <span className="text-lg font-bold text-slate-900">
+                                {formatMoney(cashToClose)}
+                              </span>
+                            </div>
+                            
+                            {/* Earnest Money Deduction */}
+                            <div className="mb-4">
+                              <div className="flex justify-between text-emerald-600 text-sm">
+                                <span>Earnest Money</span>
+                                <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
+                              </div>
+                            </div>
+
+                            {/* Net Cash to Close */}
+                            <div className="border-t-2 border-slate-400 pt-3 mt-3 flex justify-between items-center">
+                              <span className="text-sm font-bold text-slate-900 uppercase">Net Cash to Close</span>
+                              <span className="text-xl font-bold text-slate-900">
+                                {formatMoney(netCashToClose)}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between text-slate-600">
+                              <span>Cash Out</span>
+                              <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-600">
+                              <span>Closing Costs (Net)</span>
+                              <span className="font-bold text-slate-900">{formatMoney(netClosingCosts)}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
