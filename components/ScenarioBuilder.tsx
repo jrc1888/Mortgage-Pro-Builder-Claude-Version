@@ -630,6 +630,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                    <input 
                         value={scenario.name} 
                         onChange={(e) => handleInputChange('name', e.target.value)}
+                        onBlur={addToHistory}
                         className="bg-transparent border-none p-0 text-4xl font-black text-emerald-400 placeholder-slate-600 w-full outline-none focus:ring-0"
                         placeholder="Scenario Name"
                     />
@@ -757,7 +758,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     <div className={symbolClass}>
                                         <MapPin size={16} className={`${scenario.isAddressTBD ? 'text-slate-300' : 'text-slate-400'}`} />
                                     </div>
-                                    <input type="text" value={scenario.isAddressTBD ? "To Be Determined" : scenario.propertyAddress} disabled={scenario.isAddressTBD} onChange={(e) => handleInputChange('propertyAddress', e.target.value)} className={`w-full px-4 py-2 text-sm outline-none bg-transparent font-medium ${scenario.isAddressTBD ? 'text-slate-400 italic cursor-not-allowed' : 'text-slate-900'}`} />
+                                    <input type="text" value={scenario.isAddressTBD ? "To Be Determined" : scenario.propertyAddress} disabled={scenario.isAddressTBD} onChange={(e) => handleInputChange('propertyAddress', e.target.value)} onBlur={addToHistory} className={`w-full px-4 py-2 text-sm outline-none bg-transparent font-medium ${scenario.isAddressTBD ? 'text-slate-400 italic cursor-not-allowed' : 'text-slate-900'}`} />
                                 </div>
                             </div>
                             
