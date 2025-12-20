@@ -17,6 +17,7 @@ interface Props {
   onDelete: (id: string) => void;
   onDeleteClient: (clientName: string) => void;
   onDuplicate: (id: string) => void;
+  onPin?: (id: string, isPinned: boolean) => void;
   initialClient?: string;
   userDefaults?: ScenarioDefaults;
   onUpdateDefaults?: (defaults: ScenarioDefaults) => void;
