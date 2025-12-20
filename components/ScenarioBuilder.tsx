@@ -74,6 +74,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(scenarioWithDefaults));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
   
+  // Undo/Redo History (20 revisions max)
+  const [history, setHistory] = useState<Scenario[]>([scenarioWithDefaults]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+  const historyRef = useRef<{ isUndoRedo: boolean }>({ isUndoRedo: false });
+  
   // NEW: Toast, Debounce, and Validation
   const { addToast } = useToast();
   const debouncedScenario = useDebounce(scenario, 300);
