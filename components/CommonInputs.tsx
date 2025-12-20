@@ -3,12 +3,13 @@ import { Check } from 'lucide-react';
 
 // --- Helper Component for Comma-Separated Inputs ---
 export interface FormattedNumberInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  value: number;
+value: number;
   onChangeValue: (val: number) => void;
   isCurrency?: boolean;
+  onBlur?: () => void;
 }
 
-export const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ value, onChangeValue, isCurrency, className, ...props }) => {
+export const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ value, onChangeValue, isCurrency, className, onBlur, ...props }) => {
   const [inputValue, setInputValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
 
@@ -47,6 +48,10 @@ export const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ valu
       setInputValue(num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     } else {
         setInputValue('0.00');
+    }
+    // Call custom onBlur if provided (for undo/redo tracking)
+    if (onBlur) {
+      onBlur();
     }
   };
 
@@ -113,7 +118,12 @@ export const LiveDecimalInput: React.FC<{
             value={localVal}
             onChange={handleChange}
             onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
+            onBlur={() => {
+              setFocused(false);
+              if (onBlur) {
+                onBlur();
+              }
+            }}
             onWheel={(e) => e.currentTarget.blur()}
             className={`bg-transparent outline-none w-full placeholder-slate-300 ${className}`}
             placeholder={placeholder}

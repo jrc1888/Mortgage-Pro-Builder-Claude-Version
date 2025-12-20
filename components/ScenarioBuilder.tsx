@@ -74,10 +74,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(scenarioWithDefaults));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
   
-  // Undo/Redo History (20 revisions max)
+  // Undo/Redo History (20 revisions max) - tracks per input field, not per keystroke
   const [history, setHistory] = useState<Scenario[]>([scenarioWithDefaults]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
-  const historyRef = useRef<{ isUndoRedo: boolean; skipNext: boolean }>({ isUndoRedo: false, skipNext: false });
+  const historyRef = useRef<{ isUndoRedo: boolean; lastSavedState: Scenario | null }>({ 
+    isUndoRedo: false, 
+    lastSavedState: scenarioWithDefaults 
+  });
   
   // NEW: Toast, Debounce, and Validation
   const { addToast } = useToast();
@@ -187,20 +190,29 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     }
   }, [scenario.closingCosts.length, scenario.income, scenario.debts]);
 
-  // Track scenario changes for undo/redo history
-  useEffect(() => {
-    // Skip adding to history if this change came from undo/redo or initial setup
-    if (historyRef.current.isUndoRedo || historyRef.current.skipNext) {
+  // Function to add current state to history (called when field editing is complete)
+  const addToHistory = () => {
+    // Skip if this is from undo/redo
+    if (historyRef.current.isUndoRedo) {
       historyRef.current.isUndoRedo = false;
-      historyRef.current.skipNext = false;
       return;
     }
 
-    // Only add to history if scenario actually changed (not initial render)
+    // Only add if state actually changed from last saved
+    const currentStateStr = JSON.stringify(scenario);
+    const lastSavedStr = historyRef.current.lastSavedState ? JSON.stringify(historyRef.current.lastSavedState) : '';
+    
+    if (currentStateStr === lastSavedStr) {
+      return; // No change, don't add to history
+    }
+
+    // Save the state before this change to history
+    const stateToSave = historyRef.current.lastSavedState || scenario;
+    
     if (historyIndex < history.length - 1) {
       // User has undone, so we need to replace future history
       const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(JSON.parse(JSON.stringify(scenario))); // Deep copy
+      newHistory.push(JSON.parse(JSON.stringify(stateToSave))); // Deep copy
       // Limit to 20 revisions
       if (newHistory.length > 21) {
         newHistory.shift();
@@ -211,7 +223,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       setHistory(newHistory);
     } else {
       // Normal case: add new state to history
-      const newHistory = [...history, JSON.parse(JSON.stringify(scenario))]; // Deep copy
+      const newHistory = [...history, JSON.parse(JSON.stringify(stateToSave))]; // Deep copy
       // Limit to 20 revisions
       if (newHistory.length > 21) {
         newHistory.shift();
@@ -220,7 +232,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       }
       setHistory(newHistory);
     }
-  }, [scenario]);
+
+    // Update last saved state to current
+    historyRef.current.lastSavedState = JSON.parse(JSON.stringify(scenario));
+  };
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
@@ -228,11 +243,17 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       // Ctrl+Z for undo (prevent default browser undo in inputs)
       if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
+        // Save current state before undoing (if field was being edited)
+        if (historyRef.current.lastSavedState) {
+          addToHistory();
+        }
         if (historyIndex > 0) {
           historyRef.current.isUndoRedo = true;
           const newIndex = historyIndex - 1;
           setHistoryIndex(newIndex);
-          setScenario(JSON.parse(JSON.stringify(history[newIndex]))); // Deep copy
+          const restoredState = JSON.parse(JSON.stringify(history[newIndex])); // Deep copy
+          setScenario(restoredState);
+          historyRef.current.lastSavedState = restoredState;
         }
       }
       
@@ -243,7 +264,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           historyRef.current.isUndoRedo = true;
           const newIndex = historyIndex + 1;
           setHistoryIndex(newIndex);
-          setScenario(JSON.parse(JSON.stringify(history[newIndex]))); // Deep copy
+          const restoredState = JSON.parse(JSON.stringify(history[newIndex])); // Deep copy
+          setScenario(restoredState);
+          historyRef.current.lastSavedState = restoredState;
         }
       }
     };
@@ -321,6 +344,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   };
 
   const handleInputChange = <K extends keyof Scenario>(field: K, value: any) => {
+    // Save state before first change to this field (for undo)
+    if (!historyRef.current.isUndoRedo && !historyRef.current.lastSavedState) {
+      historyRef.current.lastSavedState = JSON.parse(JSON.stringify(scenario));
+    }
+    
     setScenario(prev => {
         if (field === 'purchasePrice') {
             const price = Number(value);
