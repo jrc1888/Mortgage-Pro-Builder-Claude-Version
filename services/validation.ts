@@ -150,21 +150,29 @@ export const validateScenario = (
     }
   }
 
-  // DTI Validation
-  if (results.dti.frontEnd > thresholds.dtiFrontEndWarning) {
-    errors.push({
-      field: 'income',
-      message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiFrontEndWarning}%)`,
-      severity: 'warning'
-    });
-  }
+  // DTI Validation - Skip if only rental income exists (no borrower income)
+  const hasBorrowerIncome = (scenario.income?.borrower1 || 0) > 0 || 
+                             (scenario.income?.borrower2 || 0) > 0 || 
+                             (scenario.income?.other || 0) > 0;
+  const hasRentalIncome = (scenario.income?.rental || 0) > 0;
+  
+  // Only validate DTI if there's borrower income (not rental-only qualification)
+  if (hasBorrowerIncome || !hasRentalIncome) {
+    if (results.dti.frontEnd > thresholds.dtiFrontEndWarning) {
+      errors.push({
+        field: 'income',
+        message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiFrontEndWarning}%)`,
+        severity: 'warning'
+      });
+    }
 
-  if (results.dti.backEnd > thresholds.dtiBackEndMax) {
-    errors.push({
-      field: 'income',
-      message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiBackEndMax}%)`,
-      severity: 'error'
-    });
+    if (results.dti.backEnd > thresholds.dtiBackEndMax) {
+      errors.push({
+        field: 'income',
+        message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiBackEndMax}%)`,
+        severity: 'error'
+      });
+    }
   }
 
   // Credit Score Validation

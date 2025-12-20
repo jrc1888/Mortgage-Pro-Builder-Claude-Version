@@ -1095,7 +1095,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                     </div>
                                                 </div>
                                             ) : cost.id === 'buyers-agent-commission' ? (
-                                                // Buyer's Agent Commission - always percentage of sale price (no toggle)
+                                                // Buyer's Agent Commission - always percentage of sale price (no toggle) - matches discount points style
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
                                                         <LiveDecimalInput 
@@ -1615,7 +1615,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Monthly Payment</h2>
                     <div className="flex justify-between items-end">
                         <div className="text-5xl font-black text-emerald-600 tracking-tight leading-none">
-                            {formatMoney(results.totalMonthlyPayment)}
+                            {formatMoney(scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 
+                                ? results.totalMonthlyPayment - (scenario.income?.rental || 0)
+                                : results.totalMonthlyPayment)}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 mb-1.5">
                              {scenario.occupancyType === 'Investment Property' && results.dscr ? (
@@ -1657,9 +1659,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                              })() : null}
                         </div>
                     </div>
-                    {scenario.buydown.active && (
+                    {(scenario.buydown.active || (scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0)) && (
                          <div className="text-sm font-medium text-slate-400 mt-1 line-through decoration-slate-300">
-                             {formatMoney(results.baseMonthlyPayment)}
+                             {formatMoney(results.totalMonthlyPayment)}
                          </div>
                     )}
 
@@ -1726,7 +1728,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                          {scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 && (
                              <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
                                 <span>ADU Income Credit</span>
-                                <span className="font-bold">-{formatMoney(results.income.effectiveRental)}</span>
+                                <span className="font-bold">-{formatMoney(scenario.income?.rental || 0)}</span>
                             </div>
                         )}
                     </div>
