@@ -92,13 +92,16 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                     <td className="px-6 py-4 text-sm font-semibold text-slate-700 border-r border-slate-200">
                       {metric.label}
                     </td>
-                    {comparisonData.map((data) => (
-                      <td key={data.scenario.id} className="px-6 py-4 text-center border-l border-slate-200">
-                        <span className="text-base font-bold text-slate-900">
-                          {metric.format((data as any)[metric.key])}
-                        </span>
-                      </td>
-                    ))}
+                    {comparisonData.map((data) => {
+                      const value = (data as Record<string, any>)[metric.key];
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-4 text-center border-l border-slate-200">
+                          <span className="text-base font-bold text-slate-900">
+                            {metric.format(value)}
+                          </span>
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
