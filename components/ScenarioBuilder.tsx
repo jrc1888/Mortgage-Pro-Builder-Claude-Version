@@ -502,9 +502,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
             <ArrowLeft size={20} />
           </button>
           
-          <div className="flex items-center gap-8 w-full max-w-5xl">
+          <div className="flex items-center gap-10 w-full max-w-6xl">
               {/* Client Name */}
-              <div className="min-w-[200px]">
+              <div className="min-w-[280px]">
                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Borrower</label>
                    <div className="text-4xl font-black text-indigo-400 tracking-tight truncate">{scenario.clientName || "Client Name"}</div>
               </div>
@@ -527,11 +527,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                <div className="h-12 w-px bg-slate-800"></div>
 
                {/* Property, Price & Date */}
-               <div className="min-w-[220px] text-right">
+               <div className="min-w-[260px] ml-4 text-right">
                     <div className="flex flex-col items-end gap-1 mb-1">
                         <div className="flex items-center justify-end gap-1.5 text-sm text-indigo-400 font-medium">
                             <MapPin size={14} />
-                            <span className="truncate max-w-[180px]">{scenario.isAddressTBD ? "TBD" : (scenario.propertyAddress || "No Address")}</span>
+                            <span className="truncate max-w-[220px]">{scenario.isAddressTBD ? "TBD" : (scenario.propertyAddress || "No Address")}</span>
                         </div>
                         <div className="text-xl font-bold text-white">
                             {formatMoney(scenario.purchasePrice)}
@@ -544,10 +544,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           </div>
         </div>
 
-        <div className="flex gap-3 pl-6 border-l border-slate-800 ml-6">
+        <div className="flex flex-col gap-2 pl-8 border-l border-slate-800 ml-8">
              <button 
                 onClick={() => setShowPreApprovalOptionsModal(true)}
-                className="flex items-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
+                className="flex items-center justify-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
             >
                 <FileBadge size={16} /> Pre-Approval
             </button>
@@ -571,7 +571,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         setGeneratingSubmission(false);
                     }
                 }}
-                className="flex items-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
+                className="flex items-center justify-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
             >
                 <FileText size={16} /> Submission Email
             </button>
@@ -1145,15 +1145,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                             </>
                                                         )}
                                                     </div>
-                                                    {/* Show calculated dollar amount for discount points and buyer's agent commission */}
-                                                    {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission') && (
-                                                        <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
-                                                            {cost.id === 'buyers-agent-commission' 
-                                                                ? formatMoney(cost.isFixed ? cost.amount : (scenario.purchasePrice * (cost.amount || 0)) / 100)
-                                                                : formatMoney(cost.isFixed ? cost.amount : (results.totalLoanAmount * (cost.amount || 0)) / 100)
-                                                            }
-                                                        </div>
-                                                    )}
                                                 </div>
                                             )}
                                         </div>
