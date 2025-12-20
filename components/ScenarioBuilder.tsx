@@ -11,6 +11,8 @@ import { useToast } from '../hooks/useToast';
 import { useDebounce } from '../hooks/useDebounce';
 import { validateScenario, ValidationError, ValidationThresholds, DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
 import { ValidationBanner } from './ValidationBanner';
+import { extractZipCode } from '../services/amiService';
+import { AMISection } from './AMISection';
 
 interface Props {
   initialScenario: Scenario;
@@ -394,9 +396,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
             };
         }
         
-        if (field === 'isAddressTBD' && value === true) {
-             return { ...prev, [field]: value, propertyAddress: '', faDate: undefined, settlementDate: undefined };
-        }
+        // Removed isAddressTBD - address field now requires at least zip code
 
         return { ...prev, [field]: value };
     });
@@ -644,7 +644,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     <div className="flex flex-col items-end gap-1 mb-1">
                         <div className="flex items-center justify-end gap-1.5 text-sm text-indigo-400 font-medium">
                             <MapPin size={14} />
-                            <span className="truncate max-w-[220px]">{scenario.isAddressTBD ? "TBD" : (scenario.propertyAddress || "No Address")}</span>
+                            <span className="truncate max-w-[220px]">{scenario.propertyAddress || "No Address/Zip"}</span>
                         </div>
                         <div className="text-xl font-bold text-white">
                             {formatMoney(scenario.purchasePrice)}
@@ -750,19 +750,28 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             </div>
 
                             <div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <label className={labelClass}>Address</label>
-                                    <CustomCheckbox checked={scenario.isAddressTBD} onChange={(checked) => handleInputChange('isAddressTBD', checked)} label="TBD" />
-                                </div>
+                                <label className={labelClass}>Property Address or Zip Code</label>
                                 <div className={inputGroupClass}>
                                     <div className={symbolClass}>
-                                        <MapPin size={16} className={`${scenario.isAddressTBD ? 'text-slate-300' : 'text-slate-400'}`} />
+                                        <MapPin size={16} className="text-slate-400" />
                                     </div>
-                                    <input type="text" value={scenario.isAddressTBD ? "To Be Determined" : scenario.propertyAddress} disabled={scenario.isAddressTBD} onChange={(e) => handleInputChange('propertyAddress', e.target.value)} onBlur={addToHistory} className={`w-full px-4 py-2 text-sm outline-none bg-transparent font-medium ${scenario.isAddressTBD ? 'text-slate-400 italic cursor-not-allowed' : 'text-slate-900'}`} />
+                                    <input 
+                                        type="text" 
+                                        value={scenario.propertyAddress} 
+                                        onChange={(e) => handleInputChange('propertyAddress', e.target.value)} 
+                                        onBlur={addToHistory} 
+                                        placeholder="Enter zip code (e.g., 90210) or full address"
+                                        className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                    />
                                 </div>
+                                <p className="text-[10px] text-slate-400 mt-1 italic">
+                                    {extractZipCode(scenario.propertyAddress) 
+                                        ? `Zip Code: ${extractZipCode(scenario.propertyAddress)}`
+                                        : 'Enter at least a 5-digit zip code'}
+                                </p>
                             </div>
                             
-                            {!scenario.isAddressTBD && (
+                            {scenario.propertyAddress && (
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className={labelClass}>F&A Date</label>
@@ -1670,6 +1679,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                      <p className="text-[10px] text-slate-500 italic">Debt information not used for DSCR loans</p>
                                  </div>
                              )}
+
+                             {/* AMI Lookup Component */}
+                             <AMISection scenario={scenario} results={results} />
                          </div>
                     </div>
 

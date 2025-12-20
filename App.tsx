@@ -45,7 +45,7 @@ const App: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
-  const [newScenarioData, setNewScenarioData] = useState({ clientName: '', address: '', isTBD: true, transactionType: 'Purchase' as 'Purchase' | 'Refinance' });
+  const [newScenarioData, setNewScenarioData] = useState({ clientName: '', address: '', transactionType: 'Purchase' as 'Purchase' | 'Refinance' });
 
   // 1. Handle Session State
   useEffect(() => {
@@ -93,7 +93,7 @@ const App: React.FC = () => {
   };
 
   const handleOpenNewModal = (prefilledClientName?: string) => {
-      setNewScenarioData({ clientName: prefilledClientName || '', address: '', isTBD: true, transactionType: 'Purchase' });
+      setNewScenarioData({ clientName: prefilledClientName || '', address: '', transactionType: 'Purchase' });
       setIsModalOpen(true);
   };
 
@@ -111,8 +111,8 @@ const App: React.FC = () => {
         name: 'New Scenario',
         clientName: newScenarioData.clientName,
         transactionType: newScenarioData.transactionType,
-        propertyAddress: newScenarioData.isTBD ? '' : newScenarioData.address,
-        isAddressTBD: newScenarioData.isTBD
+        propertyAddress: newScenarioData.address,
+        isAddressTBD: false
     };
     
     // Optimistic Update
@@ -274,35 +274,24 @@ const App: React.FC = () => {
                 </div>
                 
                 <div>
-                    <div className="flex justify-between items-center mb-1.5 ml-0.5">
-                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Property Address</label>
-                       <label className="flex items-center gap-2 cursor-pointer group select-none">
-                           <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${newScenarioData.isTBD ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white group-hover:border-slate-400'}`}>
-                               {newScenarioData.isTBD && <Check size={10} className="text-white" strokeWidth={3} />}
-                           </div>
-                           <input 
-                              type="checkbox" 
-                              className="hidden"
-                              checked={newScenarioData.isTBD}
-                              onChange={(e) => setNewScenarioData(prev => ({...prev, isTBD: e.target.checked}))}
-                           />
-                           <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${newScenarioData.isTBD ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`}>TBD</span>
-                       </label>
-                    </div>
-                    
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-0.5">
+                       Property Address or Zip Code
+                    </label>
                     <div className="relative group">
                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <MapPin size={16} className={`transition-colors ${newScenarioData.isTBD ? 'text-slate-300' : 'text-slate-400 group-focus-within:text-indigo-500'}`} />
+                            <MapPin size={16} className="text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                         </div>
                         <input 
                             type="text" 
-                            value={newScenarioData.isTBD ? '' : newScenarioData.address}
-                            disabled={newScenarioData.isTBD}
+                            value={newScenarioData.address}
                             onChange={(e) => setNewScenarioData(prev => ({...prev, address: e.target.value}))}
-                            className={`w-full pl-9 pr-4 h-10 border rounded-lg text-sm placeholder-slate-400 focus:outline-none transition-all shadow-sm ${newScenarioData.isTBD ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed placeholder-slate-300' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'}`}
-                            placeholder={newScenarioData.isTBD ? "No Address Required" : "123 Main St, City, State"}
+                            className="w-full pl-9 pr-4 h-10 border rounded-lg text-sm placeholder-slate-400 focus:outline-none transition-all shadow-sm bg-white border-slate-200 text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                            placeholder="Enter zip code (e.g., 90210) or full address"
                         />
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-1 italic">
+                        At least a 5-digit zip code is required
+                    </p>
                 </div>
 
                 <div className="pt-4 flex gap-3">
@@ -347,8 +336,8 @@ const App: React.FC = () => {
               name: data.name || 'New Scenario',
               clientName: data.clientName || newScenarioData.clientName || '',
               transactionType: data.transactionType || newScenarioData.transactionType || 'Purchase',
-              propertyAddress: data.propertyAddress || (newScenarioData.isTBD ? '' : newScenarioData.address),
-              isAddressTBD: data.isAddressTBD !== undefined ? data.isAddressTBD : newScenarioData.isTBD,
+              propertyAddress: data.propertyAddress || newScenarioData.address,
+              isAddressTBD: data.isAddressTBD !== undefined ? data.isAddressTBD : false,
               // Ensure down payment amount and percent are always synced
               downPaymentAmount: (() => {
                 const price = data.purchasePrice || userDefaults.purchasePrice;

@@ -166,7 +166,7 @@ export const NLPScenarioModal: React.FC<Props> = ({
       clientName: clientName,
       transactionType: dataToUse.transactionType || defaultScenario.transactionType || 'Purchase', // Use AI-extracted transactionType if available
       propertyAddress: dataToUse.propertyAddress || defaultScenario.propertyAddress,
-      isAddressTBD: !dataToUse.propertyAddress,
+      isAddressTBD: false,
       purchasePrice: dataToUse.purchasePrice || defaultScenario.purchasePrice,
       downPaymentPercent: downPaymentPercent ? Number(downPaymentPercent.toFixed(2)) : Number(defaultScenario.downPaymentPercent.toFixed(2)),
       downPaymentAmount: downPaymentAmount ? Number(downPaymentAmount.toFixed(2)) : Number(defaultScenario.downPaymentAmount.toFixed(2)),

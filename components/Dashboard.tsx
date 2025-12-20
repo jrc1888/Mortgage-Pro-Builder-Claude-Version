@@ -227,7 +227,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 <div className="space-y-3 text-sm text-slate-500 mb-4 pt-4 border-t border-slate-100">
                                     <div className="flex items-center gap-2">
                                         <MapPin size={14} className="text-slate-300 shrink-0" />
-                                        <span className="truncate text-xs font-medium">{scenario.isAddressTBD ? "Address TBD" : (scenario.propertyAddress || "No Address")}</span>
+                                        <span className="truncate text-xs font-medium">{scenario.propertyAddress || "No Address/Zip"}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Calendar size={14} className="text-slate-300 shrink-0" />
