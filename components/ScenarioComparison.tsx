@@ -112,6 +112,69 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                 </tr>
               </thead>
               <tbody>
+                {/* Purchase Details Section */}
+                <tr className="bg-slate-100">
+                  <td colSpan={comparisonData.length + 1} className="px-6 py-3">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Purchase Details</span>
+                  </td>
+                </tr>
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Purchase Price</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.scenario.purchasePrice)}</span>
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Down Payment</td>
+                  {comparisonData.map((data) => {
+                    const downPaymentPercent = data.scenario.purchasePrice > 0 
+                      ? (data.scenario.downPaymentAmount / data.scenario.purchasePrice) * 100 
+                      : 0;
+                    return (
+                      <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-base font-bold text-slate-900">{formatMoney(data.scenario.downPaymentAmount)}</span>
+                          <span className="text-xs text-slate-500">({downPaymentPercent.toFixed(2)}%)</span>
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Base Loan Amount</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.baseLoanAmount)}</span>
+                    </td>
+                  ))}
+                </tr>
+                {comparisonData.some(d => d.results.financedMIP > 0) && (
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">
+                      {comparisonData[0]?.scenario.loanType === 'FHA' ? 'UFMIP' : 'VA Funding Fee'}
+                    </td>
+                    {comparisonData.map((data) => (
+                      <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                        {data.results.financedMIP > 0 ? (
+                          <span className="text-base font-bold text-slate-900">{formatMoney(data.results.financedMIP)}</span>
+                        ) : (
+                          <span className="text-sm text-slate-300">—</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                )}
+                <tr className="bg-slate-100 border-b-2 border-slate-300">
+                  <td className="px-6 py-3 text-sm font-bold text-slate-900 border-r border-slate-200">Total Loan Amount</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-lg font-bold text-slate-900">{formatMoney(data.results.totalLoanAmount)}</span>
+                    </td>
+                  ))}
+                </tr>
+                
                 {/* Monthly Breakdown Section */}
                 <tr className="bg-slate-100">
                   <td colSpan={comparisonData.length + 1} className="px-6 py-3">

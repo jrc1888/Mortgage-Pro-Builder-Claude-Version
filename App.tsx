@@ -209,6 +209,7 @@ const App: React.FC = () => {
               onDelete={handleDelete}
               onDeleteClient={handleDeleteClient}
               onDuplicate={handleDuplicate}
+              onPin={handlePin}
               initialClient={activeScenario?.clientName}
               userDefaults={userDefaults}
               onUpdateDefaults={handleUpdateDefaults}
