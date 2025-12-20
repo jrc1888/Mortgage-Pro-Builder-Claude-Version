@@ -22,7 +22,18 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
     );
   }
 
-  const comparisonData = scenarios.map(scenario => {
+  type ComparisonDataItem = {
+    scenario: Scenario;
+    results: ReturnType<typeof calculateScenario>;
+    purchasePrice: number;
+    downPayment: number;
+    totalClosingCosts: number;
+    interestRate: number;
+    monthlyPayment: number;
+    loanType: string;
+  };
+
+  const comparisonData: ComparisonDataItem[] = scenarios.map(scenario => {
     const results = calculateScenario(scenario);
     return {
       scenario,
@@ -36,9 +47,10 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
     };
   });
 
+  type MetricKey = 'purchasePrice' | 'downPayment' | 'totalClosingCosts' | 'interestRate' | 'monthlyPayment' | 'loanType';
   type MetricFormatter = (v: number | string) => string;
   
-  const metrics: Array<{ label: string; key: keyof typeof comparisonData[0]; format: MetricFormatter }> = [
+  const metrics: Array<{ label: string; key: MetricKey; format: MetricFormatter }> = [
     { label: 'Purchase Price', key: 'purchasePrice', format: formatMoney },
     { label: 'Down Payment', key: 'downPayment', format: formatMoney },
     { label: 'Total Closing Costs', key: 'totalClosingCosts', format: formatMoney },
@@ -95,7 +107,7 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                       {metric.label}
                     </td>
                     {comparisonData.map((data) => {
-                      const value = (data as Record<string, any>)[metric.key];
+                      const value: number | string = data[metric.key];
                       return (
                         <td key={data.scenario.id} className="px-6 py-4 text-center border-l border-slate-200">
                           <span className="text-base font-bold text-slate-900">
