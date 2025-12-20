@@ -77,7 +77,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   // Undo/Redo History (20 revisions max)
   const [history, setHistory] = useState<Scenario[]>([scenarioWithDefaults]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
-  const historyRef = useRef<{ isUndoRedo: boolean }>({ isUndoRedo: false });
+  const historyRef = useRef<{ isUndoRedo: boolean; skipNext: boolean }>({ isUndoRedo: false, skipNext: false });
   
   // NEW: Toast, Debounce, and Validation
   const { addToast } = useToast();
@@ -186,6 +186,71 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         setScenario(prev => ({ ...prev, closingCosts: updatedCosts }));
     }
   }, [scenario.closingCosts.length, scenario.income, scenario.debts]);
+
+  // Track scenario changes for undo/redo history
+  useEffect(() => {
+    // Skip adding to history if this change came from undo/redo or initial setup
+    if (historyRef.current.isUndoRedo || historyRef.current.skipNext) {
+      historyRef.current.isUndoRedo = false;
+      historyRef.current.skipNext = false;
+      return;
+    }
+
+    // Only add to history if scenario actually changed (not initial render)
+    if (historyIndex < history.length - 1) {
+      // User has undone, so we need to replace future history
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push(JSON.parse(JSON.stringify(scenario))); // Deep copy
+      // Limit to 20 revisions
+      if (newHistory.length > 21) {
+        newHistory.shift();
+        setHistoryIndex(newHistory.length - 1);
+      } else {
+        setHistoryIndex(newHistory.length - 1);
+      }
+      setHistory(newHistory);
+    } else {
+      // Normal case: add new state to history
+      const newHistory = [...history, JSON.parse(JSON.stringify(scenario))]; // Deep copy
+      // Limit to 20 revisions
+      if (newHistory.length > 21) {
+        newHistory.shift();
+      } else {
+        setHistoryIndex(newHistory.length - 1);
+      }
+      setHistory(newHistory);
+    }
+  }, [scenario]);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+Z for undo (prevent default browser undo in inputs)
+      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (historyIndex > 0) {
+          historyRef.current.isUndoRedo = true;
+          const newIndex = historyIndex - 1;
+          setHistoryIndex(newIndex);
+          setScenario(JSON.parse(JSON.stringify(history[newIndex]))); // Deep copy
+        }
+      }
+      
+      // Ctrl+Y or Ctrl+Shift+Z for redo
+      if ((e.ctrlKey && e.key === 'y') || (e.ctrlKey && e.shiftKey && e.key === 'z')) {
+        e.preventDefault();
+        if (historyIndex < history.length - 1) {
+          historyRef.current.isUndoRedo = true;
+          const newIndex = historyIndex + 1;
+          setHistoryIndex(newIndex);
+          setScenario(JSON.parse(JSON.stringify(history[newIndex]))); // Deep copy
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [history, historyIndex]);
 
   // Simple Auto-Save - Works perfectly, no complications
   useEffect(() => {
