@@ -371,12 +371,26 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     let newAmount = 0;
     if (cost.isFixed) {
         // Fixed -> Percent
-        if (results.totalLoanAmount > 0) {
-            newAmount = (cost.amount / results.totalLoanAmount) * 100;
+        if (id === 'buyers-agent-commission') {
+            // Buyer's Agent Commission uses purchase price
+            if (scenario.purchasePrice > 0) {
+                newAmount = (cost.amount / scenario.purchasePrice) * 100;
+            }
+        } else {
+            // All other percentage fees use loan amount
+            if (results.totalLoanAmount > 0) {
+                newAmount = (cost.amount / results.totalLoanAmount) * 100;
+            }
         }
     } else {
         // Percent -> Fixed
-        newAmount = results.totalLoanAmount * (cost.amount / 100);
+        if (id === 'buyers-agent-commission') {
+            // Buyer's Agent Commission uses purchase price
+            newAmount = scenario.purchasePrice * (cost.amount / 100);
+        } else {
+            // All other percentage fees use loan amount
+            newAmount = results.totalLoanAmount * (cost.amount / 100);
+        }
     }
 
     const newCosts = scenario.closingCosts.map(c => c.id === id ? { ...c, isFixed: !c.isFixed, amount: Number(newAmount.toFixed(4)) } : c);
