@@ -88,7 +88,8 @@ export const LiveDecimalInput: React.FC<{
     step?: string;
     placeholder?: string;
     precision?: number;
-}> = ({ value, onChange, className, step = "0.01", placeholder, precision = 3 }) => {
+    onBlur?: () => void;
+}> = ({ value, onChange, className, step = "0.01", placeholder, precision = 3, onBlur }) => {
     const [localVal, setLocalVal] = useState(value.toString());
     const [focused, setFocused] = useState(false);
 
