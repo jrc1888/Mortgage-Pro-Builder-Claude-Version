@@ -200,7 +200,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             key={scenario.id} 
                             className={`group rounded-xl border shadow-md hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col relative ${
                                 scenario.isPinned 
-                                    ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-amber-100/50 ring-2 ring-amber-300 shadow-amber-200/50' 
+                                    ? 'border-amber-400 bg-gradient-to-br from-amber-50 to-amber-100/50 ring-2 ring-amber-200 shadow-amber-200/30' 
                                     : 'bg-white border-slate-300 hover:border-indigo-300'
                             } ${isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''}`}
                             onClick={() => onSelect(scenario)}
@@ -209,8 +209,8 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 setContextMenu({ x: e.clientX, y: e.clientY, scenarioId: scenario.id });
                             }}
                         >
-                            {/* Pin/Star Button - Top Left */}
-                            <div className="absolute top-4 left-4 z-10">
+                            {/* Pin/Star Button - Top Right (moved to avoid overlap) */}
+                            <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -218,19 +218,17 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                             onPin(scenario.id, !scenario.isPinned);
                                         }
                                     }}
-                                    className={`p-2 rounded-lg transition-all shadow-sm ${
+                                    className={`p-1.5 rounded-lg transition-all ${
                                         scenario.isPinned 
-                                            ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber-300/50' 
+                                            ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-md shadow-amber-300/40' 
                                             : 'bg-white/90 backdrop-blur-sm text-slate-400 hover:text-amber-500 hover:bg-amber-50 border border-slate-200'
                                     }`}
                                     title={scenario.isPinned ? "Unpin scenario" : "Pin scenario to top"}
                                 >
-                                    <Star size={18} className={scenario.isPinned ? 'fill-current' : ''} strokeWidth={scenario.isPinned ? 0 : 2} />
+                                    <Star size={16} className={scenario.isPinned ? 'fill-current' : ''} strokeWidth={scenario.isPinned ? 0 : 2} />
                                 </button>
-                            </div>
                             
-                            {/* Comparison Checkbox and Transaction Type Badge - Top Right */}
-                            <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                            {/* Comparison Checkbox and Transaction Type Badge */}
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -267,7 +265,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             
                             <div className="p-6 flex-1">
                                 <div className="flex flex-col gap-2 mb-4">
-                                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight pr-20">
+                                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">
                                         <span className="font-normal text-slate-500 text-xs block mb-1 uppercase tracking-wider">{scenario.clientName}</span>
                                         {scenario.name || "Untitled Scenario"}
                                     </h3>

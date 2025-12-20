@@ -82,203 +82,296 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
 
       {/* Comparison Content */}
       <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-[1800px] mx-auto space-y-6">
-          {/* Summary Table */}
+        <div className="max-w-[1800px] mx-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
             <table className="w-full">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                <tr className="bg-slate-50 border-b-2 border-slate-300">
+                  <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest w-64">
                     Metric
                   </th>
-                  {comparisonData.map((data, idx) => (
+                  {comparisonData.map((data) => (
                     <th key={data.scenario.id} className="px-6 py-4 text-center border-l border-slate-200">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-xs font-bold text-slate-900">{data.scenario.name}</span>
-                        <span className="text-[10px] text-slate-500">{data.scenario.clientName}</span>
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-full">
+                          <div className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded border mb-2 ${
+                            data.scenario.loanType === 'FHA' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                            data.scenario.loanType === 'VA' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}>
+                            {data.scenario.loanType}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-sm font-bold text-slate-900">{data.scenario.name}</span>
+                          <span className="text-[10px] text-slate-500">{data.scenario.clientName}</span>
+                        </div>
                       </div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {metrics.map((metric, metricIdx) => (
-                  <tr key={metric.key} className={metricIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-700 border-r border-slate-200">
-                      {metric.label}
+                {/* Monthly Breakdown Section */}
+                <tr className="bg-slate-100">
+                  <td colSpan={comparisonData.length + 1} className="px-6 py-3">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Monthly Breakdown</span>
+                  </td>
+                </tr>
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Principal & Interest</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyPrincipalAndInterest)}</span>
                     </td>
+                  ))}
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Property Taxes</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyTax)}</span>
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Home Insurance</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyInsurance)}</span>
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Mortgage Insurance</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyMI)}</span>
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">HOA Dues</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyHOA)}</span>
+                    </td>
+                  ))}
+                </tr>
+                {comparisonData.some(d => d.scenario.dpa.active && !d.scenario.dpa.isDeferred) && (
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-indigo-600 border-r border-slate-200">DPA Loan (1st)</td>
                     {comparisonData.map((data) => {
-                      const value: number | string = data[metric.key];
+                      const hasDPA = data.scenario.dpa.active && !data.scenario.dpa.isDeferred;
                       return (
-                        <td key={data.scenario.id} className="px-6 py-4 text-center border-l border-slate-200">
-                          <span className="text-base font-bold text-slate-900">
-                            {metric.format(value)}
-                          </span>
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasDPA ? (
+                            <span className="text-base font-bold text-indigo-600">{formatMoney(data.results.monthlyDPAPayment)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
                         </td>
                       );
                     })}
                   </tr>
-                ))}
+                )}
+                {comparisonData.some(d => d.scenario.dpa2?.active && !d.scenario.dpa2.isDeferred) && (
+                  <tr className="bg-white border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-indigo-600 border-r border-slate-200">DPA Loan (2nd)</td>
+                    {comparisonData.map((data) => {
+                      const hasDPA2 = data.scenario.dpa2?.active && !data.scenario.dpa2.isDeferred;
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasDPA2 ? (
+                            <span className="text-base font-bold text-indigo-600">{formatMoney(data.results.monthlyDPA2Payment)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )}
+                {comparisonData.some(d => d.scenario.buydown.active) && (
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-emerald-600 border-r border-slate-200">Buydown Subsidy (Yr 1)</td>
+                    {comparisonData.map((data) => {
+                      const hasBuydown = data.scenario.buydown.active;
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasBuydown ? (
+                            <span className="text-base font-bold text-emerald-600">-{formatMoney(data.results.baseMonthlyPayment - data.results.totalMonthlyPayment)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )}
+                {comparisonData.some(d => d.scenario.occupancyType === 'Primary Residence' && (d.scenario.income?.rental || 0) > 0) && (
+                  <tr className="bg-white border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-emerald-600 border-r border-slate-200">ADU Income Credit</td>
+                    {comparisonData.map((data) => {
+                      const hasADUCredit = data.scenario.occupancyType === 'Primary Residence' && (data.scenario.income?.rental || 0) > 0;
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasADUCredit ? (
+                            <span className="text-base font-bold text-emerald-600">-{formatMoney(data.scenario.income?.rental || 0)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )}
+                <tr className="bg-slate-100 border-b-2 border-slate-300">
+                  <td className="px-6 py-3 text-sm font-bold text-slate-900 border-r border-slate-200">Total Monthly Payment</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-lg font-bold text-emerald-600">{formatMoney(data.results.totalMonthlyPayment)}</span>
+                    </td>
+                  ))}
+                </tr>
+
+                {/* Cash to Close Section */}
+                <tr className="bg-slate-100">
+                  <td colSpan={comparisonData.length + 1} className="px-6 py-3">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                      {comparisonData[0]?.scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}
+                    </span>
+                  </td>
+                </tr>
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Down Payment</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.downPaymentRequired)}</span>
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Gross Closing Costs</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.totalClosingCosts)}</span>
+                    </td>
+                  ))}
+                </tr>
+                {comparisonData.some(d => d.scenario.showSellerConcessions && d.results.sellerConcessionsAmount > 0) && (
+                  <tr className="bg-white border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-emerald-600 border-r border-slate-200">Seller Concessions</td>
+                    {comparisonData.map((data) => {
+                      const hasConcessions = data.scenario.showSellerConcessions && data.results.sellerConcessionsAmount > 0;
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasConcessions ? (
+                            <span className="text-base font-bold text-emerald-600">-{formatMoney(data.results.sellerConcessionsAmount)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )}
+                {comparisonData.some(d => d.scenario.showLenderCredits && d.results.lenderCreditsAmount > 0) && (
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-emerald-600 border-r border-slate-200">Lender Credit</td>
+                    {comparisonData.map((data) => {
+                      const hasCredits = data.scenario.showLenderCredits && data.results.lenderCreditsAmount > 0;
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasCredits ? (
+                            <span className="text-base font-bold text-emerald-600">-{formatMoney(data.results.lenderCreditsAmount)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )}
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Closing Costs (Net)</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.netClosingCosts)}</span>
+                    </td>
+                  ))}
+                </tr>
+                {comparisonData.some(d => d.scenario.dpa.active) && (
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-emerald-600 border-r border-slate-200">DPA Funding</td>
+                    {comparisonData.map((data) => {
+                      const hasDPA = data.scenario.dpa.active;
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasDPA ? (
+                            <span className="text-base font-bold text-emerald-600">-{formatMoney(data.scenario.dpa.amount)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )}
+                {comparisonData.some(d => d.scenario.dpa2?.active) && (
+                  <tr className="bg-white border-b border-slate-100">
+                    <td className="px-6 py-3 text-sm font-semibold text-emerald-600 border-r border-slate-200">DPA Funding (2nd)</td>
+                    {comparisonData.map((data) => {
+                      const hasDPA2 = data.scenario.dpa2?.active;
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {hasDPA2 ? (
+                            <span className="text-base font-bold text-emerald-600">-{formatMoney(data.scenario.dpa2.amount)}</span>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )}
+                <tr className="bg-slate-50 border-t-2 border-slate-300 border-b border-slate-100">
+                  <td className="px-6 py-3 text-xs font-bold text-slate-600 uppercase border-r border-slate-200">Total Cash to Close</td>
+                  {comparisonData.map((data) => {
+                    const cashToClose = data.results.downPaymentRequired + data.results.netClosingCosts - 
+                                      (data.scenario.dpa.active ? data.scenario.dpa.amount : 0) - 
+                                      (data.scenario.dpa2?.active ? data.scenario.dpa2.amount : 0);
+                    return (
+                      <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                        <span className="text-lg font-bold text-slate-900">{formatMoney(cashToClose)}</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+                <tr className="bg-white border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-emerald-600 border-r border-slate-200">Earnest Money</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-emerald-600">-{formatMoney(data.results.earnestMoney)}</span>
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-slate-100 border-t-2 border-slate-400">
+                  <td className="px-6 py-4 text-sm font-bold text-slate-900 uppercase border-r border-slate-200">Net Cash to Close</td>
+                  {comparisonData.map((data) => {
+                    const cashToClose = data.results.downPaymentRequired + data.results.netClosingCosts - 
+                                      (data.scenario.dpa.active ? data.scenario.dpa.amount : 0) - 
+                                      (data.scenario.dpa2?.active ? data.scenario.dpa2.amount : 0);
+                    const netCashToClose = cashToClose - data.results.earnestMoney;
+                    return (
+                      <td key={data.scenario.id} className="px-6 py-4 text-center border-l border-slate-200">
+                        <span className="text-xl font-bold text-slate-900">{formatMoney(netCashToClose)}</span>
+                      </td>
+                    );
+                  })}
+                </tr>
               </tbody>
             </table>
-          </div>
-
-          {/* Detailed Breakdowns - Side by Side */}
-          <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${scenarios.length}, 1fr)` }}>
-            {comparisonData.map((data) => {
-              const { scenario, results } = data;
-              const hasDPA = scenario.dpa.active && !scenario.dpa.isDeferred;
-              const hasDPA2 = scenario.dpa2?.active && !scenario.dpa2.isDeferred;
-              const hasBuydown = scenario.buydown.active;
-              const hasADUCredit = scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0;
-              const totalCredits = (scenario.showSellerConcessions ? results.sellerConcessionsAmount : 0) + 
-                                   (scenario.showLenderCredits ? results.lenderCreditsAmount : 0);
-              const grossClosingCosts = results.totalClosingCosts;
-              const netClosingCosts = results.netClosingCosts;
-              const cashToClose = results.downPaymentRequired + netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0) - (scenario.dpa2?.active ? scenario.dpa2.amount : 0);
-              const netCashToClose = cashToClose - results.earnestMoney;
-
-              return (
-                <div key={scenario.id} className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
-                  <div className="p-6 space-y-6">
-                    {/* Monthly Breakdown */}
-                    <div className="border-t border-slate-100 pt-4">
-                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
-                      <div className="space-y-2 text-base">
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Principal & Interest</span>
-                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyPrincipalAndInterest)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Property Taxes</span>
-                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyTax)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Home Insurance</span>
-                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyInsurance)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Mortgage Insurance</span>
-                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyMI)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>HOA Dues</span>
-                          <span className="font-bold text-slate-900">{formatMoney(results.monthlyHOA)}</span>
-                        </div>
-                        {hasDPA && (
-                          <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
-                            <span>DPA Loan (1st)</span>
-                            <span className="font-bold">{formatMoney(results.monthlyDPAPayment)}</span>
-                          </div>
-                        )}
-                        {hasDPA2 && (
-                          <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
-                            <span>DPA Loan (2nd)</span>
-                            <span className="font-bold">{formatMoney(results.monthlyDPA2Payment)}</span>
-                          </div>
-                        )}
-                        {hasBuydown && (
-                          <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
-                            <span>Buydown Subsidy (Yr 1)</span>
-                            <span className="font-bold">-{formatMoney(results.baseMonthlyPayment - results.totalMonthlyPayment)}</span>
-                          </div>
-                        )}
-                        {hasADUCredit && (
-                          <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
-                            <span>ADU Income Credit</span>
-                            <span className="font-bold">-{formatMoney(scenario.income?.rental || 0)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Cash to Close Breakdown */}
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-sm">
-                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                        {scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}
-                      </h3>
-                      <div className="space-y-2 mb-3 text-sm">
-                        {scenario.transactionType === 'Purchase' ? (
-                          <>
-                            <div className="flex justify-between text-slate-600">
-                              <span>Down Payment</span>
-                              <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
-                            </div>
-                            <div className="flex justify-between text-slate-600">
-                              <span>Gross Closing Costs</span>
-                              <span className="font-bold text-slate-900">{formatMoney(grossClosingCosts)}</span>
-                            </div>
-                            {scenario.showSellerConcessions && results.sellerConcessionsAmount > 0 && (
-                              <div className="flex justify-between text-emerald-600">
-                                <span>Seller Concessions</span>
-                                <span className="font-bold">-{formatMoney(results.sellerConcessionsAmount)}</span>
-                              </div>
-                            )}
-                            {scenario.showLenderCredits && results.lenderCreditsAmount > 0 && (
-                              <div className="flex justify-between text-emerald-600">
-                                <span>Lender Credit</span>
-                                <span className="font-bold">-{formatMoney(results.lenderCreditsAmount)}</span>
-                              </div>
-                            )}
-                            <div className="flex justify-between text-slate-600">
-                              <span>Closing Costs (Net)</span>
-                              <span className="font-bold text-slate-900">{formatMoney(netClosingCosts)}</span>
-                            </div>
-                            {scenario.dpa.active && (
-                              <div className="flex justify-between text-emerald-600">
-                                <span>DPA Funding</span>
-                                <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
-                              </div>
-                            )}
-                            {scenario.dpa2?.active && (
-                              <div className="flex justify-between text-emerald-600">
-                                <span>DPA Funding (2nd)</span>
-                                <span className="font-bold">-{formatMoney(scenario.dpa2.amount)}</span>
-                              </div>
-                            )}
-                            
-                            {/* Subtotal before Earnest Money */}
-                            <div className="border-t border-slate-300 pt-2 mt-2 flex justify-between items-center">
-                              <span className="text-xs font-bold text-slate-600 uppercase">Total Cash to Close</span>
-                              <span className="text-lg font-bold text-slate-900">
-                                {formatMoney(cashToClose)}
-                              </span>
-                            </div>
-                            
-                            {/* Earnest Money Deduction */}
-                            <div className="mb-4">
-                              <div className="flex justify-between text-emerald-600 text-sm">
-                                <span>Earnest Money</span>
-                                <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
-                              </div>
-                            </div>
-
-                            {/* Net Cash to Close */}
-                            <div className="border-t-2 border-slate-400 pt-3 mt-3 flex justify-between items-center">
-                              <span className="text-sm font-bold text-slate-900 uppercase">Net Cash to Close</span>
-                              <span className="text-xl font-bold text-slate-900">
-                                {formatMoney(netCashToClose)}
-                              </span>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex justify-between text-slate-600">
-                              <span>Cash Out</span>
-                              <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
-                            </div>
-                            <div className="flex justify-between text-slate-600">
-                              <span>Closing Costs (Net)</span>
-                              <span className="font-bold text-slate-900">{formatMoney(netClosingCosts)}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
       </div>
