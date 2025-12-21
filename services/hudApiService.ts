@@ -339,6 +339,19 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   // We'll use the city name and state for display
   // The county name could be looked up from FIPS if needed
   
+  // If all formats failed, log detailed error
+  if (!incomeLimits) {
+    console.error('HUD API: All entity ID format attempts failed for county FIPS:', countyFips);
+    console.error('HUD API: Tried formats:', [
+      countyFips,
+      `${stateFips}-${countyCode}`,
+      countyCode,
+      `${stateFips}.${countyCode}`
+    ]);
+    console.error('HUD API: You may need to look up the correct entity ID from HUD API documentation');
+    console.error('HUD API: Or use a different endpoint/approach to get income limits');
+  }
+  
   return {
     zipCode,
     county: cityName, // Using city since that's what we have
