@@ -6,6 +6,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { getIncomeLimitsByZipCode, isHudApiConfigured } from './hudApiService';
 
 export interface AMILimits {
   zipCode: string;
@@ -97,8 +98,93 @@ export async function getAMILimits(
 }
 
 /**
+ * Get AMI limits from HUD API
+ */
+async function getAMILimitsFromHudApi(
+  zipCode: string,
+  familySize: number
+): Promise<AMILimits | null> {
+  try {
+    const hudData = await getIncomeLimitsByZipCode(zipCode);
+    
+    if (!hudData || !hudData.incomeLimits) {
+      return null;
+    }
+
+    const incomeData = hudData.incomeLimits.data || hudData.incomeLimits;
+    
+    // HUD API response structure: https://www.huduser.gov/portal/dataset/fmr-api.html
+    // Typical structure includes income limits by family size
+    // Adjust parsing based on actual API response format
+    
+    // Log the response structure for debugging (remove in production)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('HUD API Response structure:', JSON.stringify(incomeData, null, 2).substring(0, 500));
+    }
+    
+    // Extract income limits - HUD API typically returns:
+    // l30 (30%), l50 (50%), l80 (80%), median (100%), l120 (120%)
+    // For each family size: l30_1, l50_1, l80_1, etc. or in an array format
+    
+    // Try to extract limits for the requested family size
+    // Common patterns: incomeData.l50_1, incomeData.l50[0], incomeData.onePersonLimit, etc.
+    const getLimit = (prefix: string, size: number) => {
+      // Try various field name patterns
+      const patterns = [
+        `${prefix}_${size}`,           // l50_1, l50_2, etc.
+        `${prefix}${size}`,            // l501, l502, etc.
+        `${prefix}[${size - 1}]`,      // Array format
+        `${prefix}.${size}Person`,     // l50.1Person
+      ];
+      
+      for (const pattern of patterns) {
+        if (incomeData[pattern] !== undefined) {
+          return parseInt(incomeData[pattern]) || 0;
+        }
+      }
+      
+      return 0;
+    };
+    
+    // Extract limits for the requested family size
+    const extremelyLow = getLimit('l30', familySize);
+    const veryLow = getLimit('l50', familySize);
+    const low = getLimit('l80', familySize);
+    const median = incomeData.median || getLimit('median', familySize) || getLimit('l100', familySize);
+    const moderate = getLimit('l120', familySize);
+    
+    // If we couldn't extract limits, try alternative structure
+    if (!extremelyLow && !veryLow && !low && !median) {
+      // The API response might be structured differently
+      // Return null so it falls back to other sources
+      console.warn('Could not parse HUD API response structure for zip code', zipCode);
+      return null;
+    }
+    
+    return {
+      zipCode,
+      county: hudData.county || '',
+      msa: '',
+      state: hudData.state || '',
+      familySize,
+      limits: {
+        extremelyLow: extremelyLow || 0,
+        veryLow: veryLow || 0,
+        low: low || 0,
+        median: median || 0,
+        moderate: moderate || 0,
+      },
+      effectiveDate: incomeData.effective_date || incomeData.year || incomeData.fiscalYear || new Date().toISOString().split('T')[0],
+      dataSource: 'HUD API',
+    };
+  } catch (error) {
+    console.error('Error fetching AMI limits from HUD API:', error);
+    return null;
+  }
+}
+
+/**
  * Fallback: Get AMI limits from JSON file
- * This is a placeholder - you'll need to create the actual JSON file
  */
 async function getAMILimitsFromJSON(
   zipCode: string,
