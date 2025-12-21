@@ -108,18 +108,32 @@ async function getAMILimitsFromJSON(
     // Try to load from public/data/ami-limits.json
     const response = await fetch('/data/ami-limits.json');
     if (!response.ok) {
-      // File doesn't exist yet - return null
+      console.error(`AMI data file not found: /data/ami-limits.json (Status: ${response.status})`);
+      console.error('Make sure the file exists at: public/data/ami-limits.json');
       return null;
     }
     
     const data = await response.json();
     
+    // Debug: Log available zip codes
+    if (!data[zipCode]) {
+      const availableZips = Object.keys(data).filter(key => !key.startsWith('_'));
+      console.warn(`Zip code ${zipCode} not found in AMI data. Available zip codes:`, availableZips);
+      return null;
+    }
+    
     const zipData = data[zipCode];
     if (!zipData || !zipData[familySize]) {
+      console.warn(`Family size ${familySize} not found for zip code ${zipCode}`);
       return null;
     }
 
     const limits = zipData[familySize];
+    if (!limits || typeof limits !== 'object') {
+      console.warn(`Invalid limits data for zip ${zipCode}, family size ${familySize}`);
+      return null;
+    }
+
     return {
       zipCode,
       county: zipData.county || '',
@@ -138,6 +152,9 @@ async function getAMILimitsFromJSON(
     };
   } catch (error) {
     console.error('Error loading AMI data from JSON:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+    }
     return null;
   }
 }
