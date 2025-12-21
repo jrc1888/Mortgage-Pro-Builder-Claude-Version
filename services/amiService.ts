@@ -105,22 +105,24 @@ async function getAMILimitsFromHudApi(
   familySize: number
 ): Promise<AMILimits | null> {
   try {
+    console.log('HUD API: Getting income limits for zip code', zipCode);
     const hudData = await getIncomeLimitsByZipCode(zipCode);
     
-    if (!hudData || !hudData.incomeLimits) {
+    if (!hudData) {
+      console.warn('HUD API: No data returned from getIncomeLimitsByZipCode');
+      return null;
+    }
+    
+    if (!hudData.incomeLimits) {
+      console.warn('HUD API: No incomeLimits in response:', hudData);
       return null;
     }
 
     const incomeData = hudData.incomeLimits.data || hudData.incomeLimits;
     
-    // HUD API response structure: https://www.huduser.gov/portal/dataset/fmr-api.html
-    // Typical structure includes income limits by family size
-    // Adjust parsing based on actual API response format
-    
-    // Log the response structure for debugging (remove in production)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('HUD API Response structure:', JSON.stringify(incomeData, null, 2).substring(0, 500));
-    }
+    // Log the full response structure for debugging
+    console.log('HUD API: Full response structure:', JSON.stringify(hudData, null, 2));
+    console.log('HUD API: Income data structure:', JSON.stringify(incomeData, null, 2));
     
     // Extract income limits - HUD API typically returns:
     // l30 (30%), l50 (50%), l80 (80%), median (100%), l120 (120%)

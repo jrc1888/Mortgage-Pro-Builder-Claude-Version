@@ -12,8 +12,14 @@ const HUD_API_BASE_URL = 'https://www.huduser.gov/hudapi/public';
  */
 function getHudApiToken(): string | null {
   if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_HUD_API_TOKEN) {
-    return import.meta.env.VITE_HUD_API_TOKEN;
+    const token = import.meta.env.VITE_HUD_API_TOKEN;
+    // Log in development to help debug
+    if (token && token.length > 0) {
+      console.log('HUD API: Token found (length:', token.length, 'chars)');
+    }
+    return token;
   }
+  console.warn('HUD API: Token not found. Make sure VITE_HUD_API_TOKEN is set in environment variables.');
   return null;
 }
 
@@ -45,6 +51,7 @@ export async function getIncomeLimitsByEntity(
     // HUD API endpoint: /il/data/{entityid}?type={type}
     // type can be: 'county' or 'msa'
     const url = `${HUD_API_BASE_URL}/il/data/${entityId}?type=${entityType}`;
+    console.log('HUD API: Fetching income limits from:', url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -54,11 +61,15 @@ export async function getIncomeLimitsByEntity(
       },
     });
 
+    console.log('HUD API: Income limits response status:', response.status);
+
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('HUD API: Error response body:', errorText);
       if (response.status === 401) {
-        console.error('HUD API: Unauthorized - Check your API token');
+        console.error('HUD API: Unauthorized - Check your API token is correct and active');
       } else if (response.status === 404) {
-        console.warn(`HUD API: Income limits not found for entity ${entityId}`);
+        console.warn(`HUD API: Income limits not found for entity ${entityId} (type: ${entityType})`);
       } else {
         console.error(`HUD API Error: ${response.status} ${response.statusText}`);
       }
@@ -66,9 +77,13 @@ export async function getIncomeLimitsByEntity(
     }
 
     const data = await response.json();
+    console.log('HUD API: Income limits data received:', JSON.stringify(data).substring(0, 500));
     return data;
   } catch (error) {
     console.error('Error fetching income limits from HUD API:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message, error.stack);
+    }
     return null;
   }
 }
@@ -91,6 +106,7 @@ export async function getZipCodeCrosswalk(zipCode: string): Promise<any | null> 
     // HUD API endpoint: /usps?type=1&query={zipcode}
     // type=1 returns ZIP to County/State mapping
     const url = `${HUD_API_BASE_URL}/usps?type=1&query=${zipCode}`;
+    console.log('HUD API: Fetching crosswalk data from:', url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -100,9 +116,13 @@ export async function getZipCodeCrosswalk(zipCode: string): Promise<any | null> 
       },
     });
 
+    console.log('HUD API: Crosswalk response status:', response.status);
+
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('HUD API: Error response:', errorText);
       if (response.status === 401) {
-        console.error('HUD API: Unauthorized - Check your API token');
+        console.error('HUD API: Unauthorized - Check your API token is correct');
       } else if (response.status === 404) {
         console.warn(`HUD API: Crosswalk data not found for ZIP ${zipCode}`);
       } else {
@@ -112,6 +132,7 @@ export async function getZipCodeCrosswalk(zipCode: string): Promise<any | null> 
     }
 
     const data = await response.json();
+    console.log('HUD API: Crosswalk data received:', JSON.stringify(data).substring(0, 200));
     return data;
   } catch (error) {
     console.error('Error fetching ZIP code crosswalk from HUD API:', error);
