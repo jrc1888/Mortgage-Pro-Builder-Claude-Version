@@ -148,29 +148,47 @@ export async function getZipCodeCrosswalk(zipCode: string): Promise<any | null> 
  */
 export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | null> {
   // First, get the county/MSA for this ZIP code
+  console.log('HUD API: Getting crosswalk for zip code', zipCode);
   const crosswalk = await getZipCodeCrosswalk(zipCode);
   
-  if (!crosswalk || !crosswalk.data || crosswalk.data.length === 0) {
-    console.warn(`No crosswalk data found for ZIP code ${zipCode}`);
+  console.log('HUD API: Crosswalk response:', crosswalk);
+  
+  if (!crosswalk) {
+    console.warn(`HUD API: No crosswalk response for ZIP code ${zipCode}`);
+    return null;
+  }
+  
+  // HUD API may return data directly or in a data property
+  const crosswalkData = crosswalk.data || crosswalk;
+  
+  if (!crosswalkData || (Array.isArray(crosswalkData) && crosswalkData.length === 0)) {
+    console.warn(`HUD API: No crosswalk data found for ZIP code ${zipCode}. Response:`, crosswalk);
     return null;
   }
 
   // Use the first result (primary county for this ZIP)
-  const primaryMatch = crosswalk.data[0];
-  const countyFips = primaryMatch.geoid || primaryMatch.county;
+  const primaryMatch = Array.isArray(crosswalkData) ? crosswalkData[0] : crosswalkData;
+  console.log('HUD API: Primary match:', primaryMatch);
+  
+  // HUD API crosswalk may use different field names - try multiple variations
+  const countyFips = primaryMatch.geoid || primaryMatch.county || primaryMatch.fips || primaryMatch.county_fips;
   
   if (!countyFips) {
-    console.warn(`No county FIPS found in crosswalk data for ZIP ${zipCode}`);
+    console.warn(`HUD API: No county FIPS found in crosswalk data for ZIP ${zipCode}. Available fields:`, Object.keys(primaryMatch));
     return null;
   }
 
+  console.log('HUD API: Using county FIPS:', countyFips);
+  
   // Get income limits for this county
   const incomeLimits = await getIncomeLimitsByEntity(countyFips, 'county');
   
+  console.log('HUD API: Income limits response:', incomeLimits);
+  
   return {
     zipCode,
-    county: primaryMatch.countyname || primaryMatch.county_name,
-    state: primaryMatch.state || primaryMatch.state_code,
+    county: primaryMatch.countyname || primaryMatch.county_name || primaryMatch.county || '',
+    state: primaryMatch.state || primaryMatch.state_code || primaryMatch.stname || '',
     countyFips,
     incomeLimits,
   };

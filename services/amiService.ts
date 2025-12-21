@@ -58,7 +58,21 @@ export async function getAMILimits(
   }
 
   try {
-    // Try Supabase first if configured
+    // Try HUD API first if configured (most up-to-date)
+    if (isHudApiConfigured()) {
+      console.log('HUD API: Attempting to fetch AMI data for zip code', normalizedZip);
+      const hudData = await getAMILimitsFromHudApi(normalizedZip, familySize);
+      if (hudData) {
+        console.log('HUD API: Successfully retrieved AMI data for zip code', normalizedZip);
+        return hudData;
+      } else {
+        console.warn('HUD API: No data returned, falling back to other sources');
+      }
+    } else {
+      console.log('HUD API: Not configured, skipping API call');
+    }
+
+    // Try Supabase database if configured
     if (isSupabaseConfigured()) {
       const { data, error } = await supabase
         .from('ami_limits')
