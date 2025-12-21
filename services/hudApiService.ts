@@ -165,12 +165,32 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   }
   
   // HUD API returns results array - extract it
-  const resultsArray = crosswalk.results || crosswalk.data;
+  console.log('HUD API: Checking crosswalk structure...');
+  console.log('HUD API: crosswalk.results exists?', !!crosswalk.results);
+  console.log('HUD API: crosswalk.data exists?', !!crosswalk.data);
+  console.log('HUD API: crosswalk is array?', Array.isArray(crosswalk));
+  console.log('HUD API: crosswalk keys:', Object.keys(crosswalk || {}));
+  
+  let resultsArray = null;
+  
+  if (Array.isArray(crosswalk)) {
+    resultsArray = crosswalk;
+    console.log('HUD API: Crosswalk is directly an array');
+  } else if (crosswalk.results && Array.isArray(crosswalk.results)) {
+    resultsArray = crosswalk.results;
+    console.log('HUD API: Found results array, length:', resultsArray.length);
+  } else if (crosswalk.data && Array.isArray(crosswalk.data)) {
+    resultsArray = crosswalk.data;
+    console.log('HUD API: Found data array, length:', resultsArray.length);
+  }
   
   if (!resultsArray || !Array.isArray(resultsArray) || resultsArray.length === 0) {
-    console.warn(`HUD API: No results array found for ZIP code ${zipCode}. Response:`, crosswalk);
+    console.warn(`HUD API: No results array found for ZIP code ${zipCode}`);
+    console.warn('HUD API: Full crosswalk response:', JSON.stringify(crosswalk, null, 2).substring(0, 1000));
     return null;
   }
+  
+  console.log('HUD API: Successfully extracted results array with', resultsArray.length, 'items');
 
   // Use the first result (primary tract/county for this ZIP)
   const primaryMatch = resultsArray[0];
