@@ -771,46 +771,56 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 </p>
                             </div>
                             
-                            {scenario.propertyAddress && (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={labelClass}>F&A Date</label>
-                                        <div className={inputGroupClass}>
-                                            <input 
-                                                type="date" 
-                                                value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
-                                                onChange={(e) => {
-                                                    if (e.target.value) {
-                                                        const date = new Date(e.target.value + 'T00:00:00');
-                                                        handleInputChange('faDate', date.toISOString());
-                                                    } else {
-                                                        handleInputChange('faDate', undefined);
-                                                    }
-                                                }} 
-                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
-                                            />
+                            {(() => {
+                                // Only show dates if it's a full address (not just a zip code)
+                                const zipCode = extractZipCode(scenario.propertyAddress);
+                                const isFullAddress = scenario.propertyAddress && 
+                                    scenario.propertyAddress.trim().length > 5 && 
+                                    scenario.propertyAddress.trim() !== zipCode;
+                                
+                                if (!isFullAddress) return null;
+                                
+                                return (
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={labelClass}>F&A Date</label>
+                                            <div className={inputGroupClass}>
+                                                <input 
+                                                    type="date" 
+                                                    value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
+                                                    onChange={(e) => {
+                                                        if (e.target.value) {
+                                                            const date = new Date(e.target.value + 'T00:00:00');
+                                                            handleInputChange('faDate', date.toISOString());
+                                                        } else {
+                                                            handleInputChange('faDate', undefined);
+                                                        }
+                                                    }} 
+                                                    className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Settlement Date</label>
+                                            <div className={inputGroupClass}>
+                                                <input 
+                                                    type="date" 
+                                                    value={scenario.settlementDate ? scenario.settlementDate.split('T')[0] : ''} 
+                                                    onChange={(e) => {
+                                                        if (e.target.value) {
+                                                            const date = new Date(e.target.value + 'T00:00:00');
+                                                            handleInputChange('settlementDate', date.toISOString());
+                                                        } else {
+                                                            handleInputChange('settlementDate', undefined);
+                                                        }
+                                                    }} 
+                                                    className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                                />
+                                            </div>
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className={labelClass}>Settlement Date</label>
-                                        <div className={inputGroupClass}>
-                                            <input 
-                                                type="date" 
-                                                value={scenario.settlementDate ? scenario.settlementDate.split('T')[0] : ''} 
-                                                onChange={(e) => {
-                                                    if (e.target.value) {
-                                                        const date = new Date(e.target.value + 'T00:00:00');
-                                                        handleInputChange('settlementDate', date.toISOString());
-                                                    } else {
-                                                        handleInputChange('settlementDate', undefined);
-                                                    }
-                                                }} 
-                                                className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                                );
+                            })()}
                             
                             <div>
                                 <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
