@@ -609,23 +609,23 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       
       {/* Header - Dark Theme - Desktop Only on Mobile */}
       <header className="desktop-only scenario-header-desktop bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-32">
-        <div className="flex items-center gap-6 flex-1">
-          <button onClick={handleExit} className="p-2.5 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800">
+          <div className="flex items-center gap-6 flex-1 min-w-0">
+          <button onClick={handleExit} className="p-2.5 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800 shrink-0">
             <ArrowLeft size={20} />
           </button>
           
-          <div className="flex items-center gap-10 w-full max-w-6xl">
+          <div className="flex items-center gap-8 w-full min-w-0">
               {/* Client Name */}
-              <div className="min-w-[280px]">
+              <div className="min-w-[200px] shrink-0">
                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Borrower</label>
                    <div className="text-4xl font-black text-indigo-400 tracking-tight truncate">{scenario.clientName || "Client Name"}</div>
               </div>
 
               {/* Divider */}
-              <div className="h-12 w-px bg-slate-800"></div>
+              <div className="h-12 w-px bg-slate-800 shrink-0"></div>
 
-              {/* Scenario Name Input */}
-              <div className="flex-1">
+              {/* Scenario Name Input - Maximize space */}
+              <div className="flex-1 min-w-0 mr-8">
                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Scenario Name</label>
                    <input 
                         value={scenario.name} 
@@ -637,14 +637,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
               </div>
 
                {/* Divider */}
-               <div className="h-12 w-px bg-slate-800"></div>
+               <div className="h-12 w-px bg-slate-800 shrink-0"></div>
 
                {/* Property, Price & Date */}
-               <div className="min-w-[260px] ml-4 text-right">
+               <div className="min-w-[240px] shrink-0 text-right">
                     <div className="flex flex-col items-end gap-1 mb-1">
                         <div className="flex items-center justify-end gap-1.5 text-sm text-indigo-400 font-medium">
                             <MapPin size={14} />
-                            <span className="truncate max-w-[220px]">{scenario.propertyAddress || "No Address/Zip"}</span>
+                            <span className="truncate max-w-[200px]">{scenario.propertyAddress || "No Address/Zip"}</span>
                         </div>
                         <div className="text-xl font-bold text-white">
                             {formatMoney(scenario.purchasePrice)}
