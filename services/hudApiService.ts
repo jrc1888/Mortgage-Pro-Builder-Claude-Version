@@ -158,40 +158,35 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
     return null;
   }
   
-  // HUD API returns results in different structures - check for results array first
-  let crosswalkData = crosswalk.results || crosswalk.data || crosswalk;
+  // HUD API returns results array - extract it
+  const resultsArray = crosswalk.results || crosswalk.data;
   
-  // If it's not an array but has results, use results
-  if (!Array.isArray(crosswalkData) && crosswalk.results && Array.isArray(crosswalk.results)) {
-    crosswalkData = crosswalk.results;
-  }
-  
-  if (!crosswalkData || (Array.isArray(crosswalkData) && crosswalkData.length === 0)) {
-    console.warn(`HUD API: No crosswalk data found for ZIP code ${zipCode}. Response:`, crosswalk);
+  if (!resultsArray || !Array.isArray(resultsArray) || resultsArray.length === 0) {
+    console.warn(`HUD API: No results array found for ZIP code ${zipCode}. Response:`, crosswalk);
     return null;
   }
 
-  // Use the first result (primary county for this ZIP)
-  const primaryMatch = Array.isArray(crosswalkData) ? crosswalkData[0] : crosswalkData;
+  // Use the first result (primary tract/county for this ZIP)
+  const primaryMatch = resultsArray[0];
   console.log('HUD API: Primary match:', primaryMatch);
-  console.log('HUD API: Primary match keys:', Object.keys(primaryMatch));
   
-  // HUD API crosswalk may use different field names - try multiple variations
-  // Common fields: geoid, county, fips, county_fips, countycode, county_code
-  // Also check for nested structures like geoid10, geoid20, etc.
-  const countyFips = primaryMatch.geoid || 
-                     primaryMatch.geoid10 || 
-                     primaryMatch.geoid20 ||
-                     primaryMatch.county || 
-                     primaryMatch.fips || 
-                     primaryMatch.county_fips ||
-                     primaryMatch.countycode ||
-                     primaryMatch.county_code ||
-                     primaryMatch.countyFIPS;
+  // Extract geoid (census tract ID like "49035111002")
+  const geoid = primaryMatch.geoid;
   
-  if (!countyFips) {
-    console.warn(`HUD API: No county FIPS found in crosswalk data for ZIP ${zipCode}. Available fields:`, Object.keys(primaryMatch));
-    console.warn('HUD API: Full primary match object:', JSON.stringify(primaryMatch, null, 2));
+  if (!geoid || typeof geoid !== 'string') {
+    console.warn(`HUD API: No geoid found in crosswalk data for ZIP ${zipCode}. Available fields:`, Object.keys(primaryMatch));
+    return null;
+  }
+  
+  // Extract county FIPS from geoid
+  // Geoid format: SSCCCtttttt (State FIPS (2) + County FIPS (3) + Tract (6+))
+  // For HUD API, we need the 5-digit county FIPS (state + county)
+  let countyFips = '';
+  if (geoid.length >= 5) {
+    countyFips = geoid.substring(0, 5); // First 5 digits = State (2) + County (3)
+    console.log(`HUD API: Extracted county FIPS ${countyFips} from geoid ${geoid}`);
+  } else {
+    console.warn(`HUD API: Geoid ${geoid} is too short to extract county FIPS`);
     return null;
   }
 
@@ -202,22 +197,17 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   
   console.log('HUD API: Income limits response:', incomeLimits);
   
-  // Extract county and state names - try multiple field name variations
-  const countyName = primaryMatch.countyname || 
-                    primaryMatch.county_name || 
-                    primaryMatch.county || 
-                    primaryMatch.countyName ||
-                    '';
-  const stateCode = primaryMatch.state || 
-                   primaryMatch.state_code || 
-                   primaryMatch.stname || 
-                   primaryMatch.stateCode ||
-                   primaryMatch.stateName ||
-                   '';
+  // Extract county and state names from the primary match
+  const cityName = primaryMatch.city || '';
+  const stateCode = primaryMatch.state || '';
+  
+  // Note: The crosswalk gives us city, not county name directly
+  // We'll use the city name and state for display
+  // The county name could be looked up from FIPS if needed
   
   return {
     zipCode,
-    county: countyName,
+    county: cityName, // Using city since that's what we have
     state: stateCode,
     countyFips,
     incomeLimits,
