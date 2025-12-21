@@ -158,8 +158,13 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
     return null;
   }
   
-  // HUD API may return data directly or in a data property
-  const crosswalkData = crosswalk.data || crosswalk;
+  // HUD API returns results in different structures - check for results array first
+  let crosswalkData = crosswalk.results || crosswalk.data || crosswalk;
+  
+  // If it's not an array but has results, use results
+  if (!Array.isArray(crosswalkData) && crosswalk.results && Array.isArray(crosswalk.results)) {
+    crosswalkData = crosswalk.results;
+  }
   
   if (!crosswalkData || (Array.isArray(crosswalkData) && crosswalkData.length === 0)) {
     console.warn(`HUD API: No crosswalk data found for ZIP code ${zipCode}. Response:`, crosswalk);
@@ -169,12 +174,24 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   // Use the first result (primary county for this ZIP)
   const primaryMatch = Array.isArray(crosswalkData) ? crosswalkData[0] : crosswalkData;
   console.log('HUD API: Primary match:', primaryMatch);
+  console.log('HUD API: Primary match keys:', Object.keys(primaryMatch));
   
   // HUD API crosswalk may use different field names - try multiple variations
-  const countyFips = primaryMatch.geoid || primaryMatch.county || primaryMatch.fips || primaryMatch.county_fips;
+  // Common fields: geoid, county, fips, county_fips, countycode, county_code
+  // Also check for nested structures like geoid10, geoid20, etc.
+  const countyFips = primaryMatch.geoid || 
+                     primaryMatch.geoid10 || 
+                     primaryMatch.geoid20 ||
+                     primaryMatch.county || 
+                     primaryMatch.fips || 
+                     primaryMatch.county_fips ||
+                     primaryMatch.countycode ||
+                     primaryMatch.county_code ||
+                     primaryMatch.countyFIPS;
   
   if (!countyFips) {
     console.warn(`HUD API: No county FIPS found in crosswalk data for ZIP ${zipCode}. Available fields:`, Object.keys(primaryMatch));
+    console.warn('HUD API: Full primary match object:', JSON.stringify(primaryMatch, null, 2));
     return null;
   }
 
@@ -185,10 +202,23 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   
   console.log('HUD API: Income limits response:', incomeLimits);
   
+  // Extract county and state names - try multiple field name variations
+  const countyName = primaryMatch.countyname || 
+                    primaryMatch.county_name || 
+                    primaryMatch.county || 
+                    primaryMatch.countyName ||
+                    '';
+  const stateCode = primaryMatch.state || 
+                   primaryMatch.state_code || 
+                   primaryMatch.stname || 
+                   primaryMatch.stateCode ||
+                   primaryMatch.stateName ||
+                   '';
+  
   return {
     zipCode,
-    county: primaryMatch.countyname || primaryMatch.county_name || primaryMatch.county || '',
-    state: primaryMatch.state || primaryMatch.state_code || primaryMatch.stname || '',
+    county: countyName,
+    state: stateCode,
     countyFips,
     incomeLimits,
   };

@@ -132,11 +132,20 @@ async function getAMILimitsFromHudApi(
       return null;
     }
 
-    const incomeData = hudData.incomeLimits.data || hudData.incomeLimits;
+    // HUD API structure may vary - incomeLimits could be the data directly or wrapped
+    let incomeData = hudData.incomeLimits;
+    if (incomeData && incomeData.data) {
+      incomeData = incomeData.data;
+    }
     
     // Log the full response structure for debugging
-    console.log('HUD API: Full response structure:', JSON.stringify(hudData, null, 2));
+    console.log('HUD API: Full hudData structure:', JSON.stringify(hudData, null, 2));
     console.log('HUD API: Income data structure:', JSON.stringify(incomeData, null, 2));
+    
+    if (!incomeData) {
+      console.warn('HUD API: No income data in response');
+      return null;
+    }
     
     // Extract income limits - HUD API typically returns:
     // l30 (30%), l50 (50%), l80 (80%), median (100%), l120 (120%)
