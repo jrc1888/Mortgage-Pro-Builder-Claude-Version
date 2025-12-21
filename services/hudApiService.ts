@@ -53,7 +53,11 @@ export async function getIncomeLimitsByEntity(
     // 2. /il/data?type={type}&query={entityid}
     // 3. /il/data/{entityid} (without type parameter)
     
-    // Try different URL formats
+    // HUD API endpoint formats to try:
+    // Based on documentation, the format should be: /il/data/{entityid}?type={type}
+    // But entity ID format might vary - try multiple formats
+    
+    // Format 1: Standard format with type parameter
     let url = `${HUD_API_BASE_URL}/il/data/${entityId}?type=${entityType}`;
     console.log('HUD API: Fetching income limits from (format 1):', url);
     
@@ -67,13 +71,15 @@ export async function getIncomeLimitsByEntity(
 
     console.log('HUD API: Income limits response status:', response.status);
 
-    // If 400 error, try alternative format
+    // If 400 error, try alternative formats
     if (response.status === 400) {
-      console.log('HUD API: 400 error, trying alternative format...');
+      const errorText = await response.text();
+      console.log('HUD API: 400 error response:', errorText);
+      console.log('HUD API: Trying alternative formats...');
       
-      // Try format: /il/data?type={type}&query={entityid}
-      url = `${HUD_API_BASE_URL}/il/data?type=${entityType}&query=${entityId}`;
-      console.log('HUD API: Trying format 2:', url);
+      // Format 2: Try with capitalized type
+      url = `${HUD_API_BASE_URL}/il/data/${entityId}?type=${entityType.toUpperCase()}`;
+      console.log('HUD API: Trying format 2 (capitalized type):', url);
       
       response = await fetch(url, {
         method: 'GET',
@@ -85,11 +91,10 @@ export async function getIncomeLimitsByEntity(
       
       console.log('HUD API: Format 2 response status:', response.status);
       
-      // If still 400, try without type parameter
+      // Format 3: Try query parameter format
       if (response.status === 400) {
-        console.log('HUD API: Still 400, trying without type parameter...');
-        url = `${HUD_API_BASE_URL}/il/data/${entityId}`;
-        console.log('HUD API: Trying format 3:', url);
+        url = `${HUD_API_BASE_URL}/il/data?type=${entityType}&query=${entityId}`;
+        console.log('HUD API: Trying format 3 (query param):', url);
         
         response = await fetch(url, {
           method: 'GET',
@@ -100,6 +105,22 @@ export async function getIncomeLimitsByEntity(
         });
         
         console.log('HUD API: Format 3 response status:', response.status);
+      }
+      
+      // Format 4: Try without type parameter
+      if (response.status === 400) {
+        url = `${HUD_API_BASE_URL}/il/data/${entityId}`;
+        console.log('HUD API: Trying format 4 (no type param):', url);
+        
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        console.log('HUD API: Format 4 response status:', response.status);
       }
     }
 
