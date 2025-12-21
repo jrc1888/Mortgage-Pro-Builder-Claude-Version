@@ -127,6 +127,14 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                   ))}
                 </tr>
                 <tr className="bg-slate-50 border-b border-slate-100">
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Interest Rate</td>
+                  {comparisonData.map((data) => (
+                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                      <span className="text-base font-bold text-slate-900">{data.scenario.interestRate.toFixed(3)}%</span>
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-100">
                   <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Down Payment</td>
                   {comparisonData.map((data) => {
                     const downPaymentPercent = data.scenario.purchasePrice > 0 
@@ -152,18 +160,22 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                 </tr>
                 {comparisonData.some(d => d.results.financedMIP > 0) && (
                   <tr className="bg-slate-50 border-b border-slate-100">
-                    <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">
-                      {comparisonData[0]?.scenario.loanType === 'FHA' ? 'UFMIP' : 'VA Funding Fee'}
-                    </td>
-                    {comparisonData.map((data) => (
-                      <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
-                        {data.results.financedMIP > 0 ? (
-                          <span className="text-base font-bold text-slate-900">{formatMoney(data.results.financedMIP)}</span>
-                        ) : (
-                          <span className="text-sm text-slate-300">—</span>
-                        )}
-                      </td>
-                    ))}
+                    <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Funding Fee</td>
+                    {comparisonData.map((data) => {
+                      const feeLabel = data.scenario.loanType === 'FHA' ? 'UFMIP' : data.scenario.loanType === 'VA' ? 'VA Funding Fee' : 'Funding Fee';
+                      return (
+                        <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                          {data.results.financedMIP > 0 ? (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="text-base font-bold text-slate-900">{formatMoney(data.results.financedMIP)}</span>
+                              <span className="text-[9px] text-slate-500">{feeLabel}</span>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-slate-300">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 )}
                 <tr className="bg-slate-100 border-b-2 border-slate-300">
@@ -291,11 +303,24 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                 )}
                 <tr className="bg-slate-100 border-b-2 border-slate-300">
                   <td className="px-6 py-3 text-sm font-bold text-slate-900 border-r border-slate-200">Total Monthly Payment</td>
-                  {comparisonData.map((data) => (
-                    <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
-                      <span className="text-lg font-bold text-emerald-600">{formatMoney(data.results.totalMonthlyPayment)}</span>
-                    </td>
-                  ))}
+                  {comparisonData.map((data) => {
+                    // Adjust for ADU income credit if primary residence with rental income
+                    const adjustedPayment = data.scenario.occupancyType === 'Primary Residence' && (data.scenario.income?.rental || 0) > 0
+                      ? data.results.totalMonthlyPayment - (data.scenario.income?.rental || 0)
+                      : data.results.totalMonthlyPayment;
+                    const hasADUCredit = data.scenario.occupancyType === 'Primary Residence' && (data.scenario.income?.rental || 0) > 0;
+                    
+                    return (
+                      <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-lg font-bold text-emerald-600">{formatMoney(adjustedPayment)}</span>
+                          {hasADUCredit && (
+                            <span className="text-xs text-slate-400 line-through">{formatMoney(data.results.totalMonthlyPayment)}</span>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
                 </tr>
 
                 {/* Cash to Close Section */}
