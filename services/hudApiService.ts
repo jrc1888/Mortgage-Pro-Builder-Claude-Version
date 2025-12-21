@@ -164,24 +164,33 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
     return null;
   }
   
-  // HUD API returns results array - extract it
+  // HUD API returns results nested in data.results structure
+  // Response format: { data: { results: [...] } }
   console.log('HUD API: Checking crosswalk structure...');
-  console.log('HUD API: crosswalk.results exists?', !!crosswalk.results);
   console.log('HUD API: crosswalk.data exists?', !!crosswalk.data);
-  console.log('HUD API: crosswalk is array?', Array.isArray(crosswalk));
-  console.log('HUD API: crosswalk keys:', Object.keys(crosswalk || {}));
+  console.log('HUD API: crosswalk.data.results exists?', !!(crosswalk.data && crosswalk.data.results));
   
   let resultsArray = null;
   
-  if (Array.isArray(crosswalk)) {
-    resultsArray = crosswalk;
-    console.log('HUD API: Crosswalk is directly an array');
-  } else if (crosswalk.results && Array.isArray(crosswalk.results)) {
+  // Check for nested structure: crosswalk.data.results
+  if (crosswalk.data && crosswalk.data.results && Array.isArray(crosswalk.data.results)) {
+    resultsArray = crosswalk.data.results;
+    console.log('HUD API: Found results array in data.results, length:', resultsArray.length);
+  }
+  // Check for direct results: crosswalk.results
+  else if (crosswalk.results && Array.isArray(crosswalk.results)) {
     resultsArray = crosswalk.results;
-    console.log('HUD API: Found results array, length:', resultsArray.length);
-  } else if (crosswalk.data && Array.isArray(crosswalk.data)) {
+    console.log('HUD API: Found results array directly, length:', resultsArray.length);
+  }
+  // Check if data itself is the array
+  else if (Array.isArray(crosswalk.data)) {
     resultsArray = crosswalk.data;
-    console.log('HUD API: Found data array, length:', resultsArray.length);
+    console.log('HUD API: Found data as array, length:', resultsArray.length);
+  }
+  // Check if crosswalk itself is an array
+  else if (Array.isArray(crosswalk)) {
+    resultsArray = crosswalk;
+    console.log('HUD API: Crosswalk is directly an array, length:', resultsArray.length);
   }
   
   if (!resultsArray || !Array.isArray(resultsArray) || resultsArray.length === 0) {
