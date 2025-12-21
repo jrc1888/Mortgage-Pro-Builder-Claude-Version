@@ -297,26 +297,36 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
     return null;
   }
 
-  // Try different entity ID formats for HUD API
-  // Format 1: Full 5-digit FIPS (49035)
-  // Format 2: Just county code (035) - might need state separately
-  // Format 3: State-County format (49-035)
-  
+  // HUD API might need entity ID in a specific format
+  // Try different formats based on HUD API requirements
   console.log('HUD API: Trying county FIPS format:', countyFips);
+  console.log('HUD API: State FIPS:', stateFips, 'County Code:', countyCode);
   
-  // Get income limits for this county - try full FIPS first
-  let incomeLimits = await getIncomeLimitsByEntity(countyFips, 'county');
+  // Get income limits for this county - try multiple entity ID formats
+  let incomeLimits = null;
   
-  // If that fails, try alternative formats
+  // Format 1: Full 5-digit FIPS (49035) - most common
+  console.log('HUD API: Attempt 1 - Full FIPS:', countyFips);
+  incomeLimits = await getIncomeLimitsByEntity(countyFips, 'county');
+  
+  // Format 2: State-County format (49-035)
   if (!incomeLimits) {
-    console.log('HUD API: Full FIPS failed, trying state-county format...');
+    console.log('HUD API: Attempt 2 - State-County format');
     const stateCountyFormat = `${stateFips}-${countyCode}`;
     incomeLimits = await getIncomeLimitsByEntity(stateCountyFormat, 'county');
   }
   
+  // Format 3: Just county code (035) - might need state separately
   if (!incomeLimits) {
-    console.log('HUD API: State-county format failed, trying just county code...');
+    console.log('HUD API: Attempt 3 - County code only');
     incomeLimits = await getIncomeLimitsByEntity(countyCode, 'county');
+  }
+  
+  // Format 4: Try with state prefix in different format
+  if (!incomeLimits) {
+    console.log('HUD API: Attempt 4 - State.County format');
+    const stateDotCounty = `${stateFips}.${countyCode}`;
+    incomeLimits = await getIncomeLimitsByEntity(stateDotCounty, 'county');
   }
   
   console.log('HUD API: Income limits response:', incomeLimits);
