@@ -33,13 +33,17 @@ export function isHudApiConfigured(): boolean {
 /**
  * Get income limits for a specific entity (county or MSA)
  * 
- * @param entityId - HUD entity ID (county FIPS or MSA code)
- * @param entityType - 'county' or 'msa'
+ * According to HUD API documentation:
+ * - Endpoint: /il/data/{entityid}
+ * - Entity ID must be a 10-digit FIPS code for counties (SSCCC99999)
+ *   where SS = State FIPS (2 digits), CCC = County FIPS (3 digits), 99999 = county level code
+ * - No type parameter needed - the API determines type from entity ID format
+ * 
+ * @param entityId - HUD entity ID (10-digit FIPS code for counties, or MSA code)
  * @returns Income limits data or null if error
  */
 export async function getIncomeLimitsByEntity(
-  entityId: string,
-  entityType: 'county' | 'msa' = 'county'
+  entityId: string
 ): Promise<any | null> {
   const token = getHudApiToken();
   if (!token) {
@@ -48,20 +52,12 @@ export async function getIncomeLimitsByEntity(
   }
 
   try {
-    // HUD API endpoint formats to try:
-    // 1. /il/data/{entityid}?type={type}
-    // 2. /il/data?type={type}&query={entityid}
-    // 3. /il/data/{entityid} (without type parameter)
+    // According to HUD API documentation, the endpoint is: /il/data/{entityid}
+    // No type parameter is needed
+    const url = `${HUD_API_BASE_URL}/il/data/${entityId}`;
+    console.log('HUD API: Fetching income limits from:', url);
     
-    // HUD API endpoint formats to try:
-    // Based on documentation, the format should be: /il/data/{entityid}?type={type}
-    // But entity ID format might vary - try multiple formats
-    
-    // Format 1: Standard format with type parameter
-    let url = `${HUD_API_BASE_URL}/il/data/${entityId}?type=${entityType}`;
-    console.log('HUD API: Fetching income limits from (format 1):', url);
-    
-    let response = await fetch(url, {
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -71,69 +67,16 @@ export async function getIncomeLimitsByEntity(
 
     console.log('HUD API: Income limits response status:', response.status);
 
-    // If 400 error, try alternative formats
-    if (response.status === 400) {
-      const errorText = await response.text();
-      console.log('HUD API: 400 error response:', errorText);
-      console.log('HUD API: Trying alternative formats...');
-      
-      // Format 2: Try with capitalized type
-      url = `${HUD_API_BASE_URL}/il/data/${entityId}?type=${entityType.toUpperCase()}`;
-      console.log('HUD API: Trying format 2 (capitalized type):', url);
-      
-      response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      console.log('HUD API: Format 2 response status:', response.status);
-      
-      // Format 3: Try query parameter format
-      if (response.status === 400) {
-        url = `${HUD_API_BASE_URL}/il/data?type=${entityType}&query=${entityId}`;
-        console.log('HUD API: Trying format 3 (query param):', url);
-        
-        response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        console.log('HUD API: Format 3 response status:', response.status);
-      }
-      
-      // Format 4: Try without type parameter
-      if (response.status === 400) {
-        url = `${HUD_API_BASE_URL}/il/data/${entityId}`;
-        console.log('HUD API: Trying format 4 (no type param):', url);
-        
-        response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        console.log('HUD API: Format 4 response status:', response.status);
-      }
-    }
-
     if (!response.ok) {
       const errorText = await response.text();
       console.error('HUD API: Error response body:', errorText);
       if (response.status === 401) {
         console.error('HUD API: Unauthorized - Check your API token is correct and active');
       } else if (response.status === 404) {
-        console.warn(`HUD API: Income limits not found for entity ${entityId} (type: ${entityType})`);
+        console.warn(`HUD API: Income limits not found for entity ${entityId}`);
       } else if (response.status === 400) {
-        console.error(`HUD API: Bad Request (400) - Entity ID format may be incorrect. Tried: ${entityId} as ${entityType}`);
-        console.error('HUD API: Entity ID might need different format. Check HUD API documentation.');
+        console.error(`HUD API: Bad Request (400) - Entity ID format may be incorrect: ${entityId}`);
+        console.error('HUD API: Entity ID should be a 10-digit FIPS code (SSCCC99999) for counties');
       } else {
         console.error(`HUD API Error: ${response.status} ${response.statusText}`);
       }
@@ -279,55 +222,29 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   
   // Extract county FIPS from geoid
   // Geoid format: SSCCCtttttt (State FIPS (2) + County FIPS (3) + Tract (6+))
-  // For HUD API, we need the 5-digit county FIPS (state + county)
-  let countyFips = '';
+  // For HUD API, we need a 10-digit FIPS code: SSCCC99999
+  // where SS = State FIPS (2), CCC = County FIPS (3), 99999 = county level code
+  let entityId = '';
   let stateFips = '';
   let countyCode = '';
   
   if (geoid.length >= 5) {
     stateFips = geoid.substring(0, 2); // First 2 digits = State FIPS
     countyCode = geoid.substring(2, 5); // Next 3 digits = County FIPS
-    countyFips = geoid.substring(0, 5); // Full 5 digits = State (2) + County (3)
+    // HUD API requires 10-digit FIPS: SSCCC99999 (state + county + 99999 for county level)
+    entityId = `${stateFips}${countyCode}99999`;
     console.log(`HUD API: Extracted from geoid ${geoid}:`);
     console.log(`  State FIPS: ${stateFips}`);
     console.log(`  County Code: ${countyCode}`);
-    console.log(`  Full County FIPS: ${countyFips}`);
+    console.log(`  HUD Entity ID (10-digit FIPS): ${entityId}`);
   } else {
     console.warn(`HUD API: Geoid ${geoid} is too short to extract county FIPS`);
     return null;
   }
 
-  // HUD API might need entity ID in a specific format
-  // Try different formats based on HUD API requirements
-  console.log('HUD API: Trying county FIPS format:', countyFips);
-  console.log('HUD API: State FIPS:', stateFips, 'County Code:', countyCode);
-  
-  // Get income limits for this county - try multiple entity ID formats
-  let incomeLimits = null;
-  
-  // Format 1: Full 5-digit FIPS (49035) - most common
-  console.log('HUD API: Attempt 1 - Full FIPS:', countyFips);
-  incomeLimits = await getIncomeLimitsByEntity(countyFips, 'county');
-  
-  // Format 2: State-County format (49-035)
-  if (!incomeLimits) {
-    console.log('HUD API: Attempt 2 - State-County format');
-    const stateCountyFormat = `${stateFips}-${countyCode}`;
-    incomeLimits = await getIncomeLimitsByEntity(stateCountyFormat, 'county');
-  }
-  
-  // Format 3: Just county code (035) - might need state separately
-  if (!incomeLimits) {
-    console.log('HUD API: Attempt 3 - County code only');
-    incomeLimits = await getIncomeLimitsByEntity(countyCode, 'county');
-  }
-  
-  // Format 4: Try with state prefix in different format
-  if (!incomeLimits) {
-    console.log('HUD API: Attempt 4 - State.County format');
-    const stateDotCounty = `${stateFips}.${countyCode}`;
-    incomeLimits = await getIncomeLimitsByEntity(stateDotCounty, 'county');
-  }
+  // Get income limits for this county using 10-digit FIPS code
+  console.log('HUD API: Fetching income limits with entity ID:', entityId);
+  const incomeLimits = await getIncomeLimitsByEntity(entityId);
   
   console.log('HUD API: Income limits response:', incomeLimits);
   
@@ -339,24 +256,17 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   // We'll use the city name and state for display
   // The county name could be looked up from FIPS if needed
   
-  // If all formats failed, log detailed error
   if (!incomeLimits) {
-    console.error('HUD API: All entity ID format attempts failed for county FIPS:', countyFips);
-    console.error('HUD API: Tried formats:', [
-      countyFips,
-      `${stateFips}-${countyCode}`,
-      countyCode,
-      `${stateFips}.${countyCode}`
-    ]);
-    console.error('HUD API: You may need to look up the correct entity ID from HUD API documentation');
-    console.error('HUD API: Or use a different endpoint/approach to get income limits');
+    console.error('HUD API: Failed to fetch income limits for entity ID:', entityId);
+    console.error('HUD API: Entity ID format: SSCCC99999 (State FIPS + County FIPS + 99999)');
   }
   
   return {
     zipCode,
     county: cityName, // Using city since that's what we have
     state: stateCode,
-    countyFips,
+    countyFips: `${stateFips}${countyCode}`, // 5-digit FIPS for reference
+    entityId, // 10-digit FIPS used for API
     incomeLimits,
   };
 }

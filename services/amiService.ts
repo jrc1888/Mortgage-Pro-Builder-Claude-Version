@@ -132,8 +132,18 @@ async function getAMILimitsFromHudApi(
       return null;
     }
 
-    // HUD API structure may vary - incomeLimits could be the data directly or wrapped
+    // HUD API response structure according to documentation:
+    // {
+    //   "data": {
+    //     "very_low": { "il50_p1": ..., "il50_p2": ..., ... },
+    //     "extremely_low": { "il30_p1": ..., "il30_p2": ..., ... },
+    //     "low": { "il80_p1": ..., "il80_p2": ..., ... },
+    //     "median_income": ...
+    //   }
+    // }
     let incomeData = hudData.incomeLimits;
+    
+    // Check if response is wrapped in a 'data' property
     if (incomeData && incomeData.data) {
       incomeData = incomeData.data;
     }
@@ -147,44 +157,33 @@ async function getAMILimitsFromHudApi(
       return null;
     }
     
-    // Extract income limits - HUD API typically returns:
-    // l30 (30%), l50 (50%), l80 (80%), median (100%), l120 (120%)
-    // For each family size: l30_1, l50_1, l80_1, etc. or in an array format
-    
-    // Try to extract limits for the requested family size
-    // Common patterns: incomeData.l50_1, incomeData.l50[0], incomeData.onePersonLimit, etc.
-    const getLimit = (prefix: string, size: number) => {
-      // Try various field name patterns
-      const patterns = [
-        `${prefix}_${size}`,           // l50_1, l50_2, etc.
-        `${prefix}${size}`,            // l501, l502, etc.
-        `${prefix}[${size - 1}]`,      // Array format
-        `${prefix}.${size}Person`,     // l50.1Person
-      ];
-      
-      for (const pattern of patterns) {
-        if (incomeData[pattern] !== undefined) {
-          return parseInt(incomeData[pattern]) || 0;
-        }
-      }
-      
-      return 0;
-    };
+    // Extract income limits using HUD API field names
+    // Field format: il50_p{familySize} for 50% AMI, il30_p{familySize} for 30% AMI, etc.
+    const familySizeKey = `p${familySize}`;
     
     // Extract limits for the requested family size
-    const extremelyLow = getLimit('l30', familySize);
-    const veryLow = getLimit('l50', familySize);
-    const low = getLimit('l80', familySize);
-    const median = incomeData.median || getLimit('median', familySize) || getLimit('l100', familySize);
-    const moderate = getLimit('l120', familySize);
+    const extremelyLow = incomeData.extremely_low?.[`il30_${familySizeKey}`] || 0;
+    const veryLow = incomeData.very_low?.[`il50_${familySizeKey}`] || 0;
+    const low = incomeData.low?.[`il80_${familySizeKey}`] || 0;
+    const median = incomeData.median_income || 0;
     
-    // If we couldn't extract limits, try alternative structure
+    // Calculate 120% AMI (moderate income) from median
+    const moderate = median ? Math.round(median * 1.2) : 0;
+    
+    // Validate that we got at least some data
     if (!extremelyLow && !veryLow && !low && !median) {
-      // The API response might be structured differently
-      // Return null so it falls back to other sources
-      console.warn('Could not parse HUD API response structure for zip code', zipCode);
+      console.warn('HUD API: Could not extract income limits from response structure for zip code', zipCode);
+      console.warn('HUD API: Available keys in incomeData:', Object.keys(incomeData));
       return null;
     }
+    
+    console.log(`HUD API: Extracted limits for family size ${familySize}:`, {
+      extremelyLow,
+      veryLow,
+      low,
+      median,
+      moderate
+    });
     
     return {
       zipCode,
