@@ -132,7 +132,13 @@ export async function getZipCodeCrosswalk(zipCode: string): Promise<any | null> 
     }
 
     const data = await response.json();
-    console.log('HUD API: Crosswalk data received:', JSON.stringify(data).substring(0, 200));
+    console.log('HUD API: Crosswalk data received:', JSON.stringify(data).substring(0, 500));
+    console.log('HUD API: Crosswalk data type:', typeof data);
+    console.log('HUD API: Crosswalk has results?', !!data.results);
+    console.log('HUD API: Crosswalk has data?', !!data.data);
+    if (data.results) {
+      console.log('HUD API: Results array length:', data.results.length);
+    }
     return data;
   } catch (error) {
     console.error('Error fetching ZIP code crosswalk from HUD API:', error);
