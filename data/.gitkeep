@@ -1,0 +1,7 @@
+# This folder is for downloaded HUD data files
+# Add your downloaded CSV files here:
+# - hud-income-limits.csv
+# - zip-code-crosswalk.csv
+# 
+# These files are NOT committed to git (add to .gitignore)
+

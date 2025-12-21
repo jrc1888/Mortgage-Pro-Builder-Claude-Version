@@ -38,6 +38,12 @@ lerna-debug.log*
 # OS
 Thumbs.db
 
+# HUD Data Files (large CSV files - don't commit)
+data/*.csv
+data/*.xlsx
+data/*.xls
+
 # Lock files (optional - some teams prefer to commit these)
 # package-lock.json
 # yarn.lock
+
