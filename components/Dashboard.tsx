@@ -195,6 +195,10 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
 
                     const transactionType = scenario.transactionType || 'Purchase';
                     
+                    const downPaymentPercent = scenario.purchasePrice > 0 
+                        ? (scenario.downPaymentAmount / scenario.purchasePrice) * 100 
+                        : 0;
+                    
                     return (
                         <div 
                             key={scenario.id} 
@@ -209,8 +213,8 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 setContextMenu({ x: e.clientX, y: e.clientY, scenarioId: scenario.id });
                             }}
                         >
-                            {/* Pin/Star Button - Top Right (moved to avoid overlap) */}
-                            <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                            {/* Header with Star, Compare, and Transaction Type */}
+                            <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -218,17 +222,16 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                             onPin(scenario.id, !scenario.isPinned);
                                         }
                                     }}
-                                    className={`p-1.5 rounded-lg transition-all ${
+                                    className={`p-2.5 rounded-lg transition-all ${
                                         scenario.isPinned 
                                             ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-md shadow-amber-300/40' 
-                                            : 'bg-white/90 backdrop-blur-sm text-slate-400 hover:text-amber-500 hover:bg-amber-50 border border-slate-200'
+                                            : 'bg-white/95 backdrop-blur-sm text-slate-400 hover:text-amber-500 hover:bg-amber-50 border border-slate-200'
                                     }`}
                                     title={scenario.isPinned ? "Unpin scenario" : "Pin scenario to top"}
                                 >
-                                    <Star size={16} className={scenario.isPinned ? 'fill-current' : ''} strokeWidth={scenario.isPinned ? 0 : 2} />
+                                    <Star size={20} className={scenario.isPinned ? 'fill-current' : ''} strokeWidth={scenario.isPinned ? 0 : 2} />
                                 </button>
                             
-                            {/* Comparison Checkbox and Transaction Type Badge */}
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -240,7 +243,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                             }
                                         }
                                     }}
-                                    className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                                    className={`w-7 h-7 rounded border-2 flex items-center justify-center transition-all ${
                                         isSelected 
                                             ? 'bg-indigo-600 border-indigo-600 text-white' 
                                             : selectedForComparison.length >= 3
@@ -250,11 +253,11 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                     disabled={!isSelected && selectedForComparison.length >= 3}
                                     title={isSelected ? "Remove from comparison" : selectedForComparison.length >= 3 ? "Maximum 3 scenarios" : "Add to comparison"}
                                 >
-                                    {isSelected && <CheckSquare size={12} />}
+                                    {isSelected && <CheckSquare size={16} />}
                                 </button>
                                 
-                                {/* Transaction Type Badge */}
-                                <span className={`inline-block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded border shadow-sm ${
+                                {/* Transaction Type Badge - Larger */}
+                                <span className={`inline-block px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border shadow-sm ${
                                     transactionType === 'Refinance' 
                                         ? 'bg-purple-50 text-purple-700 border-purple-200' 
                                         : 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -263,24 +266,54 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 </span>
                             </div>
                             
-                            <div className="p-6 flex-1">
-                                <div className="flex flex-col gap-2 mb-4">
-                                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">
-                                        <span className="font-normal text-slate-500 text-xs block mb-1 uppercase tracking-wider">{scenario.clientName}</span>
-                                        {scenario.name || "Untitled Scenario"}
-                                    </h3>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${
-                                            scenario.loanType === 'FHA' ? 'bg-orange-50 text-orange-700 border-orange-100' :
-                                            scenario.loanType === 'VA' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                                            'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                        }`}>
-                                            {scenario.loanType}
-                                        </span>
+                            {/* Main Content */}
+                            <div className="p-6 flex-1 flex flex-col">
+                                {/* Client Name - Smaller */}
+                                <div className="mb-2">
+                                    <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">{scenario.clientName}</span>
+                                </div>
+                                
+                                {/* Scenario Name - Much Larger */}
+                                <h3 className="font-bold text-2xl text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight mb-4 pr-32">
+                                    {scenario.name || "Untitled Scenario"}
+                                </h3>
+                                
+                                {/* Loan Type Badge */}
+                                <div className="mb-5">
+                                    <span className={`inline-block px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border ${
+                                        scenario.loanType === 'FHA' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                        scenario.loanType === 'VA' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                        'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    }`}>
+                                        {scenario.loanType}
+                                    </span>
+                                </div>
+                                
+                                {/* Key Metrics - Larger and More Prominent */}
+                                <div className="grid grid-cols-2 gap-4 mb-5 pt-4 border-t border-slate-200">
+                                    <div>
+                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Purchase Price</span>
+                                        <span className="text-2xl font-black text-slate-900">${scenario.purchasePrice.toLocaleString()}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Down Payment</span>
+                                        <div className="flex flex-col">
+                                            <span className="text-2xl font-black text-slate-900">${scenario.downPaymentAmount.toLocaleString()}</span>
+                                            <span className="text-sm font-semibold text-slate-600 mt-0.5">({downPaymentPercent.toFixed(2)}%)</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Interest Rate</span>
+                                        <span className="text-2xl font-black text-slate-900">{scenario.interestRate.toFixed(2)}%</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">LTV</span>
+                                        <span className="text-2xl font-black text-slate-900">{ltv.toFixed(2)}%</span>
                                     </div>
                                 </div>
                                 
-                                <div className="space-y-3 text-sm text-slate-500 mb-4 pt-4 border-t border-slate-100">
+                                {/* Property Info - Smaller */}
+                                <div className="space-y-2 text-sm text-slate-500 mt-auto pt-4 border-t border-slate-100">
                                     <div className="flex items-center gap-2">
                                         <MapPin size={14} className="text-slate-300 shrink-0" />
                                         <span className="truncate text-xs font-medium">{scenario.propertyAddress || "No Address/Zip"}</span>
@@ -292,23 +325,9 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                         </span>
                                     </div>
                                 </div>
-
-                                <div className="pt-4 border-t border-slate-100 grid grid-cols-3 gap-2">
-                                    <div>
-                                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Price</span>
-                                        <span className="font-bold text-slate-900 truncate">${scenario.purchasePrice.toLocaleString()}</span>
-                                    </div>
-                                    <div className="text-center">
-                                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">LTV</span>
-                                        <span className="font-bold text-slate-900">{parseFloat(ltv.toFixed(2))}%</span>
-                                    </div>
-                                    <div className="text-right">
-                                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Rate</span>
-                                        <span className="font-bold text-slate-900">{scenario.interestRate}%</span>
-                                    </div>
-                                </div>
                             </div>
                             
+                            {/* Footer Actions */}
                             <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex justify-between items-center group-hover:bg-indigo-50/50 transition-colors">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                                     Open Scenario <ArrowRight size={12} />
