@@ -287,11 +287,12 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     if (item.isFixed) {
       cost = val;
     } else {
-      // For percentage-based fees, check if it's Buyer's Agent Commission (uses purchase price)
-      if (item.id === 'buyers-agent-commission') {
+      // For percentage-based fees, check if it uses purchase price or loan amount
+      if (item.id === 'buyers-agent-commission' || item.id === 'hoa-transfer') {
+        // Buyer's Agent Commission and HOA Transfer Fee use purchase price
         cost = purchasePrice * (val / 100);
       } else {
-        // All other percentage fees use loan amount
+        // All other percentage fees use loan amount (discount-points, misc-1, misc-2, misc-3, misc-4)
         cost = totalLoanAmount * (val / 100);
       }
     }

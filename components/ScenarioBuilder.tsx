@@ -1244,6 +1244,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
                                     }
                                 }
+                                if (cost.id === 'hoa-transfer') {
+                                    if (cost.isFixed) {
+                                        return sum + safeNum(cost.amount);
+                                    } else {
+                                        return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                    }
+                                }
+                                // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
+                                if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {
+                                    if (cost.isFixed) {
+                                        return sum + safeNum(cost.amount);
+                                    } else {
+                                        return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
+                                    }
+                                }
                                 return sum + safeNum(cost.amount);
                             }, 0);
 
@@ -1465,6 +1480,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 return sum + safeNum(cost.amount);
                                             } else {
                                                 return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                            }
+                                        }
+                                        if (cost.id === 'hoa-transfer') {
+                                            if (cost.isFixed) {
+                                                return sum + safeNum(cost.amount);
+                                            } else {
+                                                return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                            }
+                                        }
+                                        // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
+                                        if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {
+                                            if (cost.isFixed) {
+                                                return sum + safeNum(cost.amount);
+                                            } else {
+                                                return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
                                             }
                                         }
                                         return sum + safeNum(cost.amount);
