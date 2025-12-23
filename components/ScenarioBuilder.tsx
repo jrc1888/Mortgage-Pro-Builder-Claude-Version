@@ -113,6 +113,32 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     let updatedCosts = [...scenario.closingCosts];
     let changed = false;
 
+    // 0. Migrate old category names to new Loan Estimate structure
+    const categoryMigration: Record<string, string> = {
+      'Lender Fees': 'A. Origination Charges',
+      'Third Party Fees': 'B. Services You Cannot Shop For',
+      'Title & Government': 'C. Services You Can Shop For',
+      'Escrows/Prepaids': 'F. Prepaids',
+      'Other Fees': 'H. Other'
+    };
+    
+    updatedCosts = updatedCosts.map(cost => {
+      if (cost && cost.category && categoryMigration[cost.category]) {
+        changed = true;
+        return { ...cost, category: categoryMigration[cost.category] };
+      }
+      // Special handling for specific items that need category updates
+      if (cost && cost.id === 'recording-fee' && cost.category !== 'E. Taxes and Other Government Fees') {
+        changed = true;
+        return { ...cost, category: 'E. Taxes and Other Government Fees' };
+      }
+      if (cost && cost.id === 'insurance-reserves' && cost.category !== 'G. Initial Escrow Payment at Closing') {
+        changed = true;
+        return { ...cost, category: 'G. Initial Escrow Payment at Closing' };
+      }
+      return cost;
+    });
+
     // 1. Remove Deprecated Items
     const deprecatedIds = ['origination', 'lender-credit'];
     const hasDeprecated = updatedCosts.some(c => deprecatedIds.includes(c.id));
@@ -1293,7 +1319,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
                                                         {/* Discount points, Buyer's Agent Commission, and Other Fees can toggle between $ and %} */}
-                                                        {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission' || (cost.category === 'Other Fees' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay')) ? (
+                                                        {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission' || (cost.category === 'H. Other' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay')) ? (
                                                             <>
                                                                 {cost.isFixed ? (
                                                                     <>
