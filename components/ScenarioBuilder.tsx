@@ -1479,7 +1479,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             return null;
                         })()}
                         
-                        {/* J. TOTAL CLOSING COSTS (D + I) */}
+                        {/* J. TOTAL CLOSING COSTS (D + I) with Credits and Net Total */}
                         {(() => {
                             const sectionA = costGroups.find(g => g.category === 'A. Origination Charges');
                             const sectionB = costGroups.find(g => g.category === 'B. Services You Cannot Shop For');
@@ -1541,33 +1541,38 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 const totalJ = totalD + totalI;
                                 
                                 return (
-                                    <div className="bg-slate-100 rounded-lg p-4 border-2 border-slate-400">
+                                    <div className="bg-slate-100 rounded-lg p-4 border-2 border-slate-400 space-y-3">
                                         <div className="flex justify-between items-center">
                                             <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">J. TOTAL CLOSING COSTS (D + I)</span>
                                             <span className="text-xl font-bold text-slate-900">{formatMoney(totalJ)}</span>
+                                        </div>
+                                        
+                                        {/* Seller Concessions - Separate Line */}
+                                        {scenario.showSellerConcessions && results.sellerConcessionsAmount > 0 && (
+                                            <div className="flex justify-between items-center pt-2 border-t border-slate-300">
+                                                <span className="text-sm font-medium text-emerald-600">Seller Concessions</span>
+                                                <span className="text-base font-bold text-emerald-600">-{formatMoney(results.sellerConcessionsAmount)}</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Lender Credit - Separate Line */}
+                                        {scenario.showLenderCredits && results.lenderCreditsAmount > 0 && (
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-medium text-emerald-600">Lender Credit</span>
+                                                <span className="text-base font-bold text-emerald-600">-{formatMoney(results.lenderCreditsAmount)}</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Net Total Closing Costs */}
+                                        <div className="flex justify-between items-center pt-2 border-t-2 border-slate-400">
+                                            <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">Net Total Closing Costs</span>
+                                            <span className="text-xl font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
                                         </div>
                                     </div>
                                 );
                             }
                             return null;
                         })()}
-                    </div>
-
-                    {/* Net Closing Costs - Separate at Bottom */}
-                    <div className="mt-8 bg-slate-50 rounded-xl p-6 border border-slate-200">
-                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Net Closing Costs</h4>
-                        <div className="space-y-3">
-                             {(results.sellerConcessionsAmount > 0 || results.lenderCreditsAmount > 0) && (
-                                 <div className="flex justify-between items-center text-sm">
-                                     <span className="text-emerald-600 font-medium">Total Credits (Seller & Lender)</span>
-                                     <span className="font-bold text-emerald-600">-{formatMoney(results.sellerConcessionsAmount + results.lenderCreditsAmount)}</span>
-                                 </div>
-                             )}
-                             <div className="pt-3 border-t border-slate-200 flex justify-between items-end">
-                                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">Net Closing Costs</span>
-                                 <span className="text-2xl font-black text-slate-900 tracking-tight">{formatMoney(results.netClosingCosts)}</span>
-                             </div>
-                        </div>
                     </div>
                 </div>
             )}
