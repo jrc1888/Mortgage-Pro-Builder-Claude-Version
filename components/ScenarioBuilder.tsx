@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2, Sparkles } from 'lucide-react';
 import { Scenario, LoanType, CalculatedResults, HistoryEntry, ClosingCostItem } from '../types';
 import { calculateScenario, calculateLendersTitleInsurance } from '../services/loanMath';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
@@ -119,6 +119,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   
   // Notes textarea ref for auto-grow
   const notesTextareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // AI name generation state
+  const [isGeneratingName, setIsGeneratingName] = useState(false);
   
   // Ensure new closing cost items exist if loaded from old data
   useEffect(() => {
@@ -682,14 +685,70 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
               {/* Scenario Name Input - Maximize space */}
               <div className="flex-1 min-w-0 mr-8">
-                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Scenario Name</label>
-                   <input 
-                        value={scenario.name} 
-                        onChange={(e) => handleInputChange('name', e.target.value)}
-                        onBlur={addToHistory}
-                        className="bg-transparent border-none p-0 text-4xl font-black text-emerald-400 placeholder-slate-600 w-full outline-none focus:ring-0"
-                        placeholder="Scenario Name"
-                    />
+                   <div className="flex items-end gap-2 w-full">
+                       <div className="flex-1">
+                           <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Scenario Name</label>
+                           <input 
+                                value={scenario.name} 
+                                onChange={(e) => handleInputChange('name', e.target.value)}
+                                onBlur={addToHistory}
+                                className="bg-transparent border-none p-0 text-4xl font-black text-emerald-400 placeholder-slate-600 w-full outline-none focus:ring-0"
+                                placeholder="Scenario Name"
+                            />
+                       </div>
+                       <button
+                           onClick={async () => {
+                               setIsGeneratingName(true);
+                               try {
+                                   const response = await fetch('/api/generate-scenario-name', {
+                                       method: 'POST',
+                                       headers: {
+                                           'Content-Type': 'application/json',
+                                       },
+                                       body: JSON.stringify({
+                                           scenarioData: {
+                                               loanType: scenario.loanType,
+                                               downPaymentPercent: scenario.downPaymentPercent,
+                                               interestRate: scenario.interestRate,
+                                               purchasePrice: scenario.purchasePrice,
+                                               transactionType: scenario.transactionType,
+                                               clientName: scenario.clientName,
+                                               propertyAddress: scenario.propertyAddress,
+                                           }
+                                       })
+                                   });
+                                   
+                                   if (!response.ok) {
+                                       const error = await response.json();
+                                       throw new Error(error.error || 'Failed to generate name');
+                                   }
+                                   
+                                   const data = await response.json();
+                                   if (data.name) {
+                                       handleInputChange('name', data.name);
+                                   }
+                               } catch (error) {
+                                   console.error('Error generating scenario name:', error);
+                                   // Show error toast
+                                   addToast({
+                                       message: error instanceof Error ? error.message : 'Failed to generate scenario name',
+                                       type: 'error'
+                                   });
+                               } finally {
+                                   setIsGeneratingName(false);
+                               }
+                           }}
+                           disabled={isGeneratingName}
+                           className="mb-1 p-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                           title="Generate scenario name with AI"
+                       >
+                           {isGeneratingName ? (
+                               <Loader2 size={18} className="text-white animate-spin" />
+                           ) : (
+                               <Sparkles size={18} className="text-white" />
+                           )}
+                       </button>
+                   </div>
               </div>
 
                {/* Divider */}
@@ -1251,6 +1310,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
                                     }
                                 }
+                                // Realtor Admin Fee is always fixed
+                                if (cost.id === 'realtor-admin') {
+                                    return sum + safeNum(cost.amount);
+                                }
                                 // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
                                 if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {
                                     if (cost.isFixed) {
@@ -1488,6 +1551,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             } else {
                                                 return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
                                             }
+                                        }
+                                        // Realtor Admin Fee is always fixed
+                                        if (cost.id === 'realtor-admin') {
+                                            return sum + safeNum(cost.amount);
                                         }
                                         // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
                                         if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {
