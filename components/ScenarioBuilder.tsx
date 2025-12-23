@@ -1239,8 +1239,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
                             return (
                                 <div key={group.category} className="border border-slate-200 rounded-lg overflow-hidden">
-                                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
-                                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{group.category}</h4>
+                                    <div className="bg-slate-100 px-4 py-3 border-b-2 border-slate-300">
+                                        <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">{group.category}</h4>
                                     </div>
                                     <div className="divide-y divide-slate-100">
                                         {group.items.filter(cost => cost && cost.id).map((cost) => (
@@ -1367,8 +1367,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         ))}
                                     </div>
                                     {/* Section Total */}
-                                    <div className="bg-slate-100 px-4 py-2 border-t-2 border-slate-300 flex justify-between items-center">
-                                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                                    <div className="bg-slate-100 px-4 py-3 border-t-2 border-slate-300 flex justify-between items-center">
+                                        <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                                             {group.category === 'A. Origination Charges' ? 'A. TOTAL' :
                                              group.category === 'B. Services You Cannot Shop For' ? 'B. TOTAL' :
                                              group.category === 'C. Services You Can Shop For' ? 'C. TOTAL' :
@@ -1377,7 +1377,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                              group.category === 'G. Initial Escrow Payment at Closing' ? 'G. TOTAL' :
                                              'H. TOTAL'}
                                         </span>
-                                        <span className="text-base font-bold text-slate-900">{formatMoney(sectionTotal)}</span>
+                                        <span className="text-lg font-bold text-slate-900">{formatMoney(sectionTotal)}</span>
                                     </div>
                                 </div>
                             );
@@ -1478,16 +1478,85 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             }
                             return null;
                         })()}
+                        
+                        {/* J. TOTAL CLOSING COSTS (D + I) */}
+                        {(() => {
+                            const sectionA = costGroups.find(g => g.category === 'A. Origination Charges');
+                            const sectionB = costGroups.find(g => g.category === 'B. Services You Cannot Shop For');
+                            const sectionC = costGroups.find(g => g.category === 'C. Services You Can Shop For');
+                            const sectionE = costGroups.find(g => g.category === 'E. Taxes and Other Government Fees');
+                            const sectionF = costGroups.find(g => g.category === 'F. Prepaids');
+                            const sectionG = costGroups.find(g => g.category === 'G. Initial Escrow Payment at Closing');
+                            const sectionH = costGroups.find(g => g.category === 'H. Other');
+                            
+                            if (sectionA || sectionB || sectionC || sectionE || sectionF || sectionG || sectionH) {
+                                const calcLoanCostsTotal = (group: typeof sectionA) => {
+                                    if (!group) return 0;
+                                    return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                        if (cost.id === 'title-insurance') {
+                                            return sum + (cost.amount || calculateLendersTitleInsurance(results.totalLoanAmount));
+                                        }
+                                        if (cost.id === 'discount-points') {
+                                            if (cost.isFixed) {
+                                                return sum + safeNum(cost.amount);
+                                            } else {
+                                                return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
+                                            }
+                                        }
+                                        return sum + safeNum(cost.amount);
+                                    }, 0);
+                                };
+                                
+                                const calcOtherCostsTotal = (group: typeof sectionE) => {
+                                    if (!group) return 0;
+                                    return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                        if (cost.id === 'prepaid-interest') {
+                                            return sum + (scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)));
+                                        }
+                                        if (cost.id === 'prepaid-insurance') {
+                                            return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
+                                        }
+                                        if (cost.id === 'tax-reserves') {
+                                            return sum + ((scenario.propertyTaxYearly/12) * (cost.months || 0));
+                                        }
+                                        if (cost.id === 'insurance-reserves') {
+                                            return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
+                                        }
+                                        if (cost.id === 'hoa-prepay') {
+                                            return sum + (scenario.hoaMonthly * (cost.months || 0));
+                                        }
+                                        if (cost.id === 'buyers-agent-commission') {
+                                            if (cost.isFixed) {
+                                                return sum + safeNum(cost.amount);
+                                            } else {
+                                                return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                            }
+                                        }
+                                        return sum + safeNum(cost.amount);
+                                    }, 0);
+                                };
+                                
+                                const totalD = calcLoanCostsTotal(sectionA) + calcLoanCostsTotal(sectionB) + calcLoanCostsTotal(sectionC);
+                                const totalI = calcOtherCostsTotal(sectionE) + calcOtherCostsTotal(sectionF) + calcOtherCostsTotal(sectionG) + calcOtherCostsTotal(sectionH);
+                                const totalJ = totalD + totalI;
+                                
+                                return (
+                                    <div className="bg-slate-100 rounded-lg p-4 border-2 border-slate-400">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">J. TOTAL CLOSING COSTS (D + I)</span>
+                                            <span className="text-xl font-bold text-slate-900">{formatMoney(totalJ)}</span>
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
                     </div>
 
-                    {/* NEW: Costs Summary Footer */}
+                    {/* Net Closing Costs - Separate at Bottom */}
                     <div className="mt-8 bg-slate-50 rounded-xl p-6 border border-slate-200">
-                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Closing Costs Summary</h4>
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Net Closing Costs</h4>
                         <div className="space-y-3">
-                             <div className="flex justify-between items-center text-sm">
-                                 <span className="text-slate-600 font-medium">Total Closing Costs</span>
-                                 <span className="font-bold text-slate-900">{formatMoney(results.totalClosingCosts)}</span>
-                             </div>
                              {(results.sellerConcessionsAmount > 0 || results.lenderCreditsAmount > 0) && (
                                  <div className="flex justify-between items-center text-sm">
                                      <span className="text-emerald-600 font-medium">Total Credits (Seller & Lender)</span>

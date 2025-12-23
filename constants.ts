@@ -9,7 +9,7 @@ export const DEFAULT_CLOSING_COSTS = [
   { id: 'wire-transfer', category: 'A. Origination Charges', name: 'Wire Transfer Fee', amount: 23, isFixed: true },
   
   // B. Services You Cannot Shop For
-  { id: 'appraisal', category: 'B. Services You Cannot Shop For', name: 'Appraisal Fee', amount: 650, isFixed: true },
+  { id: 'appraisal', category: 'B. Services You Cannot Shop For', name: 'Appraisal Fee', amount: 800, isFixed: true },
   { id: 'credit-report', category: 'B. Services You Cannot Shop For', name: 'Credit Report Fee', amount: 250, isFixed: true },
   { id: 'flood-cert', category: 'B. Services You Cannot Shop For', name: 'Flood Certificate Fee', amount: 9, isFixed: true },
   
