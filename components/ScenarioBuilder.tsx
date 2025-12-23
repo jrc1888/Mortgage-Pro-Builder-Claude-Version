@@ -68,10 +68,22 @@ const CompactTypeToggleInput: React.FC<{
 
 const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, validationThresholds = DEFAULT_VALIDATION_THRESHOLDS }) => {
   // Backward compatibility: ensure transactionType exists
-  const scenarioWithDefaults = {
-    ...initialScenario,
-    transactionType: (initialScenario.transactionType || 'Purchase') as 'Purchase' | 'Refinance'
-  };
+  const scenarioWithDefaults = (() => {
+    const scenario = {
+      ...initialScenario,
+      transactionType: (initialScenario.transactionType || 'Purchase') as 'Purchase' | 'Refinance',
+      closingCosts: initialScenario.closingCosts || DEFAULT_CLOSING_COSTS,
+      income: initialScenario.income || { borrower1: 0, borrower2: 0, rental: 0, other: 0 },
+      debts: initialScenario.debts || { monthlyTotal: 0 }
+    };
+    
+    // Calculate DPA percent if amount is set but percent is 0
+    if (scenario.dpa && scenario.dpa.amount > 0 && (!scenario.dpa.percent || scenario.dpa.percent === 0) && scenario.purchasePrice > 0) {
+      scenario.dpa.percent = (scenario.dpa.amount / scenario.purchasePrice) * 100;
+    }
+    
+    return scenario;
+  })();
   const [scenario, setScenario] = useState<Scenario>(scenarioWithDefaults);
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(scenarioWithDefaults));
   const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
@@ -271,43 +283,33 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     historyRef.current.lastSavedState = JSON.parse(JSON.stringify(scenario));
   };
 
-  // Keyboard shortcuts for undo/redo
+  // Keyboard shortcuts for undo/redo - DISABLED to prevent accidental scenario deletion
+  // Only allow undo/redo when explicitly in notes textarea
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+Z for undo (prevent default browser undo in inputs)
+      const activeElement = document.activeElement;
+      const isInNotesTextarea = activeElement?.tagName === 'TEXTAREA' && activeElement === notesTextareaRef.current;
+      
+      // Only allow Ctrl+Z in notes textarea, nowhere else
       if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        // Save current state before undoing (if field was being edited)
-        if (historyRef.current.lastSavedState) {
-          addToHistory();
+        if (!isInNotesTextarea) {
+          e.preventDefault();
+          return; // Block Ctrl+Z everywhere except notes
         }
-        if (historyIndex > 0) {
-          historyRef.current.isUndoRedo = true;
-          const newIndex = historyIndex - 1;
-          setHistoryIndex(newIndex);
-          const restoredState = JSON.parse(JSON.stringify(history[newIndex])); // Deep copy
-          setScenario(restoredState);
-          historyRef.current.lastSavedState = restoredState;
-        }
+        // Allow default browser undo behavior in notes textarea only
+        return;
       }
       
-      // Ctrl+Y or Ctrl+Shift+Z for redo
+      // Block Ctrl+Y and Ctrl+Shift+Z everywhere
       if ((e.ctrlKey && e.key === 'y') || (e.ctrlKey && e.shiftKey && e.key === 'z')) {
         e.preventDefault();
-        if (historyIndex < history.length - 1) {
-          historyRef.current.isUndoRedo = true;
-          const newIndex = historyIndex + 1;
-          setHistoryIndex(newIndex);
-          const restoredState = JSON.parse(JSON.stringify(history[newIndex])); // Deep copy
-          setScenario(restoredState);
-          historyRef.current.lastSavedState = restoredState;
-        }
+        return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [history, historyIndex]);
+  }, []);
 
   // Simple Auto-Save - Works perfectly, no complications
   useEffect(() => {
@@ -401,11 +403,19 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         if (field === 'purchasePrice') {
             const price = Number(value);
             const roundedPercent = Number(prev.downPaymentPercent.toFixed(2));
-            return {
+            const updated = {
                 ...prev,
                 purchasePrice: price,
                 downPaymentAmount: Number((price * (roundedPercent / 100)).toFixed(2))
             };
+            // Recalculate DPA percent if purchase price changes
+            if (updated.dpa && updated.dpa.amount > 0 && price > 0) {
+                updated.dpa.percent = (updated.dpa.amount / price) * 100;
+            }
+            if (updated.dpa2 && updated.dpa2.amount > 0 && price > 0) {
+                updated.dpa2.percent = (updated.dpa2.amount / price) * 100;
+            }
+            return updated;
         }
         if (field === 'downPaymentPercent') {
             const percent = Number(value);
@@ -515,8 +525,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     let newAmount = 0;
     if (cost.isFixed) {
         // Fixed -> Percent
-        if (id === 'buyers-agent-commission') {
-            // Buyer's Agent Commission uses purchase price
+        if (id === 'buyers-agent-commission' || id === 'hoa-transfer') {
+            // Buyer's Agent Commission and HOA Transfer Fee use purchase price
             if (scenario.purchasePrice > 0) {
                 newAmount = (cost.amount / scenario.purchasePrice) * 100;
             }
@@ -528,8 +538,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         }
     } else {
         // Percent -> Fixed
-        if (id === 'buyers-agent-commission') {
-            // Buyer's Agent Commission uses purchase price
+        if (id === 'buyers-agent-commission' || id === 'hoa-transfer') {
+            // Buyer's Agent Commission and HOA Transfer Fee use purchase price
             newAmount = scenario.purchasePrice * (cost.amount / 100);
         } else {
             // All other percentage fees use loan amount
@@ -1319,7 +1329,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
                                                         {/* Discount points, Buyer's Agent Commission, and Other Fees can toggle between $ and %} */}
-                                                        {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission' || (cost.category === 'H. Other' && cost.id !== 'hoa-transfer' && cost.id !== 'hoa-prepay')) ? (
+                                                        {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission' || cost.id === 'hoa-transfer' || (cost.category === 'H. Other' && cost.id !== 'hoa-prepay')) ? (
                                                             <>
                                                                 {cost.isFixed ? (
                                                                     <>
@@ -1690,12 +1700,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
                             <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                  <CustomCheckbox checked={scenario.dpa.isDeferred} onChange={(c) => setScenario(prev => ({...prev, dpa: {...prev.dpa, isDeferred: c}}))} label="Deferred Payment (Silent Second)" />
-                                 {!scenario.dpa.isDeferred && (
-                                     <div className="mt-3 flex justify-between items-center text-sm">
-                                         <span className="text-slate-500 font-medium">Monthly DPA Payment</span>
-                                         <span className="font-mono font-bold text-slate-900">{formatMoney(results.monthlyDPAPayment)}</span>
-                                     </div>
-                                 )}
+                                 <div className="mt-3 flex justify-between items-center text-sm">
+                                     <span className="text-slate-500 font-medium">Monthly DPA Payment{scenario.dpa.isDeferred ? ' (Deferred)' : ''}</span>
+                                     <span className="font-mono font-bold text-slate-900">{scenario.dpa.isDeferred ? formatMoney(0) : formatMoney(results.monthlyDPAPayment)}</span>
+                                 </div>
                             </div>
                          </div>
                          
@@ -1821,11 +1829,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         }))} 
                                         label="Deferred Payment (Silent Second)" 
                                     />
-                                    {scenario.dpa2 && !scenario.dpa2.isDeferred && (
+                                    {scenario.dpa2 && (
                                         <div className="mt-3 flex justify-between items-center text-sm">
-                                            <span className="text-slate-500 font-medium">Monthly DPA2 Payment</span>
+                                            <span className="text-slate-500 font-medium">Monthly DPA2 Payment{scenario.dpa2.isDeferred ? ' (Deferred)' : ''}</span>
                                             <span className="font-mono font-bold text-slate-900">
-                                                {results.monthlyDPA2Payment ? formatMoney(results.monthlyDPA2Payment) : '$0'}
+                                                {scenario.dpa2.isDeferred ? formatMoney(0) : (results.monthlyDPA2Payment ? formatMoney(results.monthlyDPA2Payment) : formatMoney(0))}
                                             </span>
                                         </div>
                                     )}
@@ -2099,16 +2107,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <span>HOA Dues</span>
                             <span className="font-bold text-slate-900">{formatMoney(results.monthlyHOA)}</span>
                         </div>
-                         {scenario.dpa.active && !scenario.dpa.isDeferred && (
+                         {scenario.dpa.active && (
                              <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
-                                <span>DPA Loan (1st)</span>
-                                <span className="font-bold">{formatMoney(results.monthlyDPAPayment)}</span>
+                                <span>DPA Loan (1st){scenario.dpa.isDeferred ? ' (Deferred)' : ''}</span>
+                                <span className="font-bold">{scenario.dpa.isDeferred ? formatMoney(0) : formatMoney(results.monthlyDPAPayment)}</span>
                             </div>
                         )}
-                         {scenario.dpa2?.active && !scenario.dpa2.isDeferred && (
+                         {scenario.dpa2?.active && (
                              <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
-                                <span>DPA Loan (2nd)</span>
-                                <span className="font-bold">{formatMoney(results.monthlyDPA2Payment)}</span>
+                                <span>DPA Loan (2nd){scenario.dpa2.isDeferred ? ' (Deferred)' : ''}</span>
+                                <span className="font-bold">{scenario.dpa2.isDeferred ? formatMoney(0) : formatMoney(results.monthlyDPA2Payment)}</span>
                             </div>
                         )}
                          {scenario.buydown.active && (
@@ -2142,8 +2150,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                  </div>
                                  {scenario.dpa.active && (
                                      <div className="flex justify-between text-emerald-600">
-                                         <span>DPA Funding</span>
+                                         <span>DPA Funding (1st)</span>
                                          <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
+                                     </div>
+                                 )}
+                                 {scenario.dpa2?.active && (
+                                     <div className="flex justify-between text-emerald-600">
+                                         <span>DPA Funding (2nd)</span>
+                                         <span className="font-bold">-{formatMoney(scenario.dpa2.amount)}</span>
                                      </div>
                                  )}
                                  
@@ -2151,7 +2165,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                  <div className="border-t border-slate-300 pt-2 mt-2 flex justify-between items-center">
                                      <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
                                      <span className="text-lg font-bold text-slate-900">
-                                         {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0))}
+                                         {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0) - (scenario.dpa2?.active ? scenario.dpa2.amount : 0))}
                                      </span>
                                  </div>
                                  

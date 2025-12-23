@@ -34,7 +34,7 @@ export const DEFAULT_CLOSING_COSTS = [
   // H. Other
   { id: 'realtor-admin', category: 'H. Other', name: 'Realtor Administration Fee', amount: 495, isFixed: true },
   { id: 'buyers-agent-commission', category: 'H. Other', name: 'Realtor Commission Buyer', amount: 0, isFixed: false },
-  { id: 'hoa-transfer', category: 'H. Other', name: 'HOA Transfer Fee', amount: 0, isFixed: true },
+  { id: 'hoa-transfer', category: 'H. Other', name: 'HOA Transfer Fee', amount: 0, isFixed: false },
   { id: 'hoa-prepay', category: 'H. Other', name: 'HOA Monthly Dues (Prepay)', amount: 0, isFixed: true, months: 1 },
   { id: 'misc-1', category: 'H. Other', name: 'Other Fee 1', amount: 0, isFixed: true },
   { id: 'misc-2', category: 'H. Other', name: 'Other Fee 2', amount: 0, isFixed: true },
