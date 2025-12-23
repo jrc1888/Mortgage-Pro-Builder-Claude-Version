@@ -1310,9 +1310,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
                                     }
                                 }
-                                // Realtor Admin Fee is always fixed
+                                // Realtor Admin Fee can toggle between $ and %
                                 if (cost.id === 'realtor-admin') {
-                                    return sum + safeNum(cost.amount);
+                                    if (cost.isFixed) {
+                                        return sum + safeNum(cost.amount);
+                                    } else {
+                                        return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                    }
                                 }
                                 // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
                                 if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {
@@ -1552,9 +1556,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
                                             }
                                         }
-                                        // Realtor Admin Fee is always fixed
+                                        // Realtor Admin Fee can toggle between $ and %
                                         if (cost.id === 'realtor-admin') {
-                                            return sum + safeNum(cost.amount);
+                                            if (cost.isFixed) {
+                                                return sum + safeNum(cost.amount);
+                                            } else {
+                                                return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                            }
                                         }
                                         // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
                                         if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {

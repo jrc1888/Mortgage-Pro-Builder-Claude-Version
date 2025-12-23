@@ -154,12 +154,36 @@ const App: React.FC = () => {
   };
 
   const handlePin = async (id: string, isPinned: boolean) => {
-    const scenario = scenarios.find(s => s.id === id);
-    if (!scenario) return;
+    const scenarioToUpdate = scenarios.find(s => s.id === id);
+    if (!scenarioToUpdate) return;
     
-    const updatedScenario = { ...scenario, isPinned };
-    setScenarios(prev => prev.map(s => s.id === id ? updatedScenario : s));
-    await saveScenario(updatedScenario);
+    // If pinning a scenario, unpin all others first (only one can be starred)
+    if (isPinned) {
+      // Unpin all other scenarios first
+      const otherScenarios = scenarios.filter(s => s.id !== id && s.isPinned);
+      for (const other of otherScenarios) {
+        const unpinned = { ...other, isPinned: false };
+        await saveScenario(unpinned);
+      }
+      
+      // Update state to unpin all others and pin the selected one
+      setScenarios(prev => prev.map(s => {
+        if (s.id === id) {
+          return { ...s, isPinned: true };
+        } else {
+          return { ...s, isPinned: false };
+        }
+      }));
+      
+      // Update the specific scenario
+      const updated = { ...scenarioToUpdate, isPinned: true };
+      await saveScenario(updated);
+    } else {
+      // If unpinning, just update this scenario
+      const updated = { ...scenarioToUpdate, isPinned: false };
+      setScenarios(prev => prev.map(s => s.id === id ? updated : s));
+      await saveScenario(updated);
+    }
   };
 
   const handleDeleteClient = async (clientName: string) => {
@@ -177,7 +201,8 @@ const App: React.FC = () => {
         name: `Copy of ${original.name}`,
         dateCreated: now,
         lastUpdated: now,
-        history: [] 
+        history: [],
+        isPinned: false // Don't copy the pinned status - only one scenario can be starred
     };
 
     setScenarios(prev => [copy, ...prev]);
