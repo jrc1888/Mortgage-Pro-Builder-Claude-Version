@@ -1,43 +1,45 @@
 import { LoanType, Scenario } from './types';
 
 export const DEFAULT_CLOSING_COSTS = [
-  // Lender Fees
-  // Origination Fee Removed
-  { id: 'discount-points', category: 'Lender Fees', name: 'Discount Points', amount: 0, isFixed: false }, // Default to % now
-  { id: 'underwriting', category: 'Lender Fees', name: 'Underwriting Fee', amount: 995, isFixed: true },
-  { id: 'processing', category: 'Lender Fees', name: 'Administration Fee', amount: 795, isFixed: true },
-  { id: 'tax-service', category: 'Lender Fees', name: 'Tax Service Fee', amount: 71, isFixed: true },
-  { id: 'wire-transfer', category: 'Lender Fees', name: 'Wire Transfer Fee', amount: 23, isFixed: true },
-  // Lender Credit Removed (Moved to top level)
+  // A. Origination Charges
+  { id: 'discount-points', category: 'A. Origination Charges', name: '% of Loan Amount (Points)', amount: 0, isFixed: false },
+  { id: 'processing', category: 'A. Origination Charges', name: 'Administration Fee', amount: 795, isFixed: true },
+  { id: 'tax-service', category: 'A. Origination Charges', name: 'Tax Service Fee', amount: 71, isFixed: true },
+  { id: 'underwriting', category: 'A. Origination Charges', name: 'Underwriting Fee', amount: 995, isFixed: true },
+  { id: 'wire-transfer', category: 'A. Origination Charges', name: 'Wire Transfer Fee', amount: 23, isFixed: true },
   
-  // Third Party
-  { id: 'appraisal', category: 'Third Party Fees', name: 'Appraisal', amount: 650, isFixed: true },
-  { id: 'credit-report', category: 'Third Party Fees', name: 'Credit Report', amount: 250, isFixed: true },
-  { id: 'flood-cert', category: 'Third Party Fees', name: 'Flood Certification', amount: 9, isFixed: true },
+  // B. Services You Cannot Shop For
+  { id: 'appraisal', category: 'B. Services You Cannot Shop For', name: 'Appraisal Fee', amount: 650, isFixed: true },
+  { id: 'credit-report', category: 'B. Services You Cannot Shop For', name: 'Credit Report Fee', amount: 250, isFixed: true },
+  { id: 'flood-cert', category: 'B. Services You Cannot Shop For', name: 'Flood Certificate Fee', amount: 9, isFixed: true },
   
-  // Title / Gov
-  { id: 'closing-protection-letter', category: 'Title & Government', name: 'Closing Protection Letter Fee', amount: 25, isFixed: true },
-  { id: 'endorsement-fee', category: 'Title & Government', name: 'Endorsement Fee', amount: 55, isFixed: true },
-  { id: 'e-recording-fee', category: 'Title & Government', name: 'E-recording Fee', amount: 10, isFixed: true },
-  { id: 'recording-fee', category: 'Title & Government', name: 'Recording Fee', amount: 80, isFixed: true },
-  { id: 'settlement-fee', category: 'Title & Government', name: 'Settlement Fee', amount: 395, isFixed: true },
-  { id: 'title-insurance', category: 'Title & Government', name: 'Lenders Title Insurance', amount: 0, isFixed: true }, // Calculated based on loan amount tiers, but editable
+  // C. Services You Can Shop For
+  { id: 'closing-protection-letter', category: 'C. Services You Can Shop For', name: 'Title - Closing Protection Ltr Fee', amount: 25, isFixed: true },
+  { id: 'endorsement-fee', category: 'C. Services You Can Shop For', name: 'Title - Endorsement Fee', amount: 55, isFixed: true },
+  { id: 'e-recording-fee', category: 'C. Services You Can Shop For', name: 'Title - eRecording Fee', amount: 10, isFixed: true },
+  { id: 'title-insurance', category: 'C. Services You Can Shop For', name: 'Title - Lender\'s Title Insurance', amount: 0, isFixed: true },
+  { id: 'settlement-fee', category: 'C. Services You Can Shop For', name: 'Title - Settlement Fee', amount: 395, isFixed: true },
 
-  // Escrows & Prepaids
-  { id: 'prepaid-interest', category: 'Escrows/Prepaids', name: 'Prepaid Interest', amount: 0, isFixed: true, days: 15 },
-  { id: 'prepaid-insurance', category: 'Escrows/Prepaids', name: 'Homeowners Insurance Premium', amount: 0, isFixed: true, months: 12 },
-  { id: 'tax-reserves', category: 'Escrows/Prepaids', name: 'Property Tax Reserves', amount: 0, isFixed: true, months: 3 },
-  { id: 'insurance-reserves', category: 'Escrows/Prepaids', name: 'Homeowners Insurance Reserves', amount: 0, isFixed: true, months: 2 },
+  // E. Taxes and Other Government Fees
+  { id: 'recording-fee', category: 'E. Taxes and Other Government Fees', name: 'Recording Fees and Other Taxes', amount: 80, isFixed: true },
 
-  // Other Fees
-  { id: 'buyers-agent-commission', category: 'Other Fees', name: "Buyer's Agent Commission", amount: 0, isFixed: false }, // Percentage of sale price
-  { id: 'realtor-admin', category: 'Other Fees', name: 'Realtor Admin Fee', amount: 495, isFixed: true },
-  { id: 'hoa-transfer', category: 'Other Fees', name: 'HOA Transfer Fee', amount: 0, isFixed: true },
-  { id: 'hoa-prepay', category: 'Other Fees', name: 'HOA Monthly Dues (Prepay)', amount: 0, isFixed: true, months: 1 },
-  { id: 'misc-1', category: 'Other Fees', name: 'Other Fee 1', amount: 0, isFixed: true },
-  { id: 'misc-2', category: 'Other Fees', name: 'Other Fee 2', amount: 0, isFixed: true },
-  { id: 'misc-3', category: 'Other Fees', name: 'Other Fee 3', amount: 0, isFixed: true },
-  { id: 'misc-4', category: 'Other Fees', name: 'Other Fee 4', amount: 0, isFixed: true },
+  // F. Prepaids
+  { id: 'prepaid-insurance', category: 'F. Prepaids', name: 'Homeowner\'s Insurance Premium', amount: 0, isFixed: true, months: 12 },
+  { id: 'prepaid-interest', category: 'F. Prepaids', name: 'Prepaid Interest', amount: 0, isFixed: true, days: 15 },
+  { id: 'tax-reserves', category: 'F. Prepaids', name: 'Property Taxes', amount: 0, isFixed: true, months: 3 },
+
+  // G. Initial Escrow Payment at Closing
+  { id: 'insurance-reserves', category: 'G. Initial Escrow Payment at Closing', name: 'Homeowner\'s Insurance', amount: 0, isFixed: true, months: 2 },
+
+  // H. Other
+  { id: 'realtor-admin', category: 'H. Other', name: 'Realtor Administration Fee', amount: 495, isFixed: true },
+  { id: 'buyers-agent-commission', category: 'H. Other', name: 'Realtor Commission Buyer', amount: 0, isFixed: false },
+  { id: 'hoa-transfer', category: 'H. Other', name: 'HOA Transfer Fee', amount: 0, isFixed: true },
+  { id: 'hoa-prepay', category: 'H. Other', name: 'HOA Monthly Dues (Prepay)', amount: 0, isFixed: true, months: 1 },
+  { id: 'misc-1', category: 'H. Other', name: 'Other Fee 1', amount: 0, isFixed: true },
+  { id: 'misc-2', category: 'H. Other', name: 'Other Fee 2', amount: 0, isFixed: true },
+  { id: 'misc-3', category: 'H. Other', name: 'Other Fee 3', amount: 0, isFixed: true },
+  { id: 'misc-4', category: 'H. Other', name: 'Other Fee 4', amount: 0, isFixed: true },
 ];
 
 export const DEFAULT_SCENARIO: Scenario = {
