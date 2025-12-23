@@ -528,8 +528,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     let newAmount = 0;
     if (cost.isFixed) {
         // Fixed -> Percent
-        if (id === 'buyers-agent-commission' || id === 'hoa-transfer') {
-            // Buyer's Agent Commission and HOA Transfer Fee use purchase price
+        if (id === 'buyers-agent-commission' || id === 'hoa-transfer' || id === 'realtor-admin') {
+            // Buyer's Agent Commission, HOA Transfer Fee, and Realtor Admin Fee use purchase price
             if (scenario.purchasePrice > 0) {
                 newAmount = (cost.amount / scenario.purchasePrice) * 100;
             }
@@ -541,8 +541,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         }
     } else {
         // Percent -> Fixed
-        if (id === 'buyers-agent-commission' || id === 'hoa-transfer') {
-            // Buyer's Agent Commission and HOA Transfer Fee use purchase price
+        if (id === 'buyers-agent-commission' || id === 'hoa-transfer' || id === 'realtor-admin') {
+            // Buyer's Agent Commission, HOA Transfer Fee, and Realtor Admin Fee use purchase price
             newAmount = scenario.purchasePrice * (cost.amount / 100);
         } else {
             // All other percentage fees use loan amount

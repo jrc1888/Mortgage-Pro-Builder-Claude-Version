@@ -288,8 +288,8 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
       cost = val;
     } else {
       // For percentage-based fees, check if it uses purchase price or loan amount
-      if (item.id === 'buyers-agent-commission' || item.id === 'hoa-transfer') {
-        // Buyer's Agent Commission and HOA Transfer Fee use purchase price
+      if (item.id === 'buyers-agent-commission' || item.id === 'hoa-transfer' || item.id === 'realtor-admin') {
+        // Buyer's Agent Commission, HOA Transfer Fee, and Realtor Admin Fee use purchase price
         cost = purchasePrice * (val / 100);
       } else {
         // All other percentage fees use loan amount (discount-points, misc-1, misc-2, misc-3, misc-4)
