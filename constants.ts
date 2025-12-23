@@ -6,13 +6,14 @@ export const DEFAULT_CLOSING_COSTS = [
   { id: 'discount-points', category: 'Lender Fees', name: 'Discount Points', amount: 0, isFixed: false }, // Default to % now
   { id: 'underwriting', category: 'Lender Fees', name: 'Underwriting Fee', amount: 995, isFixed: true },
   { id: 'processing', category: 'Lender Fees', name: 'Administration Fee', amount: 795, isFixed: true },
+  { id: 'tax-service', category: 'Lender Fees', name: 'Tax Service Fee', amount: 71, isFixed: true },
   { id: 'wire-transfer', category: 'Lender Fees', name: 'Wire Transfer Fee', amount: 23, isFixed: true },
   // Lender Credit Removed (Moved to top level)
   
   // Third Party
   { id: 'appraisal', category: 'Third Party Fees', name: 'Appraisal', amount: 650, isFixed: true },
   { id: 'credit-report', category: 'Third Party Fees', name: 'Credit Report', amount: 250, isFixed: true },
-  { id: 'flood-cert', category: 'Third Party Fees', name: 'Flood Certification', amount: 15, isFixed: true },
+  { id: 'flood-cert', category: 'Third Party Fees', name: 'Flood Certification', amount: 9, isFixed: true },
   
   // Title / Gov
   { id: 'closing-protection-letter', category: 'Title & Government', name: 'Closing Protection Letter Fee', amount: 25, isFixed: true },

@@ -126,6 +126,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     const hasHOAPrepay = updatedCosts.some(c => c && c.id === 'hoa-prepay');
     const hasDiscountPoints = updatedCosts.some(c => c && c.id === 'discount-points');
     const hasBuyersAgentCommission = updatedCosts.some(c => c && c.id === 'buyers-agent-commission');
+    const hasTaxService = updatedCosts.some(c => c && c.id === 'tax-service');
     const hasMisc1 = updatedCosts.some(c => c && c.id === 'misc-1');
     const hasMisc2 = updatedCosts.some(c => c && c.id === 'misc-2');
     const hasMisc3 = updatedCosts.some(c => c && c.id === 'misc-3');
@@ -155,6 +156,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     }
     if (!hasBuyersAgentCommission) {
         const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'buyers-agent-commission');
+        if (def) updatedCosts.push(def);
+        changed = true;
+    }
+    if (!hasTaxService) {
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'tax-service');
         if (def) updatedCosts.push(def);
         changed = true;
     }
