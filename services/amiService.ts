@@ -6,7 +6,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { getIncomeLimitsByZipCode, isHudApiConfigured } from './hudApiService';
+import { getIncomeLimitsByZipCode as getFannieMaeIncomeLimits, isFannieMaeApiConfigured } from './fannieMaeApiService';
 
 export interface AMILimits {
   zipCode: string;
@@ -58,18 +58,18 @@ export async function getAMILimits(
   }
 
   try {
-    // Try HUD API first if configured (most up-to-date)
-    if (isHudApiConfigured()) {
-      console.log('HUD API: Attempting to fetch AMI data for zip code', normalizedZip);
-      const hudData = await getAMILimitsFromHudApi(normalizedZip, familySize);
-      if (hudData) {
-        console.log('HUD API: Successfully retrieved AMI data for zip code', normalizedZip);
-        return hudData;
+    // Try Fannie Mae API first if configured (most up-to-date)
+    if (isFannieMaeApiConfigured()) {
+      console.log('Fannie Mae API: Attempting to fetch AMI data for zip code', normalizedZip);
+      const fannieMaeData = await getAMILimitsFromFannieMaeApi(normalizedZip, familySize);
+      if (fannieMaeData) {
+        console.log('Fannie Mae API: Successfully retrieved AMI data for zip code', normalizedZip);
+        return fannieMaeData;
       } else {
-        console.warn('HUD API: No data returned, falling back to other sources');
+        console.warn('Fannie Mae API: No data returned, falling back to other sources');
       }
     } else {
-      console.log('HUD API: Not configured, skipping API call');
+      console.log('Fannie Mae API: Not configured, skipping API call');
     }
 
     // Try Supabase database if configured
@@ -112,72 +112,74 @@ export async function getAMILimits(
 }
 
 /**
- * Get AMI limits from HUD API
+ * Get AMI limits from Fannie Mae API
  */
-async function getAMILimitsFromHudApi(
+async function getAMILimitsFromFannieMaeApi(
   zipCode: string,
   familySize: number
 ): Promise<AMILimits | null> {
   try {
-    console.log('HUD API: Getting income limits for zip code', zipCode);
-    const hudData = await getIncomeLimitsByZipCode(zipCode);
+    console.log('Fannie Mae API: Getting income limits for zip code', zipCode);
+    const fannieMaeData = await getFannieMaeIncomeLimits(zipCode);
     
-    if (!hudData) {
-      console.warn('HUD API: No data returned from getIncomeLimitsByZipCode');
+    if (!fannieMaeData) {
+      console.warn('Fannie Mae API: No data returned from getIncomeLimitsByZipCode');
       return null;
     }
     
-    if (!hudData.incomeLimits) {
-      console.warn('HUD API: No incomeLimits in response:', hudData);
-      return null;
-    }
-
-    // HUD API response structure according to documentation:
-    // {
-    //   "data": {
-    //     "very_low": { "il50_p1": ..., "il50_p2": ..., ... },
-    //     "extremely_low": { "il30_p1": ..., "il30_p2": ..., ... },
-    //     "low": { "il80_p1": ..., "il80_p2": ..., ... },
-    //     "median_income": ...
-    //   }
-    // }
-    let incomeData = hudData.incomeLimits;
+    // Log the full response structure for debugging
+    // The actual structure will depend on Fannie Mae's API response format
+    console.log('Fannie Mae API: Full response structure:', JSON.stringify(fannieMaeData, null, 2));
+    
+    // TODO: Update this parsing logic based on Fannie Mae's actual API response structure
+    // Common patterns might be:
+    // - { data: { incomeLimits: {...}, familySize: {...} } }
+    // - { incomeLimits: { [familySize]: {...} } }
+    // - { amiLimits: { extremelyLow: {...}, veryLow: {...}, ... } }
+    
+    let incomeData = fannieMaeData;
     
     // Check if response is wrapped in a 'data' property
     if (incomeData && incomeData.data) {
       incomeData = incomeData.data;
     }
     
-    // Log the full response structure for debugging
-    console.log('HUD API: Full hudData structure:', JSON.stringify(hudData, null, 2));
-    console.log('HUD API: Income data structure:', JSON.stringify(incomeData, null, 2));
-    
     if (!incomeData) {
-      console.warn('HUD API: No income data in response');
+      console.warn('Fannie Mae API: No income data in response');
       return null;
     }
     
-    // Extract income limits using HUD API field names
-    // Field format: il50_p{familySize} for 50% AMI, il30_p{familySize} for 30% AMI, etc.
-    const familySizeKey = `p${familySize}`;
+    // Extract income limits - adjust field names based on Fannie Mae's actual response
+    // This is a template that may need adjustment
+    const extremelyLow = incomeData.extremelyLow?.[familySize] || 
+                        incomeData.incomeLimits?.[familySize]?.extremelyLow ||
+                        incomeData[`ami30_${familySize}`] || 0;
     
-    // Extract limits for the requested family size
-    const extremelyLow = incomeData.extremely_low?.[`il30_${familySizeKey}`] || 0;
-    const veryLow = incomeData.very_low?.[`il50_${familySizeKey}`] || 0;
-    const low = incomeData.low?.[`il80_${familySizeKey}`] || 0;
-    const median = incomeData.median_income || 0;
+    const veryLow = incomeData.veryLow?.[familySize] || 
+                   incomeData.incomeLimits?.[familySize]?.veryLow ||
+                   incomeData[`ami50_${familySize}`] || 0;
+    
+    const low = incomeData.low?.[familySize] || 
+               incomeData.incomeLimits?.[familySize]?.low ||
+               incomeData[`ami80_${familySize}`] || 0;
+    
+    const median = incomeData.medianIncome || 
+                  incomeData.median || 
+                  incomeData.incomeLimits?.median ||
+                  incomeData[`ami100_${familySize}`] || 0;
     
     // Calculate 120% AMI (moderate income) from median
     const moderate = median ? Math.round(median * 1.2) : 0;
     
     // Validate that we got at least some data
     if (!extremelyLow && !veryLow && !low && !median) {
-      console.warn('HUD API: Could not extract income limits from response structure for zip code', zipCode);
-      console.warn('HUD API: Available keys in incomeData:', Object.keys(incomeData));
+      console.warn('Fannie Mae API: Could not extract income limits from response structure for zip code', zipCode);
+      console.warn('Fannie Mae API: Available keys in incomeData:', Object.keys(incomeData));
+      console.warn('Fannie Mae API: Full response for debugging:', JSON.stringify(incomeData, null, 2));
       return null;
     }
     
-    console.log(`HUD API: Extracted limits for family size ${familySize}:`, {
+    console.log(`Fannie Mae API: Extracted limits for family size ${familySize}:`, {
       extremelyLow,
       veryLow,
       low,
@@ -187,9 +189,9 @@ async function getAMILimitsFromHudApi(
     
     return {
       zipCode,
-      county: hudData.county || '',
-      msa: '',
-      state: hudData.state || '',
+      county: incomeData.county || incomeData.countyName || '',
+      msa: incomeData.msa || incomeData.metroArea || '',
+      state: incomeData.state || incomeData.stateCode || '',
       familySize,
       limits: {
         extremelyLow: extremelyLow || 0,
@@ -198,11 +200,11 @@ async function getAMILimitsFromHudApi(
         median: median || 0,
         moderate: moderate || 0,
       },
-      effectiveDate: incomeData.effective_date || incomeData.year || incomeData.fiscalYear || new Date().toISOString().split('T')[0],
-      dataSource: 'HUD API',
+      effectiveDate: incomeData.effectiveDate || incomeData.year || incomeData.fiscalYear || new Date().toISOString().split('T')[0],
+      dataSource: 'Fannie Mae API',
     };
   } catch (error) {
-    console.error('Error fetching AMI limits from HUD API:', error);
+    console.error('Error fetching AMI limits from Fannie Mae API:', error);
     return null;
   }
 }
@@ -258,7 +260,7 @@ async function getAMILimitsFromJSON(
         moderate: limits['120'] || 0,
       },
       effectiveDate: zipData.effectiveDate || new Date().toISOString().split('T')[0],
-      dataSource: 'HUD (JSON)',
+      dataSource: 'Fannie Mae (JSON)',
     };
   } catch (error) {
     console.error('Error loading AMI data from JSON:', error);
