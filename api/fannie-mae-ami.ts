@@ -39,49 +39,108 @@ export default async function handler(
       return response.status(400).json({ error: 'Valid 5-digit zip code is required' });
     }
 
-    // TODO: Update this endpoint based on Fannie Mae's actual API documentation
-    // Check the Fannie Mae Developer Portal Swagger documentation for the exact endpoint
-    // Common patterns might be:
-    // - /ami-lookup?zipCode={zipCode}
-    // - /income-limits?zipCode={zipCode}
-    // - /homeready-evaluation?zipCode={zipCode}
-    // - /ami-lookup/{zipCode}
-    
-    const url = `${FANNIE_MAE_API_BASE_URL}/ami-lookup?zipCode=${zipCode}`;
-    console.log('Fannie Mae API Proxy: Fetching from:', url);
+    // Try multiple endpoint patterns - Fannie Mae API endpoint structure may vary
+    // Common patterns based on typical REST API conventions:
+    const endpointPatterns = [
+      `/ami-lookup?zipCode=${zipCode}`,
+      `/ami-lookup/${zipCode}`,
+      `/income-limits?zipCode=${zipCode}`,
+      `/income-limits/${zipCode}`,
+      `/homeready-evaluation?zipCode=${zipCode}`,
+      `/homeready-evaluation/${zipCode}`,
+      `/ami?zipCode=${zipCode}`,
+      `/ami/${zipCode}`,
+    ];
 
-    const fannieMaeResponse = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-public-access-token': apiKey,
-      },
-    });
+    let fannieMaeResponse: Response | null = null;
+    let lastError: string = '';
+    let triedUrl = '';
 
-    console.log('Fannie Mae API Proxy: Response status:', fannieMaeResponse.status);
+    // Try each endpoint pattern until one works
+    for (const endpoint of endpointPatterns) {
+      const url = `${FANNIE_MAE_API_BASE_URL}${endpoint}`;
+      triedUrl = url;
+      console.log('Fannie Mae API Proxy: Trying endpoint:', url);
+
+      try {
+        fannieMaeResponse = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-public-access-token': apiKey,
+          },
+        });
+
+        console.log(`Fannie Mae API Proxy: Response status for ${endpoint}:`, fannieMaeResponse.status);
+
+        // If we get a 200, 201, or even 404 (endpoint exists but no data), use this endpoint
+        if (fannieMaeResponse.ok || fannieMaeResponse.status === 404) {
+          console.log(`Fannie Mae API Proxy: Found working endpoint: ${endpoint}`);
+          break;
+        }
+
+        // If 401/403, the endpoint might be right but auth is wrong, or endpoint is wrong
+        // Continue trying other endpoints
+        if (fannieMaeResponse.status === 401 || fannieMaeResponse.status === 403) {
+          const errorText = await fannieMaeResponse.text();
+          lastError = errorText.substring(0, 500);
+          console.log(`Fannie Mae API Proxy: ${endpoint} returned ${fannieMaeResponse.status}, trying next...`);
+          continue;
+        }
+      } catch (error) {
+        console.error(`Fannie Mae API Proxy: Error trying ${endpoint}:`, error);
+        continue;
+      }
+    }
+
+    if (!fannieMaeResponse) {
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      return response.status(500).json({ 
+        error: 'Failed to connect to Fannie Mae API',
+        details: 'Tried multiple endpoint patterns, all failed. Please check the Fannie Mae Developer Portal for the correct endpoint.',
+        triedEndpoints: endpointPatterns
+      });
+    }
+
+    console.log('Fannie Mae API Proxy: Final response status:', fannieMaeResponse.status);
 
     if (!fannieMaeResponse.ok) {
       const errorText = await fannieMaeResponse.text();
-      console.error('Fannie Mae API Proxy: Error response:', errorText);
+      console.error('Fannie Mae API Proxy: Error response:', errorText.substring(0, 500));
+      console.error('Fannie Mae API Proxy: Tried URL:', triedUrl);
+      
+      response.setHeader('Access-Control-Allow-Origin', '*');
       
       response.setHeader('Access-Control-Allow-Origin', '*');
       
       if (fannieMaeResponse.status === 401) {
         return response.status(401).json({ 
-          error: 'Unauthorized - API key may be invalid or expired' 
+          error: 'Unauthorized - API key may be invalid or expired',
+          details: 'Please verify your API key in Vercel environment variables',
+          triedUrl
+        });
+      } else if (fannieMaeResponse.status === 403) {
+        return response.status(403).json({ 
+          error: 'Forbidden - API key may not have access to this endpoint, or endpoint URL is incorrect',
+          details: 'Please check: 1) Your API key has access to AMI Lookup API, 2) The endpoint URL is correct in Fannie Mae Developer Portal',
+          triedUrl,
+          errorResponse: errorText.substring(0, 500)
         });
       } else if (fannieMaeResponse.status === 404) {
         return response.status(404).json({ 
-          error: `Income limits not found for ZIP code ${zipCode}` 
+          error: `Income limits not found for ZIP code ${zipCode}`,
+          triedUrl
         });
       } else if (fannieMaeResponse.status === 400) {
         return response.status(400).json({ 
-          error: `Bad Request - Invalid ZIP code format: ${zipCode}` 
+          error: `Bad Request - Invalid ZIP code format: ${zipCode}`,
+          triedUrl
         });
       } else {
         return response.status(fannieMaeResponse.status).json({ 
           error: `Fannie Mae API Error: ${fannieMaeResponse.statusText}`,
-          details: errorText.substring(0, 200)
+          details: errorText.substring(0, 500),
+          triedUrl
         });
       }
     }
