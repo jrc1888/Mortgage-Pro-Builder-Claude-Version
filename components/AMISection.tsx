@@ -20,8 +20,10 @@ export const AMISection: React.FC<AMISectionProps> = ({ scenario, results }) => 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Extract zip code from address
+  // Extract zip code from address for display
   const zipCode = extractZipCode(scenario.propertyAddress);
+  // Use full address if available, otherwise use ZIP code
+  const addressOrZip = scenario.propertyAddress?.trim() || '';
   
   // Calculate family size
   const familySize = (() => {
@@ -39,37 +41,44 @@ export const AMISection: React.FC<AMISectionProps> = ({ scenario, results }) => 
     return monthly * 12;
   })();
 
-  // Load AMI data when zip code or family size changes
+  // Load AMI data when address or family size changes
   useEffect(() => {
-    const formattedZip = zipCode ? formatZipCode(zipCode) : null;
-    if (formattedZip && familySize >= 1 && familySize <= 8) {
-      loadAMIData(formattedZip, familySize);
+    // Check if we have a valid address or ZIP code
+    const isValidInput = addressOrZip && (
+      addressOrZip.length >= 5 || // At least 5 chars (ZIP code)
+      /^\d{5}$/.test(addressOrZip.trim()) || // Just ZIP code
+      addressOrZip.includes(',') || addressOrZip.includes(' ') // Full address
+    );
+    
+    if (isValidInput && familySize >= 1 && familySize <= 8) {
+      loadAMIData(addressOrZip, familySize);
     } else {
       setAmiLimits(null);
       setQualification(null);
     }
-  }, [zipCode, familySize]);
+  }, [addressOrZip, familySize]);
 
   // Update qualification when income changes
   useEffect(() => {
-    if (zipCode && familySize >= 1 && familySize <= 8 && annualIncome > 0) {
-      loadQualification(zipCode, familySize, annualIncome);
+    const displayZip = zipCode || (addressOrZip.length === 5 ? addressOrZip : null);
+    if (displayZip && familySize >= 1 && familySize <= 8 && annualIncome > 0) {
+      loadQualification(displayZip, familySize, annualIncome);
     } else {
       setQualification(null);
     }
-  }, [zipCode, familySize, annualIncome]);
+  }, [zipCode, addressOrZip, familySize, annualIncome]);
 
-  const loadAMIData = async (zip: string, size: number) => {
+  const loadAMIData = async (address: string, size: number) => {
     setLoading(true);
     setError(null);
     
     try {
-      const limits = await getAMILimits(zip, size);
+      const limits = await getAMILimits(address, size);
       if (limits) {
         setAmiLimits(limits);
       } else {
         setAmiLimits(null);
-        setError('AMI data not found for this zip code');
+        setError('AMI data not found for this address or zip code');
       }
     } catch (err: any) {
       setError(err.message || 'Error loading AMI data');
@@ -88,8 +97,8 @@ export const AMISection: React.FC<AMISectionProps> = ({ scenario, results }) => 
     }
   };
 
-  // Don't show if no zip code
-  if (!zipCode) {
+  // Don't show if no address or zip code
+  if (!addressOrZip || addressOrZip.trim().length < 5) {
     return (
       <div className="bg-slate-50 rounded-lg border border-slate-200 p-4 mt-6">
         <div className="flex items-start gap-2">

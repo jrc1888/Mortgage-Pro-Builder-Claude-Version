@@ -39,29 +39,35 @@ export interface QualificationStatus {
  * @returns AMI limits or null if not found
  */
 export async function getAMILimits(
-  zipCode: string,
+  addressOrZip: string,
   familySize: number
 ): Promise<AMILimits | null> {
   // Validate inputs
-  if (!zipCode || zipCode.length !== 5) {
-    throw new Error('Invalid zip code. Must be 5 digits.');
+  if (!addressOrZip || addressOrZip.trim().length < 5) {
+    throw new Error('Invalid address or zip code. Must be at least 5 characters.');
   }
   
   if (familySize < 1 || familySize > 8) {
     throw new Error('Family size must be between 1 and 8.');
   }
 
-  // Normalize zip code (remove any non-digits)
-  const normalizedZip = zipCode.replace(/\D/g, '').substring(0, 5);
-  if (normalizedZip.length !== 5) {
-    throw new Error('Invalid zip code format.');
+  // Determine if input is ZIP-only or full address
+  const isZipOnly = /^\d{5}$/.test(addressOrZip.trim());
+  const normalizedInput = addressOrZip.trim();
+
+  // If ZIP-only, validate format
+  if (isZipOnly) {
+    const normalizedZip = normalizedInput.replace(/\D/g, '').substring(0, 5);
+    if (normalizedZip.length !== 5) {
+      throw new Error('Invalid zip code format.');
+    }
   }
 
   try {
     // Try Fannie Mae API first if configured (most up-to-date)
     if (isFannieMaeApiConfigured()) {
-      console.log('Fannie Mae API: Attempting to fetch AMI data for zip code', normalizedZip);
-      const fannieMaeData = await getAMILimitsFromFannieMaeApi(normalizedZip, familySize);
+      console.log('Fannie Mae API: Attempting to fetch AMI data for', isZipOnly ? 'zip code' : 'address', normalizedInput);
+      const fannieMaeData = await getAMILimitsFromFannieMaeApi(normalizedInput, familySize);
       if (fannieMaeData) {
         console.log('Fannie Mae API: Successfully retrieved AMI data for zip code', normalizedZip);
         return fannieMaeData;
@@ -72,8 +78,9 @@ export async function getAMILimits(
       console.log('Fannie Mae API: Not configured, skipping API call');
     }
 
-    // Try Supabase database if configured
-    if (isSupabaseConfigured()) {
+    // Try Supabase database if configured (only for ZIP codes)
+    if (isSupabaseConfigured() && isZipOnly) {
+      const normalizedZip = normalizedInput.replace(/\D/g, '').substring(0, 5);
       const { data, error } = await supabase
         .from('ami_limits')
         .select('*')
@@ -103,8 +110,14 @@ export async function getAMILimits(
       }
     }
 
-    // Fallback to JSON file
-    return await getAMILimitsFromJSON(normalizedZip, familySize);
+    // Fallback to JSON file (only for ZIP codes)
+    if (isZipOnly) {
+      const normalizedZip = normalizedInput.replace(/\D/g, '').substring(0, 5);
+      return await getAMILimitsFromJSON(normalizedZip, familySize);
+    }
+    
+    // If full address and Fannie Mae failed, return null
+    return null;
   } catch (error) {
     console.error('Error in getAMILimits:', error);
     return null;
@@ -115,12 +128,12 @@ export async function getAMILimits(
  * Get AMI limits from Fannie Mae API
  */
 async function getAMILimitsFromFannieMaeApi(
-  zipCode: string,
+  addressOrZip: string,
   familySize: number
 ): Promise<AMILimits | null> {
   try {
-    console.log('Fannie Mae API: Getting income limits for zip code', zipCode);
-    const fannieMaeData = await getFannieMaeIncomeLimits(zipCode);
+    console.log('Fannie Mae API: Getting income limits for address/ZIP:', addressOrZip);
+    const fannieMaeData = await getFannieMaeIncomeLimits(addressOrZip);
     
     if (!fannieMaeData) {
       console.warn('Fannie Mae API: No data returned from getIncomeLimitsByZipCode');
@@ -187,7 +200,7 @@ async function getAMILimitsFromFannieMaeApi(
     
     // Validate that we got at least some data
     if (!extremelyLow && !veryLow && !low && !median) {
-      console.warn('Fannie Mae API: Could not extract income limits from response structure for zip code', zipCode);
+      console.warn('Fannie Mae API: Could not extract income limits from response structure for address/ZIP:', addressOrZip);
       console.warn('Fannie Mae API: Available keys in firstLimit:', Object.keys(firstLimit || {}));
       console.warn('Fannie Mae API: Full response for debugging:', JSON.stringify(fannieMaeData, null, 2));
       return null;
@@ -206,8 +219,11 @@ async function getAMILimitsFromFannieMaeApi(
     // FIPS code format: SSCCCtttttt (State FIPS (2) + County FIPS (3) + Tract (6+))
     const stateCode = fipsCode.length >= 2 ? fipsCode.substring(0, 2) : '';
     
+    // Extract ZIP code from address if it's a full address
+    const zipCode = extractZipCode(addressOrZip) || addressOrZip.substring(0, 5);
+    
     return {
-      zipCode,
+      zipCode: zipCode || '',
       county: '', // Fannie Mae API doesn't provide county name directly
       msa: '', // Fannie Mae API doesn't provide MSA name directly
       state: stateCode || '',

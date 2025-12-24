@@ -34,15 +34,15 @@ export function isFannieMaeApiConfigured(): boolean {
 }
 
 /**
- * Get income limits by ZIP code from Fannie Mae API
+ * Get income limits by address or ZIP code from Fannie Mae API
  * 
  * Uses a server-side proxy to avoid CORS issues.
  * The proxy endpoint is at /api/fannie-mae-ami
  * 
- * @param zipCode - 5-digit zip code
+ * @param addressOrZip - Full address string or 5-digit zip code
  * @returns Income limits data or null if error
  */
-export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | null> {
+export async function getIncomeLimitsByZipCode(addressOrZip: string): Promise<any | null> {
   // Check if API key is configured (for logging purposes)
   const apiKey = getFannieMaeApiKey();
   if (!apiKey) {
@@ -51,9 +51,14 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   }
 
   try {
+    // Determine if input is a full address or just ZIP code
+    const isZipOnly = /^\d{5}$/.test(addressOrZip.trim());
+    
     // Use our server-side proxy to avoid CORS issues
-    // The proxy will make the actual request to Fannie Mae API
-    const proxyUrl = `/api/fannie-mae-ami?zipCode=${zipCode}`;
+    // The proxy will handle address parsing or ZIP-to-FIPS conversion
+    const proxyUrl = isZipOnly 
+      ? `/api/fannie-mae-ami?zipCode=${addressOrZip.trim()}`
+      : `/api/fannie-mae-ami?address=${encodeURIComponent(addressOrZip.trim())}`;
     console.log('Fannie Mae API: Fetching income limits via proxy:', proxyUrl);
     
     const response = await fetch(proxyUrl, {
