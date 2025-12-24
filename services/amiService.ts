@@ -69,7 +69,7 @@ export async function getAMILimits(
       console.log('Fannie Mae API: Attempting to fetch AMI data for', isZipOnly ? 'zip code' : 'address', normalizedInput);
       const fannieMaeData = await getAMILimitsFromFannieMaeApi(normalizedInput, familySize);
       if (fannieMaeData) {
-        console.log('Fannie Mae API: Successfully retrieved AMI data for zip code', normalizedZip);
+        console.log('Fannie Mae API: Successfully retrieved AMI data for', isZipOnly ? 'zip code' : 'address', normalizedInput);
         return fannieMaeData;
       } else {
         console.warn('Fannie Mae API: No data returned, falling back to other sources');

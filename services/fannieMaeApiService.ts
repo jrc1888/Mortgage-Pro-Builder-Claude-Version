@@ -77,9 +77,9 @@ export async function getIncomeLimitsByZipCode(addressOrZip: string): Promise<an
       if (response.status === 401) {
         console.error('Fannie Mae API: Unauthorized - API key may be invalid or expired');
       } else if (response.status === 404) {
-        console.warn(`Fannie Mae API: Income limits not found for ZIP code ${zipCode}`);
+        console.warn(`Fannie Mae API: Income limits not found for address/ZIP: ${addressOrZip}`);
       } else if (response.status === 400) {
-        console.error(`Fannie Mae API: Bad Request - Invalid ZIP code format: ${zipCode}`);
+        console.error(`Fannie Mae API: Bad Request - Invalid address/ZIP format: ${addressOrZip}`);
       } else {
         console.error(`Fannie Mae API Error: ${response.status} ${response.statusText}`);
       }
