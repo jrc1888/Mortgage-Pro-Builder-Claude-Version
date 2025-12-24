@@ -13,19 +13,16 @@ This application now uses Fannie Mae's AMI Lookup API instead of HUD API for Are
    - **Client Secret** (e.g., `TO0wwhchc-BAocVLb~i0xXstbTCS.HGxyBcxrZdrShs.XAy56cw0.dvn3Hh`)
    - ⚠️ **Important**: The Client Secret is only shown once. Save it securely!
 
-## Step 2: Add Environment Variables to Vercel
+## Step 2: Add Environment Variable to Vercel
 
 1. Go to your Vercel project dashboard
 2. Navigate to **Settings** → **Environment Variables**
-3. Add the following two environment variables:
+3. Add the following environment variable:
 
-### Variable 1: `VITE_FANNIE_MAE_CLIENT_ID`
-- **Value**: Your Client ID from Step 1
+### Variable: `VITE_FANNIE_MAE_API_KEY`
+- **Value**: Your API key from Step 1 (the one you copied)
 - **Environment**: Production, Preview, Development (select all)
-
-### Variable 2: `VITE_FANNIE_MAE_CLIENT_SECRET`
-- **Value**: Your Client Secret from Step 1
-- **Environment**: Production, Preview, Development (select all)
+- Click **Save**
 
 ## Step 3: Find the Exact API Endpoint
 
@@ -57,15 +54,15 @@ After testing, you may need to adjust how the API response is parsed:
 
 ## Troubleshooting
 
-### "Fannie Mae API: Credentials not found"
-- Make sure you added both `VITE_FANNIE_MAE_CLIENT_ID` and `VITE_FANNIE_MAE_CLIENT_SECRET` to Vercel
-- Make sure the variable names match exactly (case-sensitive)
-- Redeploy after adding variables
+### "Fannie Mae API: API key not found"
+- Make sure you added `VITE_FANNIE_MAE_API_KEY` to Vercel
+- Make sure the variable name matches exactly (case-sensitive)
+- Redeploy after adding the variable
 
-### "Fannie Mae API: Failed to get access token"
-- Verify your Client ID and Client Secret are correct
-- Check that the token endpoint is correct (currently `/oauth2/token`)
-- The token endpoint might be different - check Fannie Mae's documentation
+### "Fannie Mae API: Unauthorized"
+- Verify your API key is correct
+- Make sure you copied the entire API key without any extra spaces
+- Check that the API key hasn't expired or been revoked
 
 ### "Fannie Mae API: 404 Not Found"
 - The endpoint URL might be incorrect
