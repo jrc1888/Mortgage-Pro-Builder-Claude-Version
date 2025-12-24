@@ -39,37 +39,26 @@ export default async function handler(
       return response.status(400).json({ error: 'Valid 5-digit zip code is required' });
     }
 
-    // Try multiple endpoint patterns - Fannie Mae API endpoint structure may vary
-    // Based on common REST API patterns and Fannie Mae's API structure
-    // The exact endpoint should be found in: https://developer.fanniemae.com/#/products/api/documentation-public/Income%20Limits%20API
-    const endpointPatterns = [
-      // Income Limits API patterns
-      `/income-limits?zipCode=${zipCode}`,
-      `/income-limits?zip=${zipCode}`,
-      `/income-limits/${zipCode}`,
-      `/income-limits/zip/${zipCode}`,
-      // AMI Lookup patterns
-      `/ami-lookup?zipCode=${zipCode}`,
-      `/ami-lookup?zip=${zipCode}`,
-      `/ami-lookup/${zipCode}`,
-      `/ami-lookup/zip/${zipCode}`,
-      // Alternative patterns
-      `/ami?zipCode=${zipCode}`,
-      `/ami?zip=${zipCode}`,
-      `/ami/${zipCode}`,
-      // HomeReady evaluation patterns
-      `/homeready-evaluation?zipCode=${zipCode}`,
-      `/homeready-evaluation?zip=${zipCode}`,
-      `/homeready-evaluation/${zipCode}`,
+    // Use the correct Fannie Mae Income Limits API endpoint
+    // Documentation: https://developer.fanniemae.com/#/products/api/documentation-public/Income%20Limits%20API
+    // Endpoint: /v1/income-limits/addresscheck
+    // This endpoint accepts an address parameter - we'll use the ZIP code as the address
+    
+    // Try different parameter names for the address
+    const addressParamPatterns = [
+      `address=${zipCode}`,           // Just ZIP code
+      `address=ZIP+${zipCode}`,       // ZIP prefix
+      `address=${zipCode}`,            // Direct ZIP
+      `zipCode=${zipCode}`,            // Alternative parameter name
+      `zip=${zipCode}`,                // Short parameter name
     ];
 
     let fannieMaeResponse: Response | null = null;
-    let lastError: string = '';
     let triedUrl = '';
 
-    // Try each endpoint pattern until one works
-    for (const endpoint of endpointPatterns) {
-      const url = `${FANNIE_MAE_API_BASE_URL}${endpoint}`;
+    // Try each parameter pattern
+    for (const paramPattern of addressParamPatterns) {
+      const url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${paramPattern}`;
       triedUrl = url;
       console.log('Fannie Mae API Proxy: Trying endpoint:', url);
 
@@ -82,24 +71,26 @@ export default async function handler(
           },
         });
 
-        console.log(`Fannie Mae API Proxy: Response status for ${endpoint}:`, fannieMaeResponse.status);
+        console.log(`Fannie Mae API Proxy: Response status:`, fannieMaeResponse.status);
 
-        // If we get a 200, 201, or even 404 (endpoint exists but no data), use this endpoint
+        // If we get a 200 (success) or 404 (endpoint exists but no data), use this
         if (fannieMaeResponse.ok || fannieMaeResponse.status === 404) {
-          console.log(`Fannie Mae API Proxy: Found working endpoint: ${endpoint}`);
+          console.log(`Fannie Mae API Proxy: Found working parameter pattern: ${paramPattern}`);
           break;
         }
 
-        // If 401/403, the endpoint might be right but auth is wrong, or endpoint is wrong
-        // Continue trying other endpoints
-        // Note: Don't read the body here - it can only be read once, and we'll read it later if needed
+        // If 401/403, try next parameter pattern
         if (fannieMaeResponse.status === 401 || fannieMaeResponse.status === 403) {
-          console.log(`Fannie Mae API Proxy: ${endpoint} returned ${fannieMaeResponse.status}, trying next...`);
-          // Store the URL for error reporting, but don't read the body yet
+          console.log(`Fannie Mae API Proxy: ${paramPattern} returned ${fannieMaeResponse.status}, trying next...`);
+          continue;
+        }
+
+        // For other errors, also try next pattern
+        if (!fannieMaeResponse.ok) {
           continue;
         }
       } catch (error) {
-        console.error(`Fannie Mae API Proxy: Error trying ${endpoint}:`, error);
+        console.error(`Fannie Mae API Proxy: Error trying ${paramPattern}:`, error);
         continue;
       }
     }
@@ -108,8 +99,8 @@ export default async function handler(
       response.setHeader('Access-Control-Allow-Origin', '*');
       return response.status(500).json({ 
         error: 'Failed to connect to Fannie Mae API',
-        details: 'Tried multiple endpoint patterns, all failed. Please check the Fannie Mae Developer Portal for the correct endpoint.',
-        triedEndpoints: endpointPatterns
+        details: 'Tried multiple parameter patterns for /v1/income-limits/addresscheck endpoint. Please check the Fannie Mae Developer Portal for the correct parameter name.',
+        triedUrl: `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck`
       });
     }
 
