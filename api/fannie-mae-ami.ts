@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const FANNIE_MAE_API_BASE_URL = 'https://api.fanniemae.com/v1';
+const FANNIE_MAE_API_BASE_URL = 'https://api.fanniemae.com';
 
 export default async function handler(
   request: VercelRequest,
