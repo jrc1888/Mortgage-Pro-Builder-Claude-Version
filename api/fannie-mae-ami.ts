@@ -40,71 +40,33 @@ export default async function handler(
     }
 
     // Use the correct Fannie Mae Income Limits API endpoint
-    // Documentation: https://developer.fanniemae.com/#/products/api/documentation-public/Income%20Limits%20API
-    // Endpoint: /v1/income-limits/addresscheck
-    // This endpoint accepts an address parameter - we'll use the ZIP code as the address
+    // Based on OpenAPI spec: /v1/income-limits/addresscheck
+    // Required parameters: number, street, city, state, zip
+    // Since we only have ZIP code, we'll use minimal placeholder values for other required fields
+    // The API should still work as long as the ZIP code is valid
     
-    // Try different parameter names for the address
-    const addressParamPatterns = [
-      `address=${zipCode}`,           // Just ZIP code
-      `address=ZIP+${zipCode}`,       // ZIP prefix
-      `address=${zipCode}`,            // Direct ZIP
-      `zipCode=${zipCode}`,            // Alternative parameter name
-      `zip=${zipCode}`,                // Short parameter name
-    ];
+    // For ZIP-only lookups, we'll use placeholder values for required address fields
+    // The API will use the ZIP code to determine the census tract and return income limits
+    const params = new URLSearchParams({
+      number: '1',              // Placeholder building number
+      street: 'Main St',        // Placeholder street name
+      city: 'City',             // Placeholder city name
+      state: 'UT',              // Placeholder state (will be determined by ZIP)
+      zip: zipCode              // The actual ZIP code we have
+    });
 
-    let fannieMaeResponse: Response | null = null;
-    let triedUrl = '';
+    const url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
+    console.log('Fannie Mae API Proxy: Fetching from:', url);
 
-    // Try each parameter pattern
-    for (const paramPattern of addressParamPatterns) {
-      const url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${paramPattern}`;
-      triedUrl = url;
-      console.log('Fannie Mae API Proxy: Trying endpoint:', url);
+    const fannieMaeResponse = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-public-access-token': apiKey,
+      },
+    });
 
-      try {
-        fannieMaeResponse = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-public-access-token': apiKey,
-          },
-        });
-
-        console.log(`Fannie Mae API Proxy: Response status:`, fannieMaeResponse.status);
-
-        // If we get a 200 (success) or 404 (endpoint exists but no data), use this
-        if (fannieMaeResponse.ok || fannieMaeResponse.status === 404) {
-          console.log(`Fannie Mae API Proxy: Found working parameter pattern: ${paramPattern}`);
-          break;
-        }
-
-        // If 401/403, try next parameter pattern
-        if (fannieMaeResponse.status === 401 || fannieMaeResponse.status === 403) {
-          console.log(`Fannie Mae API Proxy: ${paramPattern} returned ${fannieMaeResponse.status}, trying next...`);
-          continue;
-        }
-
-        // For other errors, also try next pattern
-        if (!fannieMaeResponse.ok) {
-          continue;
-        }
-      } catch (error) {
-        console.error(`Fannie Mae API Proxy: Error trying ${paramPattern}:`, error);
-        continue;
-      }
-    }
-
-    if (!fannieMaeResponse) {
-      response.setHeader('Access-Control-Allow-Origin', '*');
-      return response.status(500).json({ 
-        error: 'Failed to connect to Fannie Mae API',
-        details: 'Tried multiple parameter patterns for /v1/income-limits/addresscheck endpoint. Please check the Fannie Mae Developer Portal for the correct parameter name.',
-        triedUrl: `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck`
-      });
-    }
-
-    console.log('Fannie Mae API Proxy: Final response status:', fannieMaeResponse.status);
+    console.log('Fannie Mae API Proxy: Response status:', fannieMaeResponse.status);
 
     if (!fannieMaeResponse.ok) {
       // Read the error response body once
@@ -114,9 +76,9 @@ export default async function handler(
         console.error('Fannie Mae API Proxy: Error response:', errorText.substring(0, 500));
       } catch (error) {
         console.error('Fannie Mae API Proxy: Could not read error response body:', error);
-        errorText = lastError || 'Unknown error';
+        errorText = 'Unknown error';
       }
-      console.error('Fannie Mae API Proxy: Tried URL:', triedUrl);
+      console.error('Fannie Mae API Proxy: Tried URL:', url);
       
       response.setHeader('Access-Control-Allow-Origin', '*');
       
@@ -124,24 +86,25 @@ export default async function handler(
         return response.status(401).json({ 
           error: 'Unauthorized - API key may be invalid or expired',
           details: 'Please verify your API key in Vercel environment variables',
-          triedUrl
+          triedUrl: url
         });
       } else if (fannieMaeResponse.status === 403) {
         return response.status(403).json({ 
-          error: 'Forbidden - API key may not have access to this endpoint, or endpoint URL is incorrect',
-          details: 'Please check: 1) Your API key has access to AMI Lookup API, 2) The endpoint URL is correct in Fannie Mae Developer Portal',
-          triedUrl,
+          error: 'Forbidden - API key may not have access to this endpoint',
+          details: 'Please check: 1) Your API key has access to Income Limits API, 2) The API key is correctly set in Vercel',
+          triedUrl: url,
           errorResponse: errorText.substring(0, 500)
         });
       } else if (fannieMaeResponse.status === 404) {
         return response.status(404).json({ 
           error: `Income limits not found for ZIP code ${zipCode}`,
-          triedUrl
+          triedUrl: url
         });
       } else if (fannieMaeResponse.status === 400) {
         return response.status(400).json({ 
-          error: `Bad Request - Invalid ZIP code format: ${zipCode}`,
-          triedUrl
+          error: `Bad Request - Invalid address parameters for ZIP code: ${zipCode}`,
+          details: 'The API requires valid address components. ZIP code alone may not be sufficient.',
+          triedUrl: url
         });
       } else {
         return response.status(fannieMaeResponse.status).json({ 

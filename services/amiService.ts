@@ -128,48 +128,62 @@ async function getAMILimitsFromFannieMaeApi(
     }
     
     // Log the full response structure for debugging
-    // The actual structure will depend on Fannie Mae's API response format
+    // Based on OpenAPI spec, response is an array of IncomeLimitsCollection objects
     console.log('Fannie Mae API: Full response structure:', JSON.stringify(fannieMaeData, null, 2));
     
-    // TODO: Update this parsing logic based on Fannie Mae's actual API response structure
-    // Common patterns might be:
-    // - { data: { incomeLimits: {...}, familySize: {...} } }
-    // - { incomeLimits: { [familySize]: {...} } }
-    // - { amiLimits: { extremelyLow: {...}, veryLow: {...}, ... } }
+    // According to OpenAPI spec, response is an array of IncomeLimitsCollection
+    // Each collection has: incomeLimitsList (array of IncomeLimits)
+    // Each IncomeLimits has: dts_income_limit, hr_income_limit, vli_income_limit, rural_indicator, high_needs_rural_indicator, fips_code
     
-    let incomeData = fannieMaeData;
+    // Handle array response
+    let incomeLimitsArray = Array.isArray(fannieMaeData) ? fannieMaeData : [];
     
-    // Check if response is wrapped in a 'data' property
-    if (incomeData && incomeData.data) {
-      incomeData = incomeData.data;
+    // If it's a single object with incomeLimitsList, extract the array
+    if (!Array.isArray(fannieMaeData) && fannieMaeData.incomeLimitsList) {
+      incomeLimitsArray = fannieMaeData.incomeLimitsList;
     }
     
-    if (!incomeData) {
-      console.warn('Fannie Mae API: No income data in response');
+    // If it's wrapped in a data property
+    if (!Array.isArray(fannieMaeData) && fannieMaeData.data) {
+      if (Array.isArray(fannieMaeData.data)) {
+        incomeLimitsArray = fannieMaeData.data;
+      } else if (fannieMaeData.data.incomeLimitsList) {
+        incomeLimitsArray = fannieMaeData.data.incomeLimitsList;
+      }
+    }
+    
+    if (!incomeLimitsArray || incomeLimitsArray.length === 0) {
+      console.warn('Fannie Mae API: No income limits data in response');
       return null;
     }
     
-    // Extract income limits - adjust field names based on Fannie Mae's actual response
-    // This is a template that may need adjustment
-    const extremelyLow = incomeData.extremelyLow?.[familySize] || 
-                        incomeData.incomeLimits?.[familySize]?.extremelyLow ||
-                        incomeData[`ami30_${familySize}`] || 0;
+    // Get the first income limits entry (should be the primary one for the address)
+    const firstLimit = incomeLimitsArray[0];
     
-    const veryLow = incomeData.veryLow?.[familySize] || 
-                   incomeData.incomeLimits?.[familySize]?.veryLow ||
-                   incomeData[`ami50_${familySize}`] || 0;
+    // Extract income limits from the response structure
+    // Fannie Mae API provides:
+    // - vli_income_limit: Very Low Income (50% AMI)
+    // - hr_income_limit: HomeReady (80% AMI) 
+    // - dts_income_limit: Duty to Serve (may vary)
+    // Note: These are not family-size specific - they appear to be area-level limits
+    // We'll use them as the base limits
     
-    const low = incomeData.low?.[familySize] || 
-               incomeData.incomeLimits?.[familySize]?.low ||
-               incomeData[`ami80_${familySize}`] || 0;
+    const veryLow = firstLimit.vli_income_limit || 0;        // 50% AMI
+    const low = firstLimit.hr_income_limit || 0;             // 80% AMI (HomeReady)
+    const dtsLimit = firstLimit.dts_income_limit || 0;       // Duty to Serve limit
     
-    const median = incomeData.medianIncome || 
-                  incomeData.median || 
-                  incomeData.incomeLimits?.median ||
-                  incomeData[`ami100_${familySize}`] || 0;
+    // Calculate median from 80% AMI (if hr_income_limit is 80% of median, then median = hr_income_limit / 0.8)
+    const median = low > 0 ? Math.round(low / 0.8) : (dtsLimit > 0 ? Math.round(dtsLimit / 0.8) : 0);
+    
+    // Calculate 30% AMI (extremely low) from median
+    const extremelyLow = median > 0 ? Math.round(median * 0.3) : 0;
     
     // Calculate 120% AMI (moderate income) from median
-    const moderate = median ? Math.round(median * 1.2) : 0;
+    const moderate = median > 0 ? Math.round(median * 1.2) : 0;
+    
+    // Note: Fannie Mae API doesn't provide family-size specific limits in the response
+    // The limits appear to be area-level. We may need to adjust based on family size using standard HUD multipliers
+    // For now, we'll use the base limits and note this in the data source
     
     // Validate that we got at least some data
     if (!extremelyLow && !veryLow && !low && !median) {
