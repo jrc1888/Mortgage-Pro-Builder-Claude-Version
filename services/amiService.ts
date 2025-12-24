@@ -188,8 +188,8 @@ async function getAMILimitsFromFannieMaeApi(
     // Validate that we got at least some data
     if (!extremelyLow && !veryLow && !low && !median) {
       console.warn('Fannie Mae API: Could not extract income limits from response structure for zip code', zipCode);
-      console.warn('Fannie Mae API: Available keys in incomeData:', Object.keys(incomeData));
-      console.warn('Fannie Mae API: Full response for debugging:', JSON.stringify(incomeData, null, 2));
+      console.warn('Fannie Mae API: Available keys in firstLimit:', Object.keys(firstLimit || {}));
+      console.warn('Fannie Mae API: Full response for debugging:', JSON.stringify(fannieMaeData, null, 2));
       return null;
     }
     
@@ -201,11 +201,16 @@ async function getAMILimitsFromFannieMaeApi(
       moderate
     });
     
+    // Extract location info from FIPS code if available
+    const fipsCode = firstLimit.fips_code || '';
+    // FIPS code format: SSCCCtttttt (State FIPS (2) + County FIPS (3) + Tract (6+))
+    const stateCode = fipsCode.length >= 2 ? fipsCode.substring(0, 2) : '';
+    
     return {
       zipCode,
-      county: incomeData.county || incomeData.countyName || '',
-      msa: incomeData.msa || incomeData.metroArea || '',
-      state: incomeData.state || incomeData.stateCode || '',
+      county: '', // Fannie Mae API doesn't provide county name directly
+      msa: '', // Fannie Mae API doesn't provide MSA name directly
+      state: stateCode || '',
       familySize,
       limits: {
         extremelyLow: extremelyLow || 0,
@@ -214,7 +219,7 @@ async function getAMILimitsFromFannieMaeApi(
         median: median || 0,
         moderate: moderate || 0,
       },
-      effectiveDate: incomeData.effectiveDate || incomeData.year || incomeData.fiscalYear || new Date().toISOString().split('T')[0],
+      effectiveDate: new Date().toISOString().split('T')[0], // Fannie Mae API doesn't provide date
       dataSource: 'Fannie Mae API',
     };
   } catch (error) {

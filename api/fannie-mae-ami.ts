@@ -110,7 +110,7 @@ export default async function handler(
         return response.status(fannieMaeResponse.status).json({ 
           error: `Fannie Mae API Error: ${fannieMaeResponse.statusText}`,
           details: errorText.substring(0, 500),
-          triedUrl
+          triedUrl: url
         });
       }
     }
