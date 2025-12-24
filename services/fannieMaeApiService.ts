@@ -36,13 +36,14 @@ export function isFannieMaeApiConfigured(): boolean {
 /**
  * Get income limits by ZIP code from Fannie Mae API
  * 
- * Note: The exact endpoint structure needs to be confirmed from Fannie Mae's Developer Portal.
- * This endpoint may need adjustment based on their actual API documentation.
+ * Uses a server-side proxy to avoid CORS issues.
+ * The proxy endpoint is at /api/fannie-mae-ami
  * 
  * @param zipCode - 5-digit zip code
  * @returns Income limits data or null if error
  */
 export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | null> {
+  // Check if API key is configured (for logging purposes)
   const apiKey = getFannieMaeApiKey();
   if (!apiKey) {
     console.error('Fannie Mae API: API key not configured');
@@ -50,30 +51,23 @@ export async function getIncomeLimitsByZipCode(zipCode: string): Promise<any | n
   }
 
   try {
-    // TODO: Update this endpoint based on Fannie Mae's actual API documentation
-    // Check the Fannie Mae Developer Portal Swagger documentation for the exact endpoint
-    // Common patterns might be:
-    // - /ami-lookup?zipCode={zipCode}
-    // - /income-limits?zipCode={zipCode}
-    // - /homeready-evaluation?zipCode={zipCode}
-    // - /ami-lookup/{zipCode}
+    // Use our server-side proxy to avoid CORS issues
+    // The proxy will make the actual request to Fannie Mae API
+    const proxyUrl = `/api/fannie-mae-ami?zipCode=${zipCode}`;
+    console.log('Fannie Mae API: Fetching income limits via proxy:', proxyUrl);
     
-    const url = `${FANNIE_MAE_API_BASE_URL}/ami-lookup?zipCode=${zipCode}`;
-    console.log('Fannie Mae API: Fetching income limits from:', url);
-    
-    const response = await fetch(url, {
+    const response = await fetch(proxyUrl, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'x-public-access-token': apiKey,
       },
     });
 
-    console.log('Fannie Mae API: Response status:', response.status);
+    console.log('Fannie Mae API: Proxy response status:', response.status);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Fannie Mae API: Error response:', errorText);
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Fannie Mae API: Error response:', errorData);
       
       if (response.status === 401) {
         console.error('Fannie Mae API: Unauthorized - API key may be invalid or expired');
