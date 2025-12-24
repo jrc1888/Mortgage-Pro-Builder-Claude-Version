@@ -92,10 +92,10 @@ export default async function handler(
 
         // If 401/403, the endpoint might be right but auth is wrong, or endpoint is wrong
         // Continue trying other endpoints
+        // Note: Don't read the body here - it can only be read once, and we'll read it later if needed
         if (fannieMaeResponse.status === 401 || fannieMaeResponse.status === 403) {
-          const errorText = await fannieMaeResponse.text();
-          lastError = errorText.substring(0, 500);
           console.log(`Fannie Mae API Proxy: ${endpoint} returned ${fannieMaeResponse.status}, trying next...`);
+          // Store the URL for error reporting, but don't read the body yet
           continue;
         }
       } catch (error) {
@@ -116,11 +116,16 @@ export default async function handler(
     console.log('Fannie Mae API Proxy: Final response status:', fannieMaeResponse.status);
 
     if (!fannieMaeResponse.ok) {
-      const errorText = await fannieMaeResponse.text();
-      console.error('Fannie Mae API Proxy: Error response:', errorText.substring(0, 500));
+      // Read the error response body once
+      let errorText = '';
+      try {
+        errorText = await fannieMaeResponse.text();
+        console.error('Fannie Mae API Proxy: Error response:', errorText.substring(0, 500));
+      } catch (error) {
+        console.error('Fannie Mae API Proxy: Could not read error response body:', error);
+        errorText = lastError || 'Unknown error';
+      }
       console.error('Fannie Mae API Proxy: Tried URL:', triedUrl);
-      
-      response.setHeader('Access-Control-Allow-Origin', '*');
       
       response.setHeader('Access-Control-Allow-Origin', '*');
       
