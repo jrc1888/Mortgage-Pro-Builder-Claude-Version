@@ -40,16 +40,27 @@ export default async function handler(
     }
 
     // Try multiple endpoint patterns - Fannie Mae API endpoint structure may vary
-    // Common patterns based on typical REST API conventions:
+    // Based on common REST API patterns and Fannie Mae's API structure
+    // The exact endpoint should be found in: https://developer.fanniemae.com/#/products/api/documentation-public/Income%20Limits%20API
     const endpointPatterns = [
-      `/ami-lookup?zipCode=${zipCode}`,
-      `/ami-lookup/${zipCode}`,
+      // Income Limits API patterns
       `/income-limits?zipCode=${zipCode}`,
+      `/income-limits?zip=${zipCode}`,
       `/income-limits/${zipCode}`,
-      `/homeready-evaluation?zipCode=${zipCode}`,
-      `/homeready-evaluation/${zipCode}`,
+      `/income-limits/zip/${zipCode}`,
+      // AMI Lookup patterns
+      `/ami-lookup?zipCode=${zipCode}`,
+      `/ami-lookup?zip=${zipCode}`,
+      `/ami-lookup/${zipCode}`,
+      `/ami-lookup/zip/${zipCode}`,
+      // Alternative patterns
       `/ami?zipCode=${zipCode}`,
+      `/ami?zip=${zipCode}`,
       `/ami/${zipCode}`,
+      // HomeReady evaluation patterns
+      `/homeready-evaluation?zipCode=${zipCode}`,
+      `/homeready-evaluation?zip=${zipCode}`,
+      `/homeready-evaluation/${zipCode}`,
     ];
 
     let fannieMaeResponse: Response | null = null;
