@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2, Sparkles } from 'lucide-react';
 import { Scenario, LoanType, CalculatedResults, HistoryEntry, ClosingCostItem } from '../types';
 import { calculateScenario, calculateLendersTitleInsurance } from '../services/loanMath';
+import { calculateItemCost } from '../utils/closingCosts';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { Modal } from './Modal';
@@ -1269,64 +1270,25 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     {/* Closing Costs List - Loan Estimate Structure */}
                     <div className="space-y-6">
                         {costGroups.map((group) => {
-                            // Calculate section total
+                            // Calculate section total using utility function (single source of truth)
                             const sectionTotal = group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
-                                if (cost.id === 'prepaid-interest') {
-                                    return sum + (scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)));
-                                }
-                                if (cost.id === 'prepaid-insurance') {
-                                    return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
-                                }
-                                if (cost.id === 'tax-reserves') {
-                                    return sum + ((scenario.propertyTaxYearly/12) * (cost.months || 0));
-                                }
-                                if (cost.id === 'insurance-reserves') {
-                                    return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
-                                }
-                                if (cost.id === 'hoa-prepay') {
-                                    return sum + (scenario.hoaMonthly * (cost.months || 0));
-                                }
-                                if (cost.id === 'title-insurance') {
-                                    return sum + (cost.amount || calculateLendersTitleInsurance(results.totalLoanAmount));
-                                }
-                                if (cost.id === 'buyers-agent-commission') {
-                                    if (cost.isFixed) {
-                                        return sum + safeNum(cost.amount);
-                                    } else {
-                                        return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                const itemCost = calculateItemCost(
+                                    cost,
+                                    {
+                                        settlementDate: scenario.settlementDate,
+                                        purchasePrice: scenario.purchasePrice,
+                                        homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                        propertyTaxYearly: scenario.propertyTaxYearly,
+                                        hoaMonthly: scenario.hoaMonthly,
+                                        interestRate: scenario.interestRate
+                                    },
+                                    {
+                                        totalLoanAmount: results.totalLoanAmount,
+                                        prepaidInterest: results.prepaidInterest,
+                                        prepaidInterestDays: results.prepaidInterestDays
                                     }
-                                }
-                                if (cost.id === 'discount-points') {
-                                    if (cost.isFixed) {
-                                        return sum + safeNum(cost.amount);
-                                    } else {
-                                        return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
-                                    }
-                                }
-                                if (cost.id === 'hoa-transfer') {
-                                    if (cost.isFixed) {
-                                        return sum + safeNum(cost.amount);
-                                    } else {
-                                        return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
-                                    }
-                                }
-                                // Realtor Admin Fee can toggle between $ and %
-                                if (cost.id === 'realtor-admin') {
-                                    if (cost.isFixed) {
-                                        return sum + safeNum(cost.amount);
-                                    } else {
-                                        return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
-                                    }
-                                }
-                                // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
-                                if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {
-                                    if (cost.isFixed) {
-                                        return sum + safeNum(cost.amount);
-                                    } else {
-                                        return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
-                                    }
-                                }
-                                return sum + safeNum(cost.amount);
+                                );
+                                return sum + itemCost;
                             }, 0);
 
                             return (
@@ -1527,52 +1489,23 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 const calcSectionTotal = (group: typeof sectionE) => {
                                     if (!group) return 0;
                                     return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
-                                        if (cost.id === 'prepaid-interest') {
-                                            return sum + (scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)));
-                                        }
-                                        if (cost.id === 'prepaid-insurance') {
-                                            return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'tax-reserves') {
-                                            return sum + ((scenario.propertyTaxYearly/12) * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'insurance-reserves') {
-                                            return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'hoa-prepay') {
-                                            return sum + (scenario.hoaMonthly * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'buyers-agent-commission') {
-                                            if (cost.isFixed) {
-                                                return sum + safeNum(cost.amount);
-                                            } else {
-                                                return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                        const itemCost = calculateItemCost(
+                                            cost,
+                                            {
+                                                settlementDate: scenario.settlementDate,
+                                                purchasePrice: scenario.purchasePrice,
+                                                homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                                propertyTaxYearly: scenario.propertyTaxYearly,
+                                                hoaMonthly: scenario.hoaMonthly,
+                                                interestRate: scenario.interestRate
+                                            },
+                                            {
+                                                totalLoanAmount: results.totalLoanAmount,
+                                                prepaidInterest: results.prepaidInterest,
+                                                prepaidInterestDays: results.prepaidInterestDays
                                             }
-                                        }
-                                        if (cost.id === 'hoa-transfer') {
-                                            if (cost.isFixed) {
-                                                return sum + safeNum(cost.amount);
-                                            } else {
-                                                return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
-                                            }
-                                        }
-                                        // Realtor Admin Fee can toggle between $ and %
-                                        if (cost.id === 'realtor-admin') {
-                                            if (cost.isFixed) {
-                                                return sum + safeNum(cost.amount);
-                                            } else {
-                                                return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
-                                            }
-                                        }
-                                        // Handle misc fees (misc-1 through misc-4) that can toggle between $ and %
-                                        if (cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') {
-                                            if (cost.isFixed) {
-                                                return sum + safeNum(cost.amount);
-                                            } else {
-                                                return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
-                                            }
-                                        }
-                                        return sum + safeNum(cost.amount);
+                                        );
+                                        return sum + itemCost;
                                     }, 0);
                                 };
                                 
@@ -1608,46 +1541,46 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 const calcLoanCostsTotal = (group: typeof sectionA) => {
                                     if (!group) return 0;
                                     return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
-                                        if (cost.id === 'title-insurance') {
-                                            return sum + (cost.amount || calculateLendersTitleInsurance(results.totalLoanAmount));
-                                        }
-                                        if (cost.id === 'discount-points') {
-                                            if (cost.isFixed) {
-                                                return sum + safeNum(cost.amount);
-                                            } else {
-                                                return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
+                                        const itemCost = calculateItemCost(
+                                            cost,
+                                            {
+                                                settlementDate: scenario.settlementDate,
+                                                purchasePrice: scenario.purchasePrice,
+                                                homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                                propertyTaxYearly: scenario.propertyTaxYearly,
+                                                hoaMonthly: scenario.hoaMonthly,
+                                                interestRate: scenario.interestRate
+                                            },
+                                            {
+                                                totalLoanAmount: results.totalLoanAmount,
+                                                prepaidInterest: results.prepaidInterest,
+                                                prepaidInterestDays: results.prepaidInterestDays
                                             }
-                                        }
-                                        return sum + safeNum(cost.amount);
+                                        );
+                                        return sum + itemCost;
                                     }, 0);
                                 };
                                 
                                 const calcOtherCostsTotal = (group: typeof sectionE) => {
                                     if (!group) return 0;
                                     return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
-                                        if (cost.id === 'prepaid-interest') {
-                                            return sum + (scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)));
-                                        }
-                                        if (cost.id === 'prepaid-insurance') {
-                                            return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'tax-reserves') {
-                                            return sum + ((scenario.propertyTaxYearly/12) * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'insurance-reserves') {
-                                            return sum + ((scenario.homeInsuranceYearly/12) * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'hoa-prepay') {
-                                            return sum + (scenario.hoaMonthly * (cost.months || 0));
-                                        }
-                                        if (cost.id === 'buyers-agent-commission') {
-                                            if (cost.isFixed) {
-                                                return sum + safeNum(cost.amount);
-                                            } else {
-                                                return sum + (scenario.purchasePrice * (safeNum(cost.amount) / 100));
+                                        const itemCost = calculateItemCost(
+                                            cost,
+                                            {
+                                                settlementDate: scenario.settlementDate,
+                                                purchasePrice: scenario.purchasePrice,
+                                                homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                                propertyTaxYearly: scenario.propertyTaxYearly,
+                                                hoaMonthly: scenario.hoaMonthly,
+                                                interestRate: scenario.interestRate
+                                            },
+                                            {
+                                                totalLoanAmount: results.totalLoanAmount,
+                                                prepaidInterest: results.prepaidInterest,
+                                                prepaidInterestDays: results.prepaidInterestDays
                                             }
-                                        }
-                                        return sum + safeNum(cost.amount);
+                                        );
+                                        return sum + itemCost;
                                     }, 0);
                                 };
                                 

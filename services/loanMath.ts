@@ -1,6 +1,7 @@
 
 
 import { Scenario, CalculatedResults, LoanType } from '../types';
+import { calculateItemCost } from '../utils/closingCosts';
 
 export const calculatePMT = (rate: number, nper: number, pv: number): number => {
   if (rate === 0 || nper === 0) return 0;
@@ -245,58 +246,25 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     ? calculatePrepaidInterest(totalLoanAmount, interestRate, scenario.settlementDate)
     : 0;
   
+  // Use utility function to calculate closing costs (single source of truth)
   const totalClosingCosts = (scenario.closingCosts || []).reduce((sum, item) => {
-    if (item.id === 'prepaid-interest') {
-        // If settlement date exists, use calculated prepaid interest
-        // Otherwise, use manual days input
-        if (scenario.settlementDate) {
-            return sum + prepaidInterest;
-        } else {
-            const days = item.days || 0;
-            const annualInterest = totalLoanAmount * (interestRate / 100);
-            const dailyInterest = annualInterest / 365;
-            const cost = dailyInterest * days;
-            return sum + cost;
-        }
-    }
-    if (item.id === 'title-insurance') {
-        // Use manual amount if set, otherwise calculate based on loan amount tiers
-        const manualAmount = safeNum(item.amount);
-        if (manualAmount > 0) {
-            return sum + manualAmount;
-        }
-        return sum + calculateLendersTitleInsurance(totalLoanAmount);
-    }
-    if (item.id === 'prepaid-insurance' || item.id === 'insurance-reserves') {
-        const months = item.months || 0;
-        const monthlyCost = homeInsuranceYearly / 12;
-        return sum + (monthlyCost * months);
-    }
-    if (item.id === 'tax-reserves') {
-        const months = item.months || 0;
-        const monthlyCost = propertyTaxYearly / 12;
-        return sum + (monthlyCost * months);
-    }
-    if (item.id === 'hoa-prepay') {
-        const months = item.months || 0;
-        const cost = hoaMonthly > 0 ? (hoaMonthly * months) : 0;
-        return sum + cost;
-    }
-    const val = safeNum(item.amount);
-    let cost = 0;
-    if (item.isFixed) {
-      cost = val;
-    } else {
-      // For percentage-based fees, check if it uses purchase price or loan amount
-      if (item.id === 'buyers-agent-commission' || item.id === 'hoa-transfer' || item.id === 'realtor-admin') {
-        // Buyer's Agent Commission, HOA Transfer Fee, and Realtor Admin Fee use purchase price
-        cost = purchasePrice * (val / 100);
-      } else {
-        // All other percentage fees use loan amount (discount-points, misc-1, misc-2, misc-3, misc-4)
-        cost = totalLoanAmount * (val / 100);
+    const itemCost = calculateItemCost(
+      item,
+      {
+        settlementDate: scenario.settlementDate,
+        purchasePrice,
+        homeInsuranceYearly,
+        propertyTaxYearly,
+        hoaMonthly,
+        interestRate
+      },
+      {
+        totalLoanAmount,
+        prepaidInterest,
+        prepaidInterestDays
       }
-    }
-    return sum + cost;
+    );
+    return sum + itemCost;
   }, 0) + buydownCost;
   
   // 8. Seller Concessions & Lender Credits Logic
