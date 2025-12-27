@@ -136,7 +136,7 @@ Important:
 
       console.log('Fannie Mae API Proxy: Parsed address:', parsedAddress);
 
-      // Use addresscheck endpoint with parsed address
+      // Use addresscheck endpoint with parsed address - using GET with query parameters
       const params = new URLSearchParams({
         number: parsedAddress.number || '1',
         street: parsedAddress.street || 'Main St',
@@ -146,7 +146,7 @@ Important:
       });
 
       url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
-      console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint:', url);
+      console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint (GET):', url);
 
     } else {
       // ZIP code only - use addresscheck endpoint with placeholder address values
