@@ -153,18 +153,36 @@ Important:
       // This is more reliable than trying to convert ZIP to FIPS
       console.log('Fannie Mae API Proxy: Using ZIP code with placeholder address:', zipCode);
       
+      // Infer state from ZIP code (first digit gives approximate region)
+      // This is a basic mapping - not perfect but better than hardcoding
+      const zipFirstDigit = zipCode.charAt(0);
+      let inferredState = 'UT'; // Default
+      
+      // Basic ZIP code to state mapping (first digit regions)
+      if (zipFirstDigit >= '0' && zipFirstDigit <= '2') inferredState = 'MA'; // 0-2: Northeast
+      else if (zipFirstDigit === '3') inferredState = 'NY'; // 3: NY/NJ/PA
+      else if (zipFirstDigit === '4') inferredState = 'PA'; // 4: PA/OH
+      else if (zipFirstDigit === '5') inferredState = 'MN'; // 5: MN/WI/IA
+      else if (zipFirstDigit === '6') inferredState = 'IL'; // 6: IL/MO/KS
+      else if (zipFirstDigit === '7') inferredState = 'TX'; // 7: TX/AR/LA
+      else if (zipFirstDigit === '8') inferredState = 'CO'; // 8: CO/UT/AZ/NM
+      else if (zipFirstDigit === '9') inferredState = 'CA'; // 9: CA/NV/OR/WA
+      
+      // More specific: Utah ZIP codes start with 84
+      if (zipCode.startsWith('84')) inferredState = 'UT';
+      
       // Use addresscheck endpoint with minimal placeholder values
       // The API should be able to determine the census tract from just the ZIP code
       const params = new URLSearchParams({
         number: '1',
         street: 'Main St',
         city: 'City',
-        state: 'UT', // Will be determined by ZIP
+        state: inferredState,
         zip: zipCode
       });
 
       url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
-      console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint with ZIP:', url);
+      console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint with ZIP (inferred state:', inferredState, '):', url);
     }
 
     fannieMaeResponse = await fetch(url, {
