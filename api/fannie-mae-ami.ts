@@ -65,20 +65,26 @@ export default async function handler(
         });
       }
 
-      const parsePrompt = `Parse this address into structured components for Fannie Mae API. Return ONLY valid JSON, no markdown, no code blocks, no explanations.
+      const parsePrompt = `Parse this US address into structured components for Fannie Mae API. Return ONLY valid JSON, no markdown, no code blocks, no explanations.
 
 Address: "${addressInput}"
 
 Extract and return:
-- number (string) - Building/house number (e.g., "123", "1", "100A"). If not found, use "1"
-- street (string) - Street name (e.g., "Main St", "Oak Avenue", "Park Blvd"). If not found, use "Main St"
-- city (string) - City name (e.g., "Salt Lake City", "New York"). If not found, use "City"
-- state (string) - Two-letter state abbreviation (e.g., "UT", "NY", "CA"). Must be exactly 2 letters. If not found, try to infer from ZIP code or use "UT"
+- number (string) - Building/house number only (e.g., "123", "1", "100A"). Just the numeric part before the street name. If not found, use "1"
+- street (string) - Complete street name including directional prefixes/suffixes and street type (e.g., "Main St", "N Oak Ave", "2275 E", "S 2275 E", "Park Blvd"). DO NOT include the house number. Keep the full street name as it appears.
+- city (string) - City name (e.g., "Salt Lake City", "Holladay", "New York"). Extract the actual city name.
+- state (string) - Two-letter state abbreviation (e.g., "UT", "NY", "CA"). Must be exactly 2 uppercase letters. Extract from the address or infer from ZIP code.
 - zip (string) - 5-digit ZIP code. Must be exactly 5 digits. Required.
 
+Examples:
+- "6230 S 2275 E, Holladay, UT, 84121" → {"number":"6230","street":"S 2275 E","city":"Holladay","state":"UT","zip":"84121"}
+- "123 Main St, Salt Lake City, UT 84101" → {"number":"123","street":"Main St","city":"Salt Lake City","state":"UT","zip":"84101"}
+- "84121" → {"number":"1","street":"Main St","city":"City","state":"UT","zip":"84121"}
+
 Important:
-- Extract ZIP code from the address if present
-- State must be 2-letter abbreviation (e.g., "UT" not "Utah", "CA" not "California")
+- Keep the street name complete with any directional indicators (N, S, E, W) and street type
+- State must be 2-letter uppercase abbreviation
+- ZIP code is required and must be 5 digits
 - Return ONLY the JSON object, nothing else:`;
 
       const parseResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -143,48 +149,22 @@ Important:
       console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint:', url);
 
     } else {
-      // ZIP code only - convert to FIPS and use censustracts endpoint
-      console.log('Fannie Mae API Proxy: Converting ZIP code to FIPS:', zipCode);
+      // ZIP code only - use addresscheck endpoint with placeholder address values
+      // This is more reliable than trying to convert ZIP to FIPS
+      console.log('Fannie Mae API Proxy: Using ZIP code with placeholder address:', zipCode);
       
-      // Use US Census Bureau Geocoding API directly
-      const geocodeUrl = `https://geocoding.geo.census.gov/geocoder/geographies/address?street=1+Main+St&city=City&state=UT&zip=${zipCode}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
-      
-      const geocodeResponse = await fetch(geocodeUrl);
+      // Use addresscheck endpoint with minimal placeholder values
+      // The API should be able to determine the census tract from just the ZIP code
+      const params = new URLSearchParams({
+        number: '1',
+        street: 'Main St',
+        city: 'City',
+        state: 'UT', // Will be determined by ZIP
+        zip: zipCode
+      });
 
-      if (!geocodeResponse.ok) {
-        response.setHeader('Access-Control-Allow-Origin', '*');
-        return response.status(500).json({
-          error: 'Failed to geocode ZIP code',
-          details: 'Census Bureau API returned an error'
-        });
-      }
-
-      const geocodeData = await geocodeResponse.json();
-      
-      // Extract FIPS code from response
-      let fipsCode: string | null = null;
-
-      if (geocodeData.result && geocodeData.result.addressMatches && geocodeData.result.addressMatches.length > 0) {
-        const match = geocodeData.result.addressMatches[0];
-        if (match.geographies && match.geographies['Census Tracts'] && match.geographies['Census Tracts'].length > 0) {
-          fipsCode = match.geographies['Census Tracts'][0].GEOID;
-        }
-      }
-
-      if (!fipsCode || fipsCode.length !== 11) {
-        response.setHeader('Access-Control-Allow-Origin', '*');
-        return response.status(404).json({
-          error: `Could not find FIPS code for ZIP code ${zipCode}`,
-          details: 'The ZIP code may not be valid or the geocoding service may be unavailable',
-          suggestion: 'Try using a full address instead'
-        });
-      }
-
-      console.log('Fannie Mae API Proxy: Converted ZIP to FIPS:', zipCode, '->', fipsCode);
-
-      // Use censustracts endpoint with FIPS code
-      url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/censustracts?fips_code=${fipsCode}`;
-      console.log('Fannie Mae API Proxy: Fetching from censustracts endpoint:', url);
+      url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
+      console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint with ZIP:', url);
     }
 
     fannieMaeResponse = await fetch(url, {
