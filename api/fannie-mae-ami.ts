@@ -52,7 +52,6 @@ export default async function handler(
 
     if (isFullAddress) {
       // Parse the full address using OpenAI
-      console.log('Fannie Mae API Proxy: Parsing full address:', addressInput);
       
       // Import and use OpenAI API directly (same as parse-address.ts)
       const openaiApiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
@@ -65,32 +64,49 @@ export default async function handler(
         });
       }
 
-      const parsePrompt = `Parse this US address into structured components for Fannie Mae API. IMPORTANT: Normalize street names to standard format that geocoding services recognize.
+      // CRITICAL INSIGHT: Fannie Mae API validates addresses against their geocoding database
+      // Addresses must be in standard USPS/geocoding format that their service recognizes
+      // For quadrant-based addresses (like "S 2275 E" in Salt Lake City), we MUST convert to standard format
+      const parsePrompt = `You are an expert at normalizing US addresses for geocoding APIs. 
 
-Address: "${addressInput}"
+Fannie Mae's API validates addresses against their geocoding database. If the format isn't recognized, it fails.
 
-Extract and return:
-- number (string) - Building/house number only (e.g., "123", "1", "100A"). Just the numeric part before the street name. If not found, use "1"
-- street (string) - Street name in STANDARDIZED format. Normalize directional prefixes/suffixes:
-  * Convert directional prefixes like "S", "N", "E", "W" to full names when appropriate (e.g., "S Main St" → "South Main Street" or keep as "Main St" if it's part of the street name)
-  * For addresses like "S 2275 E", this is unusual - try "2275 East" or "2275 E Street" or keep as-is if that's the actual street name
-  * Include street type (St, Ave, Blvd, etc.)
-  * Examples: "Main St", "North Oak Avenue", "2275 East Street", "Park Boulevard"
-- city (string) - City name (e.g., "Salt Lake City", "Holladay", "New York"). Extract the actual city name.
-- state (string) - Two-letter state abbreviation (e.g., "UT", "NY", "CA"). Must be exactly 2 uppercase letters. Extract from the address or infer from ZIP code.
-- zip (string) - 5-digit ZIP code. Must be exactly 5 digits. Required.
+INPUT: "${addressInput}"
 
-Examples:
-- "6230 S 2275 E, Holladay, UT, 84121" → Try {"number":"6230","street":"2275 East","city":"Holladay","state":"UT","zip":"84121"} OR {"number":"6230","street":"2275 E","city":"Holladay","state":"UT","zip":"84121"}
-- "123 Main St, Salt Lake City, UT 84101" → {"number":"123","street":"Main Street","city":"Salt Lake City","state":"UT","zip":"84101"}
-- "84121" → {"number":"1","street":"Main Street","city":"City","state":"UT","zip":"84121"}
+TASK: Convert this to standard USPS/geocoding format that geocoding services (Google Maps, USPS, etc.) recognize.
 
-Important:
-- Normalize street names to formats that geocoding APIs commonly recognize
-- Spell out street types (St → Street, Ave → Avenue) when appropriate
-- State must be 2-letter uppercase abbreviation
-- ZIP code is required and must be 5 digits
-- Return ONLY the JSON object, nothing else:`;
+CRITICAL RULES:
+1. For quadrant addresses like "S 2275 E" (Salt Lake City style):
+   - These are NOT recognized by standard geocoding
+   - Convert to standard format: "2275 East Street" or "2275 E Street" 
+   - The "S" prefix indicates South quadrant - remove it and convert to standard street name
+   
+2. Street name format:
+   - Spell out directional prefixes: "N Main St" → "North Main Street"
+   - Spell out street types: "St" → "Street", "Ave" → "Avenue", "Blvd" → "Boulevard"
+   - Use standard formats that exist in address databases
+   
+3. Output JSON format:
+{
+  "number": "123",
+  "street": "Main Street", 
+  "city": "Salt Lake City",
+  "state": "UT",
+  "zip": "84101"
+}
+
+EXAMPLES:
+- "6230 S 2275 E, Holladay, UT 84121" 
+  → {"number":"6230","street":"2275 East Street","city":"Holladay","state":"UT","zip":"84121"}
+  (Convert quadrant format "S 2275 E" to standard "2275 East Street")
+  
+- "123 N Main St, Salt Lake City, UT 84101"
+  → {"number":"123","street":"North Main Street","city":"Salt Lake City","state":"UT","zip":"84101"}
+  
+- "123 Main St, New York, NY 10001"
+  → {"number":"123","street":"Main Street","city":"New York","state":"NY","zip":"10001"}
+
+Return ONLY valid JSON, no markdown, no explanations:`;
 
       const parseResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -139,8 +155,6 @@ Important:
         });
       }
 
-      console.log('Fannie Mae API Proxy: Parsed address:', JSON.stringify(parsedAddress, null, 2));
-
       // Use addresscheck endpoint with parsed address - using GET with query parameters
       // Build parameters carefully, ensuring no undefined/null values
       const addressParams = {
@@ -151,21 +165,14 @@ Important:
         zip: parsedAddress.zip
       };
       
-      console.log('Fannie Mae API Proxy: Address parameters (before encoding):', JSON.stringify(addressParams, null, 2));
-      
       const params = new URLSearchParams(addressParams);
       const encodedUrl = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
-      
-      console.log('Fannie Mae API Proxy: Final URL to Fannie Mae:', encodedUrl);
-      console.log('Fannie Mae API Proxy: API Key present:', !!apiKey, '(length:', apiKey?.length || 0, ')');
-      console.log('Fannie Mae API Proxy: API Key header will be: x-public-access-token');
       
       url = encodedUrl;
 
     } else {
       // ZIP code only - Generate a representative address using OpenAI
       // Then use that address with Fannie Mae's addresscheck endpoint
-      console.log('Fannie Mae API Proxy: ZIP code only provided, generating representative address for:', zipCode);
       
       const openaiApiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
       
@@ -251,8 +258,6 @@ Return ONLY the JSON object, no markdown, no explanations:`;
         });
       }
 
-      console.log('Fannie Mae API Proxy: Generated representative address from ZIP:', JSON.stringify(representativeAddress, null, 2));
-
       // Use addresscheck endpoint with the generated representative address
       const addressParams = {
         number: representativeAddress.number || '123',
@@ -264,17 +269,7 @@ Return ONLY the JSON object, no markdown, no explanations:`;
       
       const params = new URLSearchParams(addressParams);
       url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
-      console.log('Fannie Mae API Proxy: Using representative address with addresscheck endpoint:', url);
     }
-
-    // Log exactly what we're sending
-    console.log('Fannie Mae API Proxy: About to call Fannie Mae API');
-    console.log('Fannie Mae API Proxy: Method: GET');
-    console.log('Fannie Mae API Proxy: URL:', url);
-    console.log('Fannie Mae API Proxy: Headers:', {
-      'Content-Type': 'application/json',
-      'x-public-access-token': apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING'
-    });
 
     fannieMaeResponse = await fetch(url, {
       method: 'GET',
@@ -284,36 +279,22 @@ Return ONLY the JSON object, no markdown, no explanations:`;
       },
     });
 
-    console.log('Fannie Mae API Proxy: Response status:', fannieMaeResponse.status);
-    console.log('Fannie Mae API Proxy: Response headers:', Object.fromEntries(fannieMaeResponse.headers.entries()));
-
     if (!fannieMaeResponse.ok) {
       // Read the error response body once
       let errorText = '';
       let errorJson: any = null;
       try {
         errorText = await fannieMaeResponse.text();
-        console.error('Fannie Mae API Proxy: Error response (raw):', errorText);
         
         // Try to parse as JSON
         try {
           errorJson = JSON.parse(errorText);
-          console.error('Fannie Mae API Proxy: Error response (parsed):', JSON.stringify(errorJson, null, 2));
         } catch {
           // Not JSON, use as text
-          console.error('Fannie Mae API Proxy: Error response (text):', errorText.substring(0, 500));
         }
       } catch (error) {
-        console.error('Fannie Mae API Proxy: Could not read error response body:', error);
         errorText = 'Unknown error';
       }
-      console.error('Fannie Mae API Proxy: ========== ERROR DETAILS ==========');
-      console.error('Fannie Mae API Proxy: Request URL:', url);
-      console.error('Fannie Mae API Proxy: Response status:', fannieMaeResponse.status);
-      console.error('Fannie Mae API Proxy: Response status text:', fannieMaeResponse.statusText);
-      console.error('Fannie Mae API Proxy: Error text (raw):', errorText);
-      console.error('Fannie Mae API Proxy: Error JSON (parsed):', JSON.stringify(errorJson, null, 2));
-      console.error('Fannie Mae API Proxy: ====================================');
       
       response.setHeader('Access-Control-Allow-Origin', '*');
       
@@ -378,7 +359,6 @@ Return ONLY the JSON object, no markdown, no explanations:`;
     }
 
     const data = await fannieMaeResponse.json();
-    console.log('Fannie Mae API Proxy: Successfully retrieved data');
 
     // Set CORS headers and return data
     response.setHeader('Access-Control-Allow-Origin', '*');
