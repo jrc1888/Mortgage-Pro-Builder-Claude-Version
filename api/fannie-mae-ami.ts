@@ -221,7 +221,23 @@ Important:
       response.setHeader('Access-Control-Allow-Origin', '*');
       
       // Extract error message from Fannie Mae response
-      const fannieMaeErrorMessage = errorJson?.message || errorJson?.error || errorText.substring(0, 500);
+      // Fannie Mae API errors often have a "messages" array or "message" field
+      let fannieMaeErrorMessage = '';
+      if (errorJson) {
+        if (errorJson.messages && Array.isArray(errorJson.messages)) {
+          fannieMaeErrorMessage = errorJson.messages.map((m: any) => 
+            typeof m === 'string' ? m : m.message || m.text || JSON.stringify(m)
+          ).join('; ');
+        } else if (errorJson.message) {
+          fannieMaeErrorMessage = errorJson.message;
+        } else if (errorJson.error) {
+          fannieMaeErrorMessage = errorJson.error;
+        } else {
+          fannieMaeErrorMessage = JSON.stringify(errorJson);
+        }
+      } else {
+        fannieMaeErrorMessage = errorText.substring(0, 1000);
+      }
       
       if (fannieMaeResponse.status === 401) {
         return response.status(401).json({ 
@@ -250,7 +266,8 @@ Important:
             ? 'The address may be invalid or incorrectly formatted'
             : 'The ZIP code may be invalid or the API may not accept placeholder address values'),
           triedUrl: url,
-          fannieMaeError: errorJson || errorText.substring(0, 1000)
+          fannieMaeError: errorJson || errorText.substring(0, 1000),
+          fannieMaeMessages: errorJson?.messages || null
         });
       } else {
         return response.status(fannieMaeResponse.status).json({ 
