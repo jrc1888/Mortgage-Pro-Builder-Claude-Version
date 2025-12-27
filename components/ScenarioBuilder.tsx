@@ -5,6 +5,7 @@ import { calculateScenario, calculateLendersTitleInsurance } from '../services/l
 import { calculateItemCost } from '../utils/closingCosts';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
+import { formatMoney, formatPercent } from '../utils/formatting';
 import { Modal } from './Modal';
 import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
 import { generateSubmissionPDFPreview, downloadSubmissionPDF } from '../services/submissionPDF';
@@ -649,7 +650,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       }
   };
 
-  const formatMoney = (n: number) => Math.ceil(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   const formatTime = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   // Calculation variables for Sidebar view
@@ -1092,7 +1092,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         <span className="font-mono font-medium text-slate-900">{formatMoney(results.financedMIP)}</span>
                                     </div>
                                     <div className="flex justify-between items-center text-sm text-slate-600">
-                                        <span className="flex items-center gap-1">Monthly MIP <span className="text-[10px] text-slate-400 font-bold">({results.miRatePercent.toFixed(2)}%)</span></span>
+                                        <span className="flex items-center gap-1">Monthly MIP <span className="text-[10px] text-slate-400 font-bold">({formatPercent(results.miRatePercent, 2)})</span></span>
                                         <span className="font-mono font-medium text-slate-900">{formatMoney(results.monthlyMI)}</span>
                                     </div>
                                 </div>
@@ -1208,10 +1208,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     <div className="flex-1 pb-1">
                                         <div className="flex justify-between items-end mb-1">
                                             <span className={`text-[10px] font-bold uppercase tracking-wider ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-400'}`}>
-                                                {results.sellerConcessionsPercent.toFixed(2)}% Used
+                                                {formatPercent(results.sellerConcessionsPercent, 2)} Used
                                             </span>
                                             <span className={`text-[10px] font-bold uppercase tracking-wider ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-300'}`}>
-                                                Max {maxConcessionsPercent.toFixed(1)}% / {formatMoney(results.maxConcessionsAllowed)}
+                                                Max {formatPercent(maxConcessionsPercent, 1)} / {formatMoney(results.maxConcessionsAllowed)}
                                             </span>
                                         </div>
                                         <div className="h-1.5 w-full bg-indigo-200/50 rounded-full overflow-hidden">
@@ -1663,7 +1663,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                              {results.buydownSchedule.map((row) => (
                                                  <tr key={row.year}>
                                                      <td className="py-2 px-4 font-medium text-slate-700">Year {row.year}</td>
-                                                     <td className="py-2 px-4 font-bold text-indigo-600">{row.rate.toFixed(3)}%</td>
+                                                     <td className="py-2 px-4 font-bold text-indigo-600">{formatPercent(row.rate, 3)}</td>
                                                      <td className="py-2 px-4 text-right font-medium text-slate-900">{formatMoney(row.fullPayment)}</td>
                                                      <td className="py-2 px-4 text-right font-mono text-emerald-600">{formatMoney(row.subsidy)}/mo</td>
                                                  </tr>
@@ -1932,7 +1932,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     <label className={labelClass}>Rental Income / ADU</label>
                                     {scenario.isDSCRLoan ? (
                                         <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
-                                            DSCR: {results.dscr?.ratio.toFixed(2) || '0.00'}
+                                            DSCR: {results.dscr?.ratio ? formatPercent(results.dscr.ratio, 2) : '0.00%'}
                                         </span>
                                     ) : (
                                         <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
@@ -1986,11 +1986,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 <div className="space-y-2">
                                                     <div className="flex justify-between text-sm">
                                                         <span className="text-slate-600">Front-End (Housing)</span>
-                                                        <span className={`font-bold ${results.dti.frontEnd > frontEndWarning ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.frontEnd.toFixed(2)}%</span>
+                                                        <span className={`font-bold ${results.dti.frontEnd > frontEndWarning ? 'text-red-600' : 'text-slate-900'}`}>{formatPercent(results.dti.frontEnd, 2)}</span>
                                                     </div>
                                                      <div className="flex justify-between text-sm">
                                                         <span className="text-slate-600">Back-End (Total)</span>
-                                                        <span className={`font-bold ${results.dti.backEnd > backEndMax ? 'text-red-600' : 'text-slate-900'}`}>{results.dti.backEnd.toFixed(2)}%</span>
+                                                        <span className={`font-bold ${results.dti.backEnd > backEndMax ? 'text-red-600' : 'text-slate-900'}`}>{formatPercent(results.dti.backEnd, 2)}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2062,7 +2062,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                  <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg bg-slate-50 border-2 ${results.dscr.passes ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
                                      <span className="text-slate-500 uppercase text-[10px] font-bold tracking-wider">DSCR</span>
                                      <span className={`text-2xl font-black ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
-                                         {results.dscr.ratio.toFixed(2)}
+                                         {formatPercent(results.dscr.ratio, 2)}
                                      </span>
                                      <span className={`text-[9px] font-bold uppercase ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
                                          {results.dscr.passes ? 'Pass' : 'Fail'}
@@ -2086,11 +2086,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                      <>
                                          <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.frontEnd > frontEndWarning ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
                                              <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
-                                             <span>{results.dti.frontEnd.toFixed(1)}%</span>
+                                             <span>{formatPercent(results.dti.frontEnd, 1)}</span>
                                          </div>
                                          <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.backEnd > backEndMax ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
                                              <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
-                                             <span>{results.dti.backEnd.toFixed(1)}%</span>
+                                             <span>{formatPercent(results.dti.backEnd, 1)}</span>
                                          </div>
                                      </>
                                  );
@@ -2114,7 +2114,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <div className="flex justify-between items-center">
                                 <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Loan-to-Value (LTV)</span>
                                 <span className="text-lg font-black text-indigo-600">
-                                    {results.ltv.toFixed(2)}%
+                                    {formatPercent(results.ltv, 2)}
                                 </span>
                             </div>
                         </div>

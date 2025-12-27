@@ -22,7 +22,6 @@ function getFannieMaeApiKey(): string | null {
     }
   }
   
-  console.warn('Fannie Mae API: API key not found. Make sure VITE_FANNIE_MAE_API_KEY is set in environment variables.');
   return null;
 }
 
@@ -43,10 +42,9 @@ export function isFannieMaeApiConfigured(): boolean {
  * @returns Income limits data or null if error
  */
 export async function getIncomeLimitsByZipCode(addressOrZip: string): Promise<any | null> {
-  // Check if API key is configured (for logging purposes)
+  // Check if API key is configured
   const apiKey = getFannieMaeApiKey();
   if (!apiKey) {
-    console.error('Fannie Mae API: API key not configured');
     return null;
   }
 
@@ -59,7 +57,6 @@ export async function getIncomeLimitsByZipCode(addressOrZip: string): Promise<an
     const proxyUrl = isZipOnly 
       ? `/api/fannie-mae-ami?zipCode=${addressOrZip.trim()}`
       : `/api/fannie-mae-ami?address=${encodeURIComponent(addressOrZip.trim())}`;
-    console.log('Fannie Mae API: Fetching income limits via proxy:', proxyUrl);
     
     const response = await fetch(proxyUrl, {
       method: 'GET',
@@ -68,26 +65,12 @@ export async function getIncomeLimitsByZipCode(addressOrZip: string): Promise<an
       },
     });
 
-    console.log('Fannie Mae API: Proxy response status:', response.status);
-
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      console.error('Fannie Mae API: Error response:', errorData);
-      
-      if (response.status === 401) {
-        console.error('Fannie Mae API: Unauthorized - API key may be invalid or expired');
-      } else if (response.status === 404) {
-        console.warn(`Fannie Mae API: Income limits not found for address/ZIP: ${addressOrZip}`);
-      } else if (response.status === 400) {
-        console.error(`Fannie Mae API: Bad Request - Invalid address/ZIP format: ${addressOrZip}`);
-      } else {
-        console.error(`Fannie Mae API Error: ${response.status} ${response.statusText}`);
-      }
+      await response.json().catch(() => ({ error: 'Unknown error' }));
       return null;
     }
 
     const data = await response.json();
-    console.log('Fannie Mae API: Income limits data received:', JSON.stringify(data).substring(0, 500));
     return data;
   } catch (error) {
     console.error('Fannie Mae API: Error fetching income limits:', error);

@@ -66,16 +66,10 @@ export async function getAMILimits(
   try {
     // Try Fannie Mae API first if configured (most up-to-date)
     if (isFannieMaeApiConfigured()) {
-      console.log('Fannie Mae API: Attempting to fetch AMI data for', isZipOnly ? 'zip code' : 'address', normalizedInput);
       const fannieMaeData = await getAMILimitsFromFannieMaeApi(normalizedInput, familySize);
       if (fannieMaeData) {
-        console.log('Fannie Mae API: Successfully retrieved AMI data for', isZipOnly ? 'zip code' : 'address', normalizedInput);
         return fannieMaeData;
-      } else {
-        console.warn('Fannie Mae API: No data returned, falling back to other sources');
       }
-    } else {
-      console.log('Fannie Mae API: Not configured, skipping API call');
     }
 
     // Try Supabase database if configured (only for ZIP codes)
@@ -132,17 +126,13 @@ async function getAMILimitsFromFannieMaeApi(
   familySize: number
 ): Promise<AMILimits | null> {
   try {
-    console.log('Fannie Mae API: Getting income limits for address/ZIP:', addressOrZip);
     const fannieMaeData = await getFannieMaeIncomeLimits(addressOrZip);
     
     if (!fannieMaeData) {
-      console.warn('Fannie Mae API: No data returned from getIncomeLimitsByZipCode');
       return null;
     }
     
-    // Log the full response structure for debugging
     // Based on OpenAPI spec, response is an array of IncomeLimitsCollection objects
-    console.log('Fannie Mae API: Full response structure:', JSON.stringify(fannieMaeData, null, 2));
     
     // According to OpenAPI spec, response is an array of IncomeLimitsCollection
     // Each collection has: incomeLimitsList (array of IncomeLimits)
@@ -166,7 +156,6 @@ async function getAMILimitsFromFannieMaeApi(
     }
     
     if (!incomeLimitsArray || incomeLimitsArray.length === 0) {
-      console.warn('Fannie Mae API: No income limits data in response');
       return null;
     }
     
@@ -200,19 +189,8 @@ async function getAMILimitsFromFannieMaeApi(
     
     // Validate that we got at least some data
     if (!extremelyLow && !veryLow && !low && !median) {
-      console.warn('Fannie Mae API: Could not extract income limits from response structure for address/ZIP:', addressOrZip);
-      console.warn('Fannie Mae API: Available keys in firstLimit:', Object.keys(firstLimit || {}));
-      console.warn('Fannie Mae API: Full response for debugging:', JSON.stringify(fannieMaeData, null, 2));
       return null;
     }
-    
-    console.log(`Fannie Mae API: Extracted limits for family size ${familySize}:`, {
-      extremelyLow,
-      veryLow,
-      low,
-      median,
-      moderate
-    });
     
     // Extract location info from FIPS code if available
     const fipsCode = firstLimit.fips_code || '';
@@ -262,22 +240,17 @@ async function getAMILimitsFromJSON(
     
     const data = await response.json();
     
-    // Debug: Log available zip codes
     if (!data[zipCode]) {
-      const availableZips = Object.keys(data).filter(key => !key.startsWith('_'));
-      console.warn(`Zip code ${zipCode} not found in AMI data. Available zip codes:`, availableZips);
       return null;
     }
     
     const zipData = data[zipCode];
     if (!zipData || !zipData[familySize]) {
-      console.warn(`Family size ${familySize} not found for zip code ${zipCode}`);
       return null;
     }
 
     const limits = zipData[familySize];
     if (!limits || typeof limits !== 'object') {
-      console.warn(`Invalid limits data for zip ${zipCode}, family size ${familySize}`);
       return null;
     }
 

@@ -1,27 +1,15 @@
 import { jsPDF } from 'jspdf';
 import { Scenario } from '../types';
+import { BRANDING } from '../config/branding';
+import { formatMoney, formatDate } from '../utils/formatting';
 
-// Guild Mortgage Brand Color
-const BRAND_COLOR = '#1f3b83';
-const BRAND_COLOR_R = 31;
-const BRAND_COLOR_G = 59;
-const BRAND_COLOR_B = 131;
-
-// Locked legal footer text (compliance requirement)
-const LEGAL_TEXT = 
-  "Equal Housing Lender. Guild Mortgage is an Equal Housing Lender. " +
-  "NMLS #3274. This letter is not a commitment to lend. All loans are subject to " +
-  "underwriting approval and credit terms. Additional restrictions may apply.";
-
-// Officer information
-const OFFICER_INFO = {
-  name: "John Creager",
-  title: "Loan Officer",
-  nmls: "NMLS #2098333",
-  phone: "(801) 589-0502",
-  email: "jcreager@guildmortgage.net",
-  company: "Guild Mortgage"
-};
+// Use branding configuration
+const BRAND_COLOR = BRANDING.brandColor;
+const BRAND_COLOR_R = BRANDING.brandColorRGB.r;
+const BRAND_COLOR_G = BRANDING.brandColorRGB.g;
+const BRAND_COLOR_B = BRANDING.brandColorRGB.b;
+const LEGAL_TEXT = BRANDING.legalFooter;
+const OFFICER_INFO = BRANDING.officer;
 
 interface PreApprovalData {
   buyer1: string;
@@ -43,9 +31,7 @@ function getLastName(fullName: string): string {
   return parts[parts.length - 1] || 'Borrower';
 }
 
-function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
+// formatCurrency replaced with formatMoney from utils/formatting
 
 function calculateDownPayment(
   purchasePrice: number | 'TBD',
@@ -62,7 +48,9 @@ function calculateDownPayment(
   return '—';
 }
 
-function formatDate(date: Date): string {
+// formatDate replaced with formatDate from utils/formatting (but note: PDF needs long format)
+// Using custom format for PDF since it needs "Month Day, Year" format
+function formatDateForPDF(date: Date): string {
   return date.toLocaleDateString('en-US', { 
     year: 'numeric', 
     month: 'long', 
@@ -106,8 +94,8 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   expiresDate.setDate(expiresDate.getDate() + validDays);
 
   // Format values
-  const ppDisplay = typeof purchasePrice === 'number' ? formatCurrency(purchasePrice) : (purchasePrice || '—');
-  const laDisplay = typeof loanAmount === 'number' ? formatCurrency(loanAmount) : (loanAmount || '—');
+  const ppDisplay = typeof purchasePrice === 'number' ? formatMoney(purchasePrice) : (purchasePrice || '—');
+  const laDisplay = typeof loanAmount === 'number' ? formatMoney(loanAmount) : (loanAmount || '—');
   const dpDisplay = calculateDownPayment(purchasePrice, loanAmount, downPayment);
 
   // Create PDF
@@ -185,7 +173,7 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(12);
-  doc.text(`Date: ${formatDate(letterDate)}`, marginLeft, yPos);
+  doc.text(`Date: ${formatDateForPDF(letterDate)}`, marginLeft, yPos);
   
   yPos += 0.48; // Much more breathing room before greeting
 
@@ -206,7 +194,7 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     ['Loan Amount', laDisplay],
     ['Down Payment', dpDisplay],
     ['Loan Type', loanType || '—'],
-    ['Valid Through', formatDate(expiresDate)]
+    ['Valid Through', formatDateForPDF(expiresDate)]
   ];
 
   const labelWidth = 2.2;
