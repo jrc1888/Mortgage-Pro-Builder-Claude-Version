@@ -149,40 +149,55 @@ Important:
       console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint (GET):', url);
 
     } else {
-      // ZIP code only - use addresscheck endpoint with placeholder address values
-      // This is more reliable than trying to convert ZIP to FIPS
-      console.log('Fannie Mae API Proxy: Using ZIP code with placeholder address:', zipCode);
+      // ZIP code only - convert to FIPS code and use censustracts endpoint
+      // The addresscheck endpoint requires ALL parameters (no placeholders allowed)
+      console.log('Fannie Mae API Proxy: Converting ZIP code to FIPS:', zipCode);
       
-      // Infer state from ZIP code (first digit gives approximate region)
-      // This is a basic mapping - not perfect but better than hardcoding
-      const zipFirstDigit = zipCode.charAt(0);
-      let inferredState = 'UT'; // Default
+      // Use US Census Bureau Geocoding API to convert ZIP to FIPS
+      // Use a representative address in the ZIP code area
+      const geocodeUrl = `https://geocoding.geo.census.gov/geocoder/geographies/address?street=1+Main+St&city=City&state=&zip=${zipCode}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
       
-      // Basic ZIP code to state mapping (first digit regions)
-      if (zipFirstDigit >= '0' && zipFirstDigit <= '2') inferredState = 'MA'; // 0-2: Northeast
-      else if (zipFirstDigit === '3') inferredState = 'NY'; // 3: NY/NJ/PA
-      else if (zipFirstDigit === '4') inferredState = 'PA'; // 4: PA/OH
-      else if (zipFirstDigit === '5') inferredState = 'MN'; // 5: MN/WI/IA
-      else if (zipFirstDigit === '6') inferredState = 'IL'; // 6: IL/MO/KS
-      else if (zipFirstDigit === '7') inferredState = 'TX'; // 7: TX/AR/LA
-      else if (zipFirstDigit === '8') inferredState = 'CO'; // 8: CO/UT/AZ/NM
-      else if (zipFirstDigit === '9') inferredState = 'CA'; // 9: CA/NV/OR/WA
-      
-      // More specific: Utah ZIP codes start with 84
-      if (zipCode.startsWith('84')) inferredState = 'UT';
-      
-      // Use addresscheck endpoint with minimal placeholder values
-      // The API should be able to determine the census tract from just the ZIP code
-      const params = new URLSearchParams({
-        number: '1',
-        street: 'Main St',
-        city: 'City',
-        state: inferredState,
-        zip: zipCode
-      });
+      console.log('Fannie Mae API Proxy: Calling Census Bureau geocoding API:', geocodeUrl);
+      const geocodeResponse = await fetch(geocodeUrl);
 
-      url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
-      console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint with ZIP (inferred state:', inferredState, '):', url);
+      if (!geocodeResponse.ok) {
+        response.setHeader('Access-Control-Allow-Origin', '*');
+        return response.status(500).json({
+          error: 'Failed to geocode ZIP code',
+          details: 'Census Bureau API returned an error',
+          status: geocodeResponse.status
+        });
+      }
+
+      const geocodeData = await geocodeResponse.json();
+      console.log('Fannie Mae API Proxy: Geocoding response:', JSON.stringify(geocodeData).substring(0, 500));
+      
+      // Extract FIPS code from response
+      let fipsCode: string | null = null;
+
+      if (geocodeData.result && geocodeData.result.addressMatches && geocodeData.result.addressMatches.length > 0) {
+        const match = geocodeData.result.addressMatches[0];
+        if (match.geographies && match.geographies['Census Tracts'] && match.geographies['Census Tracts'].length > 0) {
+          fipsCode = match.geographies['Census Tracts'][0].GEOID;
+          console.log('Fannie Mae API Proxy: Extracted FIPS code:', fipsCode);
+        }
+      }
+
+      if (!fipsCode || fipsCode.length !== 11) {
+        response.setHeader('Access-Control-Allow-Origin', '*');
+        return response.status(404).json({
+          error: `Could not find FIPS code for ZIP code ${zipCode}`,
+          details: 'The ZIP code may not be valid or the geocoding service may be unavailable',
+          suggestion: 'Try using a full address instead',
+          geocodeResponse: geocodeData
+        });
+      }
+
+      console.log('Fannie Mae API Proxy: Converted ZIP to FIPS:', zipCode, '->', fipsCode);
+
+      // Use censustracts endpoint with FIPS code
+      url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/censustracts?fips_code=${fipsCode}`;
+      console.log('Fannie Mae API Proxy: Fetching from censustracts endpoint:', url);
     }
 
     fannieMaeResponse = await fetch(url, {
