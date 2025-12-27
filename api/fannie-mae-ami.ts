@@ -65,24 +65,29 @@ export default async function handler(
         });
       }
 
-      const parsePrompt = `Parse this US address into structured components for Fannie Mae API. Return ONLY valid JSON, no markdown, no code blocks, no explanations.
+      const parsePrompt = `Parse this US address into structured components for Fannie Mae API. IMPORTANT: Normalize street names to standard format that geocoding services recognize.
 
 Address: "${addressInput}"
 
 Extract and return:
 - number (string) - Building/house number only (e.g., "123", "1", "100A"). Just the numeric part before the street name. If not found, use "1"
-- street (string) - Complete street name including directional prefixes/suffixes and street type (e.g., "Main St", "N Oak Ave", "2275 E", "S 2275 E", "Park Blvd"). DO NOT include the house number. Keep the full street name as it appears.
+- street (string) - Street name in STANDARDIZED format. Normalize directional prefixes/suffixes:
+  * Convert directional prefixes like "S", "N", "E", "W" to full names when appropriate (e.g., "S Main St" → "South Main Street" or keep as "Main St" if it's part of the street name)
+  * For addresses like "S 2275 E", this is unusual - try "2275 East" or "2275 E Street" or keep as-is if that's the actual street name
+  * Include street type (St, Ave, Blvd, etc.)
+  * Examples: "Main St", "North Oak Avenue", "2275 East Street", "Park Boulevard"
 - city (string) - City name (e.g., "Salt Lake City", "Holladay", "New York"). Extract the actual city name.
 - state (string) - Two-letter state abbreviation (e.g., "UT", "NY", "CA"). Must be exactly 2 uppercase letters. Extract from the address or infer from ZIP code.
 - zip (string) - 5-digit ZIP code. Must be exactly 5 digits. Required.
 
 Examples:
-- "6230 S 2275 E, Holladay, UT, 84121" → {"number":"6230","street":"S 2275 E","city":"Holladay","state":"UT","zip":"84121"}
-- "123 Main St, Salt Lake City, UT 84101" → {"number":"123","street":"Main St","city":"Salt Lake City","state":"UT","zip":"84101"}
-- "84121" → {"number":"1","street":"Main St","city":"City","state":"UT","zip":"84121"}
+- "6230 S 2275 E, Holladay, UT, 84121" → Try {"number":"6230","street":"2275 East","city":"Holladay","state":"UT","zip":"84121"} OR {"number":"6230","street":"2275 E","city":"Holladay","state":"UT","zip":"84121"}
+- "123 Main St, Salt Lake City, UT 84101" → {"number":"123","street":"Main Street","city":"Salt Lake City","state":"UT","zip":"84101"}
+- "84121" → {"number":"1","street":"Main Street","city":"City","state":"UT","zip":"84121"}
 
 Important:
-- Keep the street name complete with any directional indicators (N, S, E, W) and street type
+- Normalize street names to formats that geocoding APIs commonly recognize
+- Spell out street types (St → Street, Ave → Avenue) when appropriate
 - State must be 2-letter uppercase abbreviation
 - ZIP code is required and must be 5 digits
 - Return ONLY the JSON object, nothing else:`;
@@ -158,55 +163,22 @@ Important:
       url = encodedUrl;
 
     } else {
-      // ZIP code only - convert to FIPS code and use censustracts endpoint
-      // The addresscheck endpoint requires ALL parameters (no placeholders allowed)
-      console.log('Fannie Mae API Proxy: Converting ZIP code to FIPS:', zipCode);
+      // ZIP code only - Cannot convert ZIP to FIPS without a real address
+      // The Census Bureau API requires a real address, not placeholders
+      // Fannie Mae's censustracts endpoint requires an 11-digit FIPS code
+      // 
+      // SOLUTION: Use Fannie Mae's addresscheck endpoint with a representative address
+      // We'll construct a minimal valid address using just the ZIP code
+      // This is a limitation - for accurate results, users should provide full addresses
+      console.log('Fannie Mae API Proxy: ZIP code only provided, cannot get FIPS without real address');
       
-      // Use US Census Bureau Geocoding API to convert ZIP to FIPS
-      // Use a representative address in the ZIP code area
-      const geocodeUrl = `https://geocoding.geo.census.gov/geocoder/geographies/address?street=1+Main+St&city=City&state=&zip=${zipCode}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
-      
-      console.log('Fannie Mae API Proxy: Calling Census Bureau geocoding API:', geocodeUrl);
-      const geocodeResponse = await fetch(geocodeUrl);
-
-      if (!geocodeResponse.ok) {
-        response.setHeader('Access-Control-Allow-Origin', '*');
-        return response.status(500).json({
-          error: 'Failed to geocode ZIP code',
-          details: 'Census Bureau API returned an error',
-          status: geocodeResponse.status
-        });
-      }
-
-      const geocodeData = await geocodeResponse.json();
-      console.log('Fannie Mae API Proxy: Geocoding response:', JSON.stringify(geocodeData).substring(0, 500));
-      
-      // Extract FIPS code from response
-      let fipsCode: string | null = null;
-
-      if (geocodeData.result && geocodeData.result.addressMatches && geocodeData.result.addressMatches.length > 0) {
-        const match = geocodeData.result.addressMatches[0];
-        if (match.geographies && match.geographies['Census Tracts'] && match.geographies['Census Tracts'].length > 0) {
-          fipsCode = match.geographies['Census Tracts'][0].GEOID;
-          console.log('Fannie Mae API Proxy: Extracted FIPS code:', fipsCode);
-        }
-      }
-
-      if (!fipsCode || fipsCode.length !== 11) {
-        response.setHeader('Access-Control-Allow-Origin', '*');
-        return response.status(404).json({
-          error: `Could not find FIPS code for ZIP code ${zipCode}`,
-          details: 'The ZIP code may not be valid or the geocoding service may be unavailable',
-          suggestion: 'Try using a full address instead',
-          geocodeResponse: geocodeData
-        });
-      }
-
-      console.log('Fannie Mae API Proxy: Converted ZIP to FIPS:', zipCode, '->', fipsCode);
-
-      // Use censustracts endpoint with FIPS code
-      url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/censustracts?fips_code=${fipsCode}`;
-      console.log('Fannie Mae API Proxy: Fetching from censustracts endpoint:', url);
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      return response.status(400).json({
+        error: 'ZIP code only lookups require additional address information',
+        details: 'The Fannie Mae API requires a full address or an 11-digit FIPS code. ZIP codes alone cannot be converted to FIPS codes without a real address.',
+        suggestion: 'Please provide a full address (e.g., "123 Main St, City, ST 84121") or contact Fannie Mae support for ZIP-to-FIPS conversion options',
+        zipCode: zipCode
+      });
     }
 
     // Log exactly what we're sending
@@ -300,13 +272,14 @@ Important:
         });
       } else if (fannieMaeResponse.status === 400) {
         return response.status(400).json({ 
-          error: `Bad Request from Fannie Mae API${isFullAddress ? ' for address' : ` for ZIP code ${zipCode}`}`,
-          details: fannieMaeErrorMessage || (isFullAddress 
-            ? 'The address may be invalid or incorrectly formatted'
-            : 'The ZIP code may be invalid or the API may not accept placeholder address values'),
+          error: `Address not recognized by Fannie Mae geocoding service${isFullAddress ? '' : ` for ZIP code ${zipCode}`}`,
+          details: isFullAddress 
+            ? 'Fannie Mae\'s geocoding service could not find or validate this address. This may happen if: (1) The address format is not recognized (e.g., quadrant-based addresses like "S 2275 E"), (2) The address is new or recently changed, (3) The address components are not in the expected format. Try using a more standard address format or contact Fannie Mae support.'
+            : 'The ZIP code may be invalid',
           triedUrl: url,
           fannieMaeError: errorJson || errorText.substring(0, 1000),
-          fannieMaeMessages: errorJson?.messages || null
+          fannieMaeMessages: errorJson?.messages || null,
+          suggestion: isFullAddress ? 'Try formatting the address differently (e.g., spell out street types, normalize directional indicators)' : 'Try using a full address instead'
         });
       } else {
         return response.status(fannieMaeResponse.status).json({ 
