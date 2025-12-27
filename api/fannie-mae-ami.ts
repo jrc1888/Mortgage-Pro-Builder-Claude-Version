@@ -163,22 +163,108 @@ Important:
       url = encodedUrl;
 
     } else {
-      // ZIP code only - Cannot convert ZIP to FIPS without a real address
-      // The Census Bureau API requires a real address, not placeholders
-      // Fannie Mae's censustracts endpoint requires an 11-digit FIPS code
-      // 
-      // SOLUTION: Use Fannie Mae's addresscheck endpoint with a representative address
-      // We'll construct a minimal valid address using just the ZIP code
-      // This is a limitation - for accurate results, users should provide full addresses
-      console.log('Fannie Mae API Proxy: ZIP code only provided, cannot get FIPS without real address');
+      // ZIP code only - Generate a representative address using OpenAI
+      // Then use that address with Fannie Mae's addresscheck endpoint
+      console.log('Fannie Mae API Proxy: ZIP code only provided, generating representative address for:', zipCode);
       
-      response.setHeader('Access-Control-Allow-Origin', '*');
-      return response.status(400).json({
-        error: 'ZIP code only lookups require additional address information',
-        details: 'The Fannie Mae API requires a full address or an 11-digit FIPS code. ZIP codes alone cannot be converted to FIPS codes without a real address.',
-        suggestion: 'Please provide a full address (e.g., "123 Main St, City, ST 84121") or contact Fannie Mae support for ZIP-to-FIPS conversion options',
-        zipCode: zipCode
+      const openaiApiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+      
+      if (!openaiApiKey) {
+        response.setHeader('Access-Control-Allow-Origin', '*');
+        return response.status(500).json({
+          error: 'OpenAI API key not configured',
+          details: 'ZIP code lookups require OpenAI API key to generate representative addresses. Add VITE_OPENAI_API_KEY to Vercel environment variables.'
+        });
+      }
+
+      // Use OpenAI to generate a representative address for the ZIP code
+      const zipToAddressPrompt = `Given a US ZIP code, generate a representative address that would be valid in that ZIP code area. This address will be used to look up income limits, so it should be a typical residential address format for that area.
+
+ZIP Code: ${zipCode}
+
+Return ONLY valid JSON with this structure:
+{
+  "number": "123",
+  "street": "Main Street",
+  "city": "City Name",
+  "state": "ST",
+  "zip": "12345"
+}
+
+Requirements:
+- Use a common street name (e.g., "Main Street", "Oak Avenue", "Park Boulevard") 
+- Use a typical city name for that ZIP code area (you may need to look up common cities in that ZIP)
+- State must be the correct 2-letter abbreviation for that ZIP code
+- ZIP must match the input ZIP code exactly: ${zipCode}
+- Number should be a typical residential number (e.g., "123", "456", "100")
+- Street should include street type (Street, Avenue, Boulevard, etc.)
+
+Return ONLY the JSON object, no markdown, no explanations:`;
+
+      const zipParseResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: zipToAddressPrompt }],
+          temperature: 0.1,
+          max_tokens: 256,
+          response_format: { type: 'json_object' }
+        })
       });
+
+      if (!zipParseResponse.ok) {
+        const errorText = await zipParseResponse.text();
+        response.setHeader('Access-Control-Allow-Origin', '*');
+        return response.status(500).json({
+          error: 'Failed to generate representative address from ZIP code',
+          details: errorText.substring(0, 200)
+        });
+      }
+
+      const zipParseData = await zipParseResponse.json();
+      const zipParseText = zipParseData.choices?.[0]?.message?.content;
+      
+      if (!zipParseText) {
+        response.setHeader('Access-Control-Allow-Origin', '*');
+        return response.status(500).json({ 
+          error: 'No response from OpenAI API when generating address from ZIP code' 
+        });
+      }
+
+      // Clean and parse JSON
+      let cleanZipText = zipParseText.trim().replace(/```json\n?/gi, '').replace(/```\n?/g, '');
+      const jsonZipMatch = cleanZipText.match(/\{[\s\S]*\}/);
+      if (jsonZipMatch) cleanZipText = jsonZipMatch[0];
+      
+      const representativeAddress = JSON.parse(cleanZipText);
+
+      if (!representativeAddress.zip || representativeAddress.zip.length !== 5 || representativeAddress.zip !== zipCode) {
+        response.setHeader('Access-Control-Allow-Origin', '*');
+        return response.status(400).json({ 
+          error: 'Could not generate valid representative address for ZIP code',
+          details: 'OpenAI generated address did not match the requested ZIP code',
+          generated: representativeAddress
+        });
+      }
+
+      console.log('Fannie Mae API Proxy: Generated representative address from ZIP:', JSON.stringify(representativeAddress, null, 2));
+
+      // Use addresscheck endpoint with the generated representative address
+      const addressParams = {
+        number: representativeAddress.number || '123',
+        street: representativeAddress.street || 'Main Street',
+        city: representativeAddress.city || 'City',
+        state: representativeAddress.state || 'UT',
+        zip: representativeAddress.zip
+      };
+      
+      const params = new URLSearchParams(addressParams);
+      url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
+      console.log('Fannie Mae API Proxy: Using representative address with addresscheck endpoint:', url);
     }
 
     // Log exactly what we're sending
