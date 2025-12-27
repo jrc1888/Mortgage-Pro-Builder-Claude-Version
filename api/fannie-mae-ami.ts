@@ -198,48 +198,66 @@ Important:
     if (!fannieMaeResponse.ok) {
       // Read the error response body once
       let errorText = '';
+      let errorJson: any = null;
       try {
         errorText = await fannieMaeResponse.text();
-        console.error('Fannie Mae API Proxy: Error response:', errorText.substring(0, 500));
+        console.error('Fannie Mae API Proxy: Error response (raw):', errorText);
+        
+        // Try to parse as JSON
+        try {
+          errorJson = JSON.parse(errorText);
+          console.error('Fannie Mae API Proxy: Error response (parsed):', JSON.stringify(errorJson, null, 2));
+        } catch {
+          // Not JSON, use as text
+          console.error('Fannie Mae API Proxy: Error response (text):', errorText.substring(0, 500));
+        }
       } catch (error) {
         console.error('Fannie Mae API Proxy: Could not read error response body:', error);
         errorText = 'Unknown error';
       }
       console.error('Fannie Mae API Proxy: Tried URL:', url);
+      console.error('Fannie Mae API Proxy: Response status:', fannieMaeResponse.status);
       
       response.setHeader('Access-Control-Allow-Origin', '*');
+      
+      // Extract error message from Fannie Mae response
+      const fannieMaeErrorMessage = errorJson?.message || errorJson?.error || errorText.substring(0, 500);
       
       if (fannieMaeResponse.status === 401) {
         return response.status(401).json({ 
           error: 'Unauthorized - API key may be invalid or expired',
           details: 'Please verify your API key in Vercel environment variables',
-          triedUrl: url
+          triedUrl: url,
+          fannieMaeError: fannieMaeErrorMessage
         });
       } else if (fannieMaeResponse.status === 403) {
         return response.status(403).json({ 
           error: 'Forbidden - API key may not have access to this endpoint',
           details: 'Please check: 1) Your API key has access to Income Limits API, 2) The API key is correctly set in Vercel',
           triedUrl: url,
-          errorResponse: errorText.substring(0, 500)
+          fannieMaeError: fannieMaeErrorMessage
         });
       } else if (fannieMaeResponse.status === 404) {
         return response.status(404).json({ 
           error: `Income limits not found${isFullAddress ? ' for address' : ` for ZIP code ${zipCode}`}`,
-          triedUrl: url
+          triedUrl: url,
+          fannieMaeError: fannieMaeErrorMessage
         });
       } else if (fannieMaeResponse.status === 400) {
         return response.status(400).json({ 
-          error: `Bad Request - Invalid parameters${isFullAddress ? ' for address' : ` for ZIP code ${zipCode}`}`,
-          details: isFullAddress 
-            ? 'The address could not be parsed correctly or is invalid'
-            : 'The ZIP code could not be converted to a valid FIPS code',
-          triedUrl: url
+          error: `Bad Request from Fannie Mae API${isFullAddress ? ' for address' : ` for ZIP code ${zipCode}`}`,
+          details: fannieMaeErrorMessage || (isFullAddress 
+            ? 'The address may be invalid or incorrectly formatted'
+            : 'The ZIP code may be invalid or the API may not accept placeholder address values'),
+          triedUrl: url,
+          fannieMaeError: errorJson || errorText.substring(0, 1000)
         });
       } else {
         return response.status(fannieMaeResponse.status).json({ 
           error: `Fannie Mae API Error: ${fannieMaeResponse.statusText}`,
-          details: errorText.substring(0, 500),
-          triedUrl: url
+          details: fannieMaeErrorMessage,
+          triedUrl: url,
+          fannieMaeError: errorJson || errorText.substring(0, 500)
         });
       }
     }
