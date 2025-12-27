@@ -185,28 +185,30 @@ Return ONLY valid JSON, no markdown, no explanations:`;
       }
 
       // Use OpenAI to generate a representative address for the ZIP code
-      const zipToAddressPrompt = `Given a US ZIP code, generate a representative address that would be valid in that ZIP code area. This address will be used to look up income limits, so it should be a typical residential address format for that area.
+      // CRITICAL: The address must be in standard USPS format that geocoding services recognize
+      const zipToAddressPrompt = `Generate a representative address for US ZIP code ${zipCode}. 
 
-ZIP Code: ${zipCode}
+This address will be sent to Fannie Mae's geocoding-validated API, so it MUST be in standard USPS/geocoding format that address databases recognize.
 
-Return ONLY valid JSON with this structure:
+Requirements:
+- Use a COMMON street name that exists in address databases (e.g., "Main Street", "Oak Avenue", "Park Boulevard", "First Street")
+- Use the ACTUAL primary city name for ZIP code ${zipCode} (look up what cities are in this ZIP)
+- State must be the correct 2-letter abbreviation
+- ZIP must match exactly: ${zipCode}
+- Number: Use a typical residential number like "123" or "456"
+- Street format: Use FULL street type names (Street, Avenue, Boulevard, not St, Ave, Blvd)
+- AVOID quadrant-based formats (like "S 2275 E") - use standard formats only
+
+Output JSON format:
 {
   "number": "123",
   "street": "Main Street",
   "city": "City Name",
-  "state": "ST",
-  "zip": "12345"
+  "state": "UT",
+  "zip": "84121"
 }
 
-Requirements:
-- Use a common street name (e.g., "Main Street", "Oak Avenue", "Park Boulevard") 
-- Use a typical city name for that ZIP code area (you may need to look up common cities in that ZIP)
-- State must be the correct 2-letter abbreviation for that ZIP code
-- ZIP must match the input ZIP code exactly: ${zipCode}
-- Number should be a typical residential number (e.g., "123", "456", "100")
-- Street should include street type (Street, Avenue, Boulevard, etc.)
-
-Return ONLY the JSON object, no markdown, no explanations:`;
+Return ONLY valid JSON, no markdown, no explanations:`;
 
       const zipParseResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
