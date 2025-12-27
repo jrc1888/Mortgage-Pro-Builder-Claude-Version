@@ -134,19 +134,28 @@ Important:
         });
       }
 
-      console.log('Fannie Mae API Proxy: Parsed address:', parsedAddress);
+      console.log('Fannie Mae API Proxy: Parsed address:', JSON.stringify(parsedAddress, null, 2));
 
       // Use addresscheck endpoint with parsed address - using GET with query parameters
-      const params = new URLSearchParams({
+      // Build parameters carefully, ensuring no undefined/null values
+      const addressParams = {
         number: parsedAddress.number || '1',
         street: parsedAddress.street || 'Main St',
         city: parsedAddress.city || 'City',
         state: parsedAddress.state || 'UT',
         zip: parsedAddress.zip
-      });
-
-      url = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
-      console.log('Fannie Mae API Proxy: Fetching from addresscheck endpoint (GET):', url);
+      };
+      
+      console.log('Fannie Mae API Proxy: Address parameters (before encoding):', JSON.stringify(addressParams, null, 2));
+      
+      const params = new URLSearchParams(addressParams);
+      const encodedUrl = `${FANNIE_MAE_API_BASE_URL}/v1/income-limits/addresscheck?${params.toString()}`;
+      
+      console.log('Fannie Mae API Proxy: Final URL to Fannie Mae:', encodedUrl);
+      console.log('Fannie Mae API Proxy: API Key present:', !!apiKey, '(length:', apiKey?.length || 0, ')');
+      console.log('Fannie Mae API Proxy: API Key header will be: x-public-access-token');
+      
+      url = encodedUrl;
 
     } else {
       // ZIP code only - convert to FIPS code and use censustracts endpoint
@@ -200,6 +209,15 @@ Important:
       console.log('Fannie Mae API Proxy: Fetching from censustracts endpoint:', url);
     }
 
+    // Log exactly what we're sending
+    console.log('Fannie Mae API Proxy: About to call Fannie Mae API');
+    console.log('Fannie Mae API Proxy: Method: GET');
+    console.log('Fannie Mae API Proxy: URL:', url);
+    console.log('Fannie Mae API Proxy: Headers:', {
+      'Content-Type': 'application/json',
+      'x-public-access-token': apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING'
+    });
+
     fannieMaeResponse = await fetch(url, {
       method: 'GET',
       headers: {
@@ -209,6 +227,7 @@ Important:
     });
 
     console.log('Fannie Mae API Proxy: Response status:', fannieMaeResponse.status);
+    console.log('Fannie Mae API Proxy: Response headers:', Object.fromEntries(fannieMaeResponse.headers.entries()));
 
     if (!fannieMaeResponse.ok) {
       // Read the error response body once
@@ -230,8 +249,13 @@ Important:
         console.error('Fannie Mae API Proxy: Could not read error response body:', error);
         errorText = 'Unknown error';
       }
-      console.error('Fannie Mae API Proxy: Tried URL:', url);
+      console.error('Fannie Mae API Proxy: ========== ERROR DETAILS ==========');
+      console.error('Fannie Mae API Proxy: Request URL:', url);
       console.error('Fannie Mae API Proxy: Response status:', fannieMaeResponse.status);
+      console.error('Fannie Mae API Proxy: Response status text:', fannieMaeResponse.statusText);
+      console.error('Fannie Mae API Proxy: Error text (raw):', errorText);
+      console.error('Fannie Mae API Proxy: Error JSON (parsed):', JSON.stringify(errorJson, null, 2));
+      console.error('Fannie Mae API Proxy: ====================================');
       
       response.setHeader('Access-Control-Allow-Origin', '*');
       
