@@ -45,3 +45,17 @@ export const formatDate = (date: Date | string): string => {
   return `${month}/${day}/${year}`;
 };
 
+/**
+ * Calculates Annual Percentage Yield (APY) from an annual interest rate
+ * For mortgages with monthly compounding: APY = (1 + r/12)^12 - 1
+ * @param annualRate - Annual interest rate as a percentage (e.g., 6.5 for 6.5%)
+ * @param decimals - Number of decimal places for the result (default: 3)
+ * @returns APY as a percentage (e.g., 6.697 for 6.697%)
+ */
+export const calculateAPY = (annualRate: number, decimals: number = 3): number => {
+  if (annualRate <= 0) return 0;
+  const r = annualRate / 100; // Convert to decimal
+  const apy = (Math.pow(1 + r / 12, 12) - 1) * 100; // Monthly compounding
+  return parseFloat(apy.toFixed(decimals));
+};
+

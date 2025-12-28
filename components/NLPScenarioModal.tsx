@@ -3,6 +3,7 @@ import { Modal } from './Modal';
 import { Mic, Sparkles, Loader2, X, Edit2, AlertTriangle } from 'lucide-react';
 import { parseNaturalLanguage, ParsedScenarioData } from '../services/nlpParser';
 import { Scenario, LoanType } from '../types';
+import { formatPercent, calculateAPY } from '../utils/formatting';
 
 interface Props {
   isOpen: boolean;
@@ -481,7 +482,10 @@ export const NLPScenarioModal: React.FC<Props> = ({
                 {parsedData.interestRate && (
                   <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
                     <span className="text-slate-500 text-xs block mb-1">Interest Rate</span>
-                    <span className="font-semibold text-slate-900">{parsedData.interestRate}%</span>
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-slate-900">{parsedData.interestRate}%</span>
+                      <span className="text-xs font-semibold text-slate-600 mt-0.5">APY: {formatPercent(calculateAPY(parsedData.interestRate), 3)}</span>
+                    </div>
                   </div>
                 )}
                 {parsedData.creditScore && (

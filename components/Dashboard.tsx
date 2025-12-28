@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from '../services/supabaseClient';
 import { DEFAULT_SCENARIO } from '../constants';
 import { DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
 import { ScenarioComparison } from './ScenarioComparison';
+import { formatPercent, calculateAPY } from '../utils/formatting';
 
 interface Props {
   scenarios: Scenario[];
@@ -304,7 +305,10 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                     </div>
                                     <div>
                                         <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Interest Rate</span>
-                                        <span className="text-2xl font-black text-slate-900">{scenario.interestRate.toFixed(2)}%</span>
+                                        <div className="flex flex-col">
+                                            <span className="text-2xl font-black text-slate-900">{scenario.interestRate.toFixed(2)}%</span>
+                                            <span className="text-xs font-semibold text-slate-600 mt-0.5">APY: {formatPercent(calculateAPY(scenario.interestRate), 3)}</span>
+                                        </div>
                                     </div>
                                     <div>
                                         <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">LTV</span>

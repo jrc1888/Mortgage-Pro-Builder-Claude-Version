@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Scenario, CalculatedResults } from '../types';
+import { formatPercent, calculateAPY } from '../utils/formatting';
 
 interface StructuredSubmissionData {
   executiveSummary: {
@@ -170,7 +171,7 @@ export async function generateSubmissionPDF(
   addText(`Purchase Price: ${structuredData.executiveSummary.purchasePrice}`, 10);
   addText(`LTV: ${structuredData.executiveSummary.ltv}`, 10);
   addText(`Down Payment: ${structuredData.executiveSummary.downPayment}`, 10);
-  addText(`Interest Rate: ${structuredData.executiveSummary.interestRate}`, 10);
+  addText(`Interest Rate: ${structuredData.executiveSummary.interestRate} (APY: ${formatPercent(calculateAPY(scenario.interestRate), 3)})`, 10);
   addText(`Monthly Payment: ${structuredData.executiveSummary.monthlyPayment}`, 10, true);
 
   // Loan Details
@@ -184,7 +185,7 @@ export async function generateSubmissionPDF(
 
   // Monthly Payment Breakdown
   addSectionHeader('MONTHLY PAYMENT BREAKDOWN');
-  addText(`Principal & Interest: ${structuredData.monthlyPaymentBreakdown.principalAndInterest}`, 10);
+  addText(`${scenario.interestOnly ? 'Interest Only' : 'Principal & Interest'}: ${structuredData.monthlyPaymentBreakdown.principalAndInterest}`, 10);
   addText(`Property Tax: ${structuredData.monthlyPaymentBreakdown.propertyTax}`, 10);
   addText(`Home Insurance: ${structuredData.monthlyPaymentBreakdown.homeInsurance}`, 10);
   addText(`Mortgage Insurance: ${structuredData.monthlyPaymentBreakdown.mortgageInsurance}`, 10);

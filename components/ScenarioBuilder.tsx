@@ -5,7 +5,7 @@ import { calculateScenario, calculateLendersTitleInsurance } from '../services/l
 import { calculateItemCost } from '../utils/closingCosts';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
-import { formatMoney, formatPercent } from '../utils/formatting';
+import { formatMoney, formatPercent, calculateAPY } from '../utils/formatting';
 import { Modal } from './Modal';
 import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
 import { generateSubmissionPDFPreview, downloadSubmissionPDF } from '../services/submissionPDF';
@@ -1066,6 +1066,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         <LiveDecimalInput value={scenario.interestRate} onChange={(val) => handleInputChange('interestRate', val)} step="0.001" precision={3} className="h-full pl-4 pr-4 text-sm text-slate-900 text-right font-medium" />
                                         <div className={symbolRightClass}>%</div>
                                     </div>
+                                    <div className="text-[10px] text-slate-500 mt-1 ml-0.5">
+                                        APY: {formatPercent(calculateAPY(scenario.interestRate), 3)}
+                                    </div>
                                 </div>
                                 <div>
                                     <label className={labelClass}>Term (Months)</label>
@@ -2109,13 +2112,33 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
                             <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
                         </div>
-                        {/* Prominent LTV display for both Purchase and Refinance */}
-                        <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
-                            <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Loan-to-Value (LTV)</span>
-                                <span className="text-lg font-black text-indigo-600">
-                                    {formatPercent(results.ltv, 2)}
-                                </span>
+                        {/* Prominent LTV and Rate/APY display */}
+                        <div className="flex gap-2">
+                            {/* LTV - Slightly Narrower */}
+                            <div className="w-[40%] bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+                                <div className="flex justify-between items-center gap-3">
+                                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">LTV</span>
+                                    <span className="text-lg font-black text-indigo-600">
+                                        {formatPercent(results.ltv, 2)}
+                                    </span>
+                                </div>
+                            </div>
+                            {/* Rate/APY - Slightly Wider */}
+                            <div className="flex-1 bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+                                <div className="flex justify-between items-center gap-3">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">RATE</span>
+                                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">APY</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg font-black text-indigo-600">
+                                            {formatPercent(scenario.interestRate, 3)}
+                                        </span>
+                                        <span className="text-sm font-bold text-indigo-500">
+                                            {formatPercent(calculateAPY(scenario.interestRate), 3)}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2126,7 +2149,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
                     <div className="space-y-2 text-base">
                         <div className="flex justify-between items-center text-slate-600">
-                            <span>Principal & Interest</span>
+                            <span>{scenario.interestOnly ? 'Interest Only' : 'Principal & Interest'}</span>
                             <span className="font-bold text-slate-900">{formatMoney(results.monthlyPrincipalAndInterest)}</span>
                         </div>
                         <div className="flex justify-between items-center text-slate-600">

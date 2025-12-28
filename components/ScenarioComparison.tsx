@@ -2,6 +2,7 @@ import React from 'react';
 import { X, ArrowLeft } from 'lucide-react';
 import { Scenario } from '../types';
 import { calculateScenario } from '../services/loanMath';
+import { formatPercent, calculateAPY } from '../utils/formatting';
 
 interface Props {
   scenarios: Scenario[];
@@ -130,7 +131,10 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                   <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Interest Rate</td>
                   {comparisonData.map((data) => (
                     <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
-                      <span className="text-base font-bold text-slate-900">{data.scenario.interestRate.toFixed(3)}%</span>
+                      <div className="flex flex-col items-center">
+                        <span className="text-base font-bold text-slate-900">{data.scenario.interestRate.toFixed(3)}%</span>
+                        <span className="text-xs font-semibold text-slate-600">APY: {formatPercent(calculateAPY(data.scenario.interestRate), 3)}</span>
+                      </div>
                     </td>
                   ))}
                 </tr>
@@ -197,7 +201,12 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                   <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Principal & Interest</td>
                   {comparisonData.map((data) => (
                     <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
-                      <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyPrincipalAndInterest)}</span>
+                      <div className="flex flex-col items-center">
+                        {data.scenario.interestOnly && (
+                          <span className="text-[10px] font-semibold text-slate-500 mb-0.5">Interest Only</span>
+                        )}
+                        <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyPrincipalAndInterest)}</span>
+                      </div>
                     </td>
                   ))}
                 </tr>
