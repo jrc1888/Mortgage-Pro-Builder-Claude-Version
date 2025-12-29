@@ -139,6 +139,9 @@ export interface Scenario {
   interestRate: number;
   loanTermMonths: number;
   interestOnly: boolean; // New field
+  ioTermMonths: number; // Interest-only period in months (default 120)
+  piTermMonths: number; // Principal & Interest repayment period in months (default matches loanTermMonths)
+  armLoan: boolean; // Adjustable Rate Mortgage
   isDSCRLoan: boolean; // DSCR-only loan (ignores borrower income/debt, only uses rental income)
   
   // Specifics

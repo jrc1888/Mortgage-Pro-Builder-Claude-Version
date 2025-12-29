@@ -5,7 +5,7 @@ import { calculateScenario, calculateLendersTitleInsurance } from '../services/l
 import { calculateItemCost } from '../utils/closingCosts';
 import { DEFAULT_CLOSING_COSTS } from '../constants';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
-import { formatMoney, formatPercent, calculateAPY } from '../utils/formatting';
+import { formatMoney, formatPercent, calculateAPRFromScenario } from '../utils/formatting';
 import { Modal } from './Modal';
 import { generatePreApprovalFromScenario, generatePreApprovalPDFPreview } from '../services/preApprovalPDF';
 import { generateSubmissionPDFPreview, downloadSubmissionPDF } from '../services/submissionPDF';
@@ -76,7 +76,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       transactionType: (initialScenario.transactionType || 'Purchase') as 'Purchase' | 'Refinance',
       closingCosts: initialScenario.closingCosts || DEFAULT_CLOSING_COSTS,
       income: initialScenario.income || { borrower1: 0, borrower2: 0, rental: 0, other: 0 },
-      debts: initialScenario.debts || { monthlyTotal: 0 }
+      debts: initialScenario.debts || { monthlyTotal: 0 },
+      ioTermMonths: initialScenario.ioTermMonths || (initialScenario.interestOnly ? 120 : 0),
+      piTermMonths: initialScenario.piTermMonths || initialScenario.loanTermMonths
     };
     
     // Calculate DPA percent if amount is set but percent is 0
@@ -447,13 +449,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
             if (value === LoanType.FHA) newUfmip = 1.75;
             if (value === LoanType.VA) newUfmip = 2.15;
             
-            const isGov = value === LoanType.FHA || value === LoanType.VA;
-            
             return { 
                 ...prev, 
                 [field]: value, 
-                ufmipRate: newUfmip,
-                interestOnly: isGov ? false : prev.interestOnly
+                ufmipRate: newUfmip
             };
         }
         
@@ -1067,22 +1066,58 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         <div className={symbolRightClass}>%</div>
                                     </div>
                                     <div className="text-[10px] text-slate-500 mt-1 ml-0.5">
-                                        APY: {formatPercent(calculateAPY(scenario.interestRate), 3)}
+                                        APR: {formatPercent(calculateAPRFromScenario(scenario, results), 3)}
                                     </div>
                                 </div>
                                 <div>
-                                    <label className={labelClass}>Term (Months)</label>
+                                    <label className={labelClass}>Term (Mths)</label>
                                     <div className={inputGroupClass}>
                                         <input type="number" value={scenario.loanTermMonths || ''} onChange={(e) => handleNumberChange('loanTermMonths', e.target.value)} onWheel={handleWheel} className="w-full px-4 py-2 text-sm outline-none bg-transparent text-slate-900 font-medium" />
                                     </div>
                                 </div>
                             </div>
                             
-                            {(scenario.loanType === LoanType.CONVENTIONAL || scenario.loanType === LoanType.JUMBO) && (
+                            <div className="grid grid-cols-2 gap-4">
                                 <div className={`p-4 rounded-lg border transition-all ${scenario.interestOnly ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
-                                    <CustomCheckbox checked={scenario.interestOnly} onChange={(checked) => handleInputChange('interestOnly', checked)} label="Interest Only Loan" warning="Payment covers interest only." />
+                                    <CustomCheckbox checked={scenario.interestOnly} onChange={(checked) => {
+                                        handleInputChange('interestOnly', checked);
+                                        // When enabling IO, set defaults if not already set
+                                        if (checked && (!scenario.ioTermMonths || scenario.ioTermMonths === 0)) {
+                                            handleInputChange('ioTermMonths', 120);
+                                        }
+                                        if (checked && (!scenario.piTermMonths || scenario.piTermMonths === 0)) {
+                                            handleInputChange('piTermMonths', scenario.loanTermMonths);
+                                        }
+                                    }} label="I/O Loan" />
+                                    {scenario.interestOnly && (
+                                        <div className="mt-4 space-y-3">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">I/O Term (Mths)</label>
+                                                <FormattedNumberInput
+                                                    value={scenario.ioTermMonths || 120}
+                                                    onChangeValue={(val) => handleInputChange('ioTermMonths', val)}
+                                                    className="w-full h-10 px-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                                    min={1}
+                                                    max={600}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">P/I Term (Mths)</label>
+                                                <FormattedNumberInput
+                                                    value={scenario.piTermMonths || scenario.loanTermMonths}
+                                                    onChangeValue={(val) => handleInputChange('piTermMonths', val)}
+                                                    className="w-full h-10 px-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                                    min={1}
+                                                    max={600}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                                <div className={`p-4 rounded-lg border transition-all ${scenario.armLoan ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
+                                    <CustomCheckbox checked={scenario.armLoan} onChange={(checked) => handleInputChange('armLoan', checked)} label="ARM Loan" />
+                                </div>
+                            </div>
 
                              {scenario.loanType === LoanType.FHA && (
                                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -1103,15 +1138,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             
                             {scenario.loanType === LoanType.VA && (
                                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-3">VA Details</p>
-                                    <label className={labelClass}>Funding Fee %</label>
-                                    <div className={`${inputGroupClass} mb-4`}>
-                                         <input type="number" step="0.01" value={scenario.ufmipRate || ''} onChange={(e) => handleNumberChange('ufmipRate', e.target.value)} onWheel={handleWheel} className="w-full pl-4 pr-4 text-sm text-right outline-none bg-transparent font-medium" />
-                                         <div className={symbolRightClass}>%</div>
-                                    </div>
-                                     <div className="flex justify-between items-center text-sm text-slate-600">
-                                        <span>Financed Fee</span>
-                                        <span className="font-mono font-medium text-slate-900">{formatMoney(results.financedMIP)}</span>
+                                    <label className={labelClass}>VA FUNDING FEE</label>
+                                    <div className="flex items-center gap-4">
+                                        <div className={`${inputGroupClass} flex-1`}>
+                                             <input type="number" step="0.01" value={scenario.ufmipRate || ''} onChange={(e) => handleNumberChange('ufmipRate', e.target.value)} onWheel={handleWheel} className="w-full pl-4 pr-4 text-sm text-right outline-none bg-transparent font-medium" />
+                                             <div className={symbolRightClass}>%</div>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                                            <span>Financed:</span>
+                                            <span className="font-mono font-medium text-slate-900">{formatMoney(results.financedMIP)}</span>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -1732,7 +1768,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     </div>
                                 </div>
                                 <div>
-                                    <label className={labelClass}>Term (Months)</label>
+                                    <label className={labelClass}>Term (Mths)</label>
                                     <div className={inputGroupClass}>
                                         <input type="number" value={scenario.dpa.termMonths || ''} onChange={(e) => setScenario(prev => ({...prev, dpa: {...prev.dpa, termMonths: parseFloat(e.target.value)}}))} onWheel={handleWheel} className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium" />
                                     </div>
@@ -1845,7 +1881,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         </div>
                                     </div>
                                     <div>
-                                        <label className={labelClass}>Term (Months)</label>
+                                        <label className={labelClass}>Term (Mths)</label>
                                         <div className={inputGroupClass}>
                                             <input 
                                                 type="number" 
@@ -2112,7 +2148,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
                             <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
                         </div>
-                        {/* Prominent LTV and Rate/APY display */}
+                        {/* Prominent LTV and Rate/APR display */}
                         <div className="flex gap-2">
                             {/* LTV - Slightly Narrower */}
                             <div className="w-[40%] bg-indigo-50 rounded-lg p-3 border border-indigo-100">
@@ -2123,19 +2159,19 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     </span>
                                 </div>
                             </div>
-                            {/* Rate/APY - Slightly Wider */}
+                            {/* Rate/APR - Slightly Wider */}
                             <div className="flex-1 bg-indigo-50 rounded-lg p-3 border border-indigo-100">
                                 <div className="flex justify-between items-center gap-3">
                                     <div className="flex flex-col">
                                         <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">RATE</span>
-                                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">APY</span>
+                                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">APR</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg font-black text-indigo-600">
                                             {formatPercent(scenario.interestRate, 3)}
                                         </span>
                                         <span className="text-sm font-bold text-indigo-500">
-                                            {formatPercent(calculateAPY(scenario.interestRate), 3)}
+                                            {formatPercent(calculateAPRFromScenario(scenario, results), 3)}
                                         </span>
                                     </div>
                                 </div>
@@ -2149,7 +2185,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
                     <div className="space-y-2 text-base">
                         <div className="flex justify-between items-center text-slate-600">
-                            <span>{scenario.interestOnly ? 'Interest Only' : 'Principal & Interest'}</span>
+                            <span>{scenario.interestOnly ? 'I/O' : 'P/I'}</span>
                             <span className="font-bold text-slate-900">{formatMoney(results.monthlyPrincipalAndInterest)}</span>
                         </div>
                         <div className="flex justify-between items-center text-slate-600">

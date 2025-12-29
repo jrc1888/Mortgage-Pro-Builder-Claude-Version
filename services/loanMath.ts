@@ -118,9 +118,18 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   const monthlyRate = (interestRate / 100) / 12;
   let monthlyPrincipalAndInterest = 0;
 
-  if (scenario.interestOnly && (scenario.loanType === LoanType.CONVENTIONAL || scenario.loanType === LoanType.JUMBO)) {
-    // Interest Only Calculation: Loan Amount * Annual Rate / 12
+  if (scenario.interestOnly) {
+    // Interest Only Calculation: During IO period, only interest is paid
+    // After IO period, loan amortizes over P&I term
+    const ioTermMonths = scenario.ioTermMonths || 120;
+    const piTermMonths = scenario.piTermMonths || loanTermMonths;
+    
+    // For display purposes, show the IO payment (which is what borrower pays during IO period)
+    // The actual payment will change after IO period, but we show the initial IO payment
     monthlyPrincipalAndInterest = totalLoanAmount * monthlyRate;
+    
+    // Note: The full payment schedule (IO + amortizing) is handled in APR calculation
+    // This monthly payment is for display/qualifying purposes during the IO period
   } else {
     // Standard Amortization
     monthlyPrincipalAndInterest = calculatePMT(monthlyRate, loanTermMonths, totalLoanAmount);

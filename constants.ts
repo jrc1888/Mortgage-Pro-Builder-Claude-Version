@@ -77,6 +77,9 @@ export const DEFAULT_SCENARIO: Scenario = {
   interestRate: 6.5,
   loanTermMonths: 360,
   interestOnly: false,
+  ioTermMonths: 120, // Default 10 years IO
+  piTermMonths: 360, // Default matches loan term
+  armLoan: false,
   isDSCRLoan: false,
   creditScore: 740,
   manualMI: null,

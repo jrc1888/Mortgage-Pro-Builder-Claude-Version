@@ -3,7 +3,8 @@ import { Modal } from './Modal';
 import { Mic, Sparkles, Loader2, X, Edit2, AlertTriangle } from 'lucide-react';
 import { parseNaturalLanguage, ParsedScenarioData } from '../services/nlpParser';
 import { Scenario, LoanType } from '../types';
-import { formatPercent, calculateAPY } from '../utils/formatting';
+import { formatPercent, calculateAPRFromScenario } from '../utils/formatting';
+import { calculateScenario } from '../services/loanMath';
 
 interface Props {
   isOpen: boolean;
@@ -479,15 +480,22 @@ export const NLPScenarioModal: React.FC<Props> = ({
                     <span className="font-semibold text-slate-900">{parsedData.loanType}</span>
                   </div>
                 )}
-                {parsedData.interestRate && (
-                  <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
-                    <span className="text-slate-500 text-xs block mb-1">Interest Rate</span>
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-slate-900">{parsedData.interestRate}%</span>
-                      <span className="text-xs font-semibold text-slate-600 mt-0.5">APY: {formatPercent(calculateAPY(parsedData.interestRate), 3)}</span>
+                {parsedData.interestRate && (() => {
+                  // Create a temporary scenario to calculate APR
+                  const tempScenario = { ...defaultScenario, interestRate: parsedData.interestRate };
+                  const tempResults = calculateScenario(tempScenario);
+                  return (
+                    <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                      <span className="text-slate-500 text-xs block mb-1">Interest Rate</span>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-slate-900">{parsedData.interestRate}%</span>
+                        <span className="text-xs font-semibold text-slate-600 mt-0.5">
+                          APR: {formatPercent(calculateAPRFromScenario(tempScenario, tempResults), 3)}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
                 {parsedData.creditScore && (
                   <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
                     <span className="text-slate-500 text-xs block mb-1">Credit Score</span>
