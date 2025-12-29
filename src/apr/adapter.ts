@@ -119,12 +119,26 @@ export function scenarioToAPRInput(
     };
   });
 
-  // Add lender credits if applicable
-  const credits = scenario.showLenderCredits && scenario.lenderCredits > 0
+  // Add lender credits and seller credits if applicable
+  // Note: Seller credits reduce finance charges if used to pay finance charges (per Reg Z)
+  const lenderCreditAmount = scenario.showLenderCredits && scenario.lenderCredits > 0
+    ? (scenario.lenderCreditsMode === 'fixed' 
+        ? scenario.lenderCredits 
+        : (results.totalLoanAmount * scenario.lenderCredits / 100))
+    : 0;
+  
+  // Seller concessions: If they exceed closing costs, they don't affect APR.
+  // If they're used to pay finance charges, they reduce finance charges.
+  // For simplicity, we assume seller credits reduce finance charges proportionally
+  // (this is a conservative approach - actual treatment depends on how credits are applied)
+  const sellerCreditAmount = scenario.showSellerConcessions && results.sellerConcessionsAmount > 0
+    ? results.sellerConcessionsAmount
+    : 0;
+  
+  const credits = (lenderCreditAmount > 0 || sellerCreditAmount > 0)
     ? {
-        lender_credit: scenario.lenderCreditsMode === 'fixed' 
-          ? scenario.lenderCredits 
-          : (results.totalLoanAmount * scenario.lenderCredits / 100)
+        lender_credit: lenderCreditAmount > 0 ? lenderCreditAmount : undefined,
+        seller_credit: sellerCreditAmount > 0 ? sellerCreditAmount : undefined
       }
     : undefined;
 

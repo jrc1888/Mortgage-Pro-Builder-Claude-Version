@@ -20,11 +20,11 @@ export class PaymentScheduleGenerator {
     let currentBalance = input.base_loan_amount;
 
     // Add financed upfront fees to note balance
+    // All financed upfront fees (UFMIP, VA funding fee) add to note balance
     if (input.financed_upfront_fees) {
       input.financed_upfront_fees.forEach(fee => {
-        if (fee.is_finance_charge || true) { // Financed fees add to note balance
-          currentBalance += fee.amount;
-        }
+        // Financed upfront fees always add to note balance
+        currentBalance += fee.amount;
       });
     }
 

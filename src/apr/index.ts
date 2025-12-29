@@ -51,6 +51,37 @@ export class APRCalculator {
       maxIterations: 100,
       initialGuess: input.note_rate_initial // Start with interest rate
     });
+    
+    // Validate solver converged
+    if (!solverResult.converged) {
+      throw new Error(
+        `APR solver did not converge after ${solverResult.iterations} iterations. ` +
+        `This may indicate invalid input data. ` +
+        `Net Amount Financed: $${netAmountFinanced.toLocaleString()}, ` +
+        `Payment Schedule Length: ${paymentSchedule.length} periods.`
+      );
+    }
+    
+    // Validate APR is reasonable
+    // APR should always be >= interest rate when finance charges exist
+    // APR can be < interest rate only if there are negative finance charges (credits > fees)
+    if (financeCharges.total > 0 && solverResult.apr < input.note_rate_initial * 100) {
+      throw new Error(
+        `APR calculation error: APR (${solverResult.apr.toFixed(3)}%) is less than interest rate ` +
+        `(${(input.note_rate_initial * 100).toFixed(3)}%) despite positive finance charges ` +
+        `($${financeCharges.total.toLocaleString()}). This violates Reg Z requirements. ` +
+        `Net Amount Financed: $${netAmountFinanced.toLocaleString()}, ` +
+        `Note Amount: $${noteAmount.toLocaleString()}.`
+      );
+    }
+    
+    // Validate APR is within reasonable bounds (0% to 100%)
+    if (solverResult.apr < 0 || solverResult.apr > 100) {
+      throw new Error(
+        `APR calculation error: APR (${solverResult.apr.toFixed(3)}%) is outside valid range (0-100%). ` +
+        `This indicates a calculation error.`
+      );
+    }
 
     // Step 7: Get payment schedule summary
     const scheduleSummary = PaymentScheduleGenerator.getSummary(paymentSchedule);
@@ -110,9 +141,12 @@ export class APRCalculator {
           } else if (fc.fee.paid_by === 'financed') {
             financed += amount;
           }
-        } else if (amount < 0 && fc.fee.paid_by === 'lender_credit') {
+        } else if (amount < 0) {
           // Negative fee (credit) reduces finance charges
-          cash += amount; // Subtract
+          // Both lender credits and seller credits reduce finance charges
+          if (fc.fee.paid_by === 'lender_credit' || fc.fee.paid_by === 'seller_credit') {
+            cash += amount; // Subtract (amount is already negative)
+          }
         }
       }
     });

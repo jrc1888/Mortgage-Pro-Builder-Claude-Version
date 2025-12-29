@@ -204,6 +204,9 @@ export class FeeClassifier {
     }
 
     if (sellerCredit && sellerCredit > 0) {
+      // Per Reg Z, seller credits that are used to pay finance charges reduce finance charges
+      // For APR purposes, we treat seller credits as reducing finance charges
+      // (This is conservative - actual treatment depends on how credits are applied at closing)
       creditFees.push({
         name: 'Seller Credit',
         amount: -sellerCredit, // Negative amount
@@ -211,7 +214,7 @@ export class FeeClassifier {
         paid_by: 'seller_credit',
         required_for_credit: false,
         category: 'other',
-        notes: 'Seller credit (typically not a finance charge reduction, but may offset costs)'
+        notes: 'Seller credit reduces finance charges if used to pay finance charges (per Reg Z)'
       });
     }
 

@@ -120,10 +120,27 @@ export function calculateAPRFromScenario(
       });
     }
     
-    // Ensure APR is reasonable (should be >= interest rate when fees exist)
+    // Validate APR result (additional validation beyond what APRCalculator does)
     const interestRate = scenario.interestRate;
+    
+    // Check solver convergence
+    if (!aprResult.debug_breakdown.solver_converged) {
+      console.error('APR solver did not converge. Using result but accuracy may be compromised:', {
+        apr: aprResult.apr_annual,
+        iterations: aprResult.debug_breakdown.solver_iterations,
+        loanType: scenario.loanType
+      });
+      // Note: We don't throw here because APRCalculator already validates convergence
+      // This is just a safety check in case validation was bypassed
+    }
+    
+    // Final sanity check: APR should be >= interest rate when finance charges exist
+    // (Exception: if credits exceed fees, APR could be lower, but that's rare)
     if (aprResult.total_finance_charges > 0 && aprResult.apr_annual < interestRate) {
-      console.warn('APR is lower than interest rate despite finance charges. Debug info:', {
+      const errorMsg = `APR validation failed: APR (${aprResult.apr_annual.toFixed(3)}%) is less than interest rate ` +
+        `(${interestRate.toFixed(3)}%) despite positive finance charges ($${aprResult.total_finance_charges.toLocaleString()}). ` +
+        `This should have been caught by APRCalculator validation.`;
+      console.error(errorMsg, {
         apr: aprResult.apr_annual,
         interestRate,
         financeCharges: aprResult.total_finance_charges,
@@ -132,6 +149,8 @@ export function calculateAPRFromScenario(
         converged: aprResult.debug_breakdown.solver_converged,
         loanType: scenario.loanType
       });
+      // Throw error to prevent incorrect APR from being used
+      throw new Error(errorMsg);
     }
     
     return aprResult.apr_annual;
