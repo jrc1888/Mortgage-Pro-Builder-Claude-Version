@@ -24,7 +24,7 @@ export class PaymentScheduleGenerator {
     if (input.financed_upfront_fees) {
       input.financed_upfront_fees.forEach(fee => {
         // Financed upfront fees always add to note balance
-        currentBalance += fee.amount;
+          currentBalance += fee.amount;
       });
     }
 

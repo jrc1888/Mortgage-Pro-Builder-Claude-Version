@@ -1381,10 +1381,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             </div>
                         )}
 
-                        {/* Lender Credit - Wider box (2x width) */}
-                        <div className={`${scenario.transactionType === 'Refinance' ? 'col-span-2' : 'col-span-2'} bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between`}>
+                        {/* Lender Credit - Wider box for refinances, normal size for purchases */}
+                        <div className={`${scenario.transactionType === 'Refinance' ? 'col-span-2' : 'col-span-1'} bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between`}>
                             <div className="flex justify-between items-center">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-0.5">Lender Credit</label>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-0.5">L.C.</label>
                                 <button onClick={() => setScenario(prev => ({ ...prev, showLenderCredits: !prev.showLenderCredits }))} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showLenderCredits ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
                                     <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm transform transition-transform ${scenario.showLenderCredits ? 'translate-x-3.5' : ''}`}></div>
                                 </button>
@@ -1759,7 +1759,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         {/* Lender Credit - Separate Line */}
                                         {scenario.showLenderCredits && results.lenderCreditsAmount > 0 && (
                                             <div className="flex justify-between items-center">
-                                                <span className="text-sm font-medium text-emerald-600">Lender Credit</span>
+                                                <span className="text-sm font-medium text-emerald-600">L.C.</span>
                                                 <span className="text-base font-bold text-emerald-600">-{formatMoney(results.lenderCreditsAmount)}</span>
                                             </div>
                                         )}

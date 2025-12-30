@@ -123,7 +123,7 @@ export function scenarioToAPRInput(
   // Note: Seller credits reduce finance charges if used to pay finance charges (per Reg Z)
   const lenderCreditAmount = scenario.showLenderCredits && scenario.lenderCredits > 0
     ? (scenario.lenderCreditsMode === 'fixed' 
-        ? scenario.lenderCredits 
+          ? scenario.lenderCredits 
         : (results.totalLoanAmount * scenario.lenderCredits / 100))
     : 0;
   

@@ -51,7 +51,7 @@ export class APRCalculator {
       maxIterations: 100,
       initialGuess: input.note_rate_initial // Start with interest rate
     });
-    
+
     // Validate solver converged
     if (!solverResult.converged) {
       throw new Error(

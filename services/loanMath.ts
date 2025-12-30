@@ -518,8 +518,8 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
         if (ltv > 90) maxConcessionsPercent = 3;
         else if (ltv > 75) maxConcessionsPercent = 6;
         else maxConcessionsPercent = 9;
-    } else {
-        maxConcessionsPercent = 0; // Jumbo varies
+    } else if (scenario.loanType === LoanType.JUMBO) {
+        maxConcessionsPercent = 3; // Jumbo minimum is 3%, can go higher but using 3% for now
     }
   }
   
