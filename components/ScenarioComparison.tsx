@@ -200,12 +200,12 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
                   </td>
                 </tr>
                 <tr className="bg-white border-b border-slate-100">
-                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">P/I</td>
+                  <td className="px-6 py-3 text-sm font-semibold text-slate-700 border-r border-slate-200">Principal and Interest</td>
                   {comparisonData.map((data) => (
                     <td key={data.scenario.id} className="px-6 py-3 text-center border-l border-slate-200">
                       <div className="flex flex-col items-center">
                         {data.scenario.interestOnly && (
-                          <span className="text-[10px] font-semibold text-slate-500 mb-0.5">I/O</span>
+                          <span className="text-[10px] font-semibold text-slate-500 mb-0.5">Interest Only</span>
                         )}
                         <span className="text-base font-bold text-slate-900">{formatMoney(data.results.monthlyPrincipalAndInterest)}</span>
                       </div>

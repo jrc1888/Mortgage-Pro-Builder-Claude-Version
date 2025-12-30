@@ -118,7 +118,7 @@ export interface Scenario {
   isPinned?: boolean; // Pinned scenarios appear first in client folder
   
   // Property Financials
-  purchasePrice: number;
+  purchasePrice: number; // For purchases; for refinances, this represents property/appraised value
   earnestMoney: number;
   sellerConcessions: number; // New field ($ amount)
   showSellerConcessions: boolean; // UI Toggle
@@ -129,6 +129,16 @@ export interface Scenario {
   propertyTaxYearly: number;
   homeInsuranceYearly: number;
   hoaMonthly: number;
+  
+  // Refinance-specific fields
+  refinanceType?: 'rate_and_term' | 'cash_out'; // Only applicable when transactionType === 'Refinance'
+  refinanceLoanAmount?: number; // Manual loan amount input for refinances (works backwards to calculate cash out/needed)
+  existingLoanPayoff?: number; // First mortgage payoff amount
+  secondMortgagePayoff?: number; // Second mortgage payoff amount (if applicable)
+  cashOutAmount?: number; // Desired cash out amount (only for cash_out refi)
+  cashOutCalculationMode?: 'specified' | 'maximum'; // How cash out is determined
+  financeClosingCosts?: boolean; // Whether to finance closing costs in loan (default: true for refis)
+  cashOutRateAdjustment?: number; // Additional rate for cash-out refi (default: 0.25-0.50%, user customizable)
 
   // Loan Logic
   loanType: LoanType;
@@ -250,5 +260,23 @@ export interface CalculatedResults {
     grossRentalIncome: number;
     debtService: number;
     passes: boolean; // true if >= 1.0
+  };
+  
+  // Refinance-specific results (only populated for refinances)
+  refinanceDetails?: {
+    propertyValue: number;
+    existingLoanPayoff: number; // First mortgage
+    secondMortgagePayoff: number; // Second mortgage (if applicable)
+    totalPayoff: number; // Sum of first + second
+    cashOutRequested: number; // Original requested cash out
+    cashOutAmount: number; // Actual cash out (may be reduced)
+    cashOutReduced: boolean; // Flag if cash out was reduced due to LTV
+    maxCashOutAvailable: number; // Maximum cash out available
+    financedClosingCosts: number; // Amount of closing costs financed
+    netCashToBorrower: number; // Cash out - any cash needed at closing (can be negative)
+    cashNeededAtClosing: number; // If negative netCashToBorrower, this is the amount needed
+    maxLoanAmount: number; // Maximum loan amount based on LTV
+    baseLoanAmountBeforeUFMIP: number; // Base loan before UFMIP (for LTV calculation)
+    useManualLoanAmount?: boolean; // Flag indicating loan amount was manually entered (work backwards)
   };
 }

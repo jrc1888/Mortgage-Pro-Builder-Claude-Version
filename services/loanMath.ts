@@ -2,6 +2,7 @@
 
 import { Scenario, CalculatedResults, LoanType } from '../types';
 import { calculateItemCost } from '../utils/closingCosts';
+import { getMaxLTVForRefinance, calculateMaxCashOut, getRefinanceInterestRate } from './refinanceHelpers';
 
 export const calculatePMT = (rate: number, nper: number, pv: number): number => {
   if (rate === 0 || nper === 0) return 0;
@@ -85,34 +86,117 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // Ensure we work with numbers even if state has bad data
   const purchasePrice = safeNum(scenario.purchasePrice);
   const downPaymentAmount = safeNum(scenario.downPaymentAmount);
-  const interestRate = safeNum(scenario.interestRate);
+  let interestRate = safeNum(scenario.interestRate);
   const loanTermMonths = safeNum(scenario.loanTermMonths) || 360;
   const propertyTaxYearly = safeNum(scenario.propertyTaxYearly);
   const homeInsuranceYearly = safeNum(scenario.homeInsuranceYearly);
   const hoaMonthly = safeNum(scenario.hoaMonthly);
-  const earnestMoney = safeNum(scenario.earnestMoney);
+  // For refinances: Earnest money is not applicable (no purchase contract)
+  const earnestMoney = scenario.transactionType === 'Refinance' ? 0 : safeNum(scenario.earnestMoney);
   
   // Logic Update: Only calculate credits if toggled ON.
   // The raw values remain in the scenario object for persistence, but we treat them as 0 for math if hidden.
-  const sellerConcessionsInput = scenario.showSellerConcessions ? safeNum(scenario.sellerConcessions) : 0;
+  // For refinances: Seller concessions are not applicable (no seller in a refi)
+  const sellerConcessionsInput = (scenario.transactionType === 'Refinance' || !scenario.showSellerConcessions) 
+    ? 0 
+    : safeNum(scenario.sellerConcessions);
+
+  // REFINANCE LOGIC
+  const isRefinance = scenario.transactionType === 'Refinance';
+  let refinanceDetails: CalculatedResults['refinanceDetails'] | undefined = undefined;
+  
+  if (isRefinance) {
+    // For refinances, property value is stored in purchasePrice
+    const propertyValue = purchasePrice;
+    
+    // Get existing loan payoffs
+    const existingLoanPayoff = safeNum(scenario.existingLoanPayoff);
+    const secondMortgagePayoff = safeNum(scenario.secondMortgagePayoff);
+    const totalPayoff = existingLoanPayoff + secondMortgagePayoff;
+    
+    // Use rate and term LTV limits (more conservative, but we'll allow cash back if it occurs)
+    // For now, use rate and term limits - cash out classification happens if cash back > 1%
+    const maxLTV = getMaxLTVForRefinance(
+      scenario.loanType,
+      'rate_and_term', // Use rate and term limits
+      scenario.creditScore
+    );
+    
+    // Calculate maximum base loan amount (before UFMIP)
+    // Note: For FHA, UFMIP can be added on top, so base loan can be up to maxLTV
+    const maxBaseLoanAmount = propertyValue * (maxLTV / 100);
+    
+    // Determine if closing costs should be financed (default: true for refis)
+    const financeClosingCosts = scenario.financeClosingCosts !== false; // Default to true
+    
+    // Check if user has manually entered a loan amount
+    const manualLoanAmount = safeNum(scenario.refinanceLoanAmount);
+    const useManualLoanAmount = manualLoanAmount > 0;
+    
+    let baseLoanAmountBeforeUFMIP = 0;
+    
+    if (useManualLoanAmount) {
+      // Manual loan amount mode: work backwards from loan amount
+      baseLoanAmountBeforeUFMIP = manualLoanAmount; // Will subtract UFMIP later
+    } else {
+      // Forward calculation: start with payoffs + estimated closing costs
+      // This will be finalized after closing costs are calculated
+      const estimatedClosingCosts = 0; // Will be calculated properly later
+      baseLoanAmountBeforeUFMIP = Math.min(totalPayoff + (financeClosingCosts ? estimatedClosingCosts : 0), maxBaseLoanAmount);
+    }
+    
+    // Store refinance details (will be updated after closing costs calculation)
+    refinanceDetails = {
+      propertyValue,
+      existingLoanPayoff,
+      secondMortgagePayoff,
+      totalPayoff,
+      cashOutRequested: 0, // Not used in new logic
+      cashOutAmount: 0, // Will be calculated as equity
+      cashOutReduced: false,
+      maxCashOutAvailable: 0,
+      financedClosingCosts: 0, // Will be calculated later
+      netCashToBorrower: 0, // Will be calculated later
+      cashNeededAtClosing: 0, // Will be calculated later
+      maxLoanAmount: maxBaseLoanAmount,
+      baseLoanAmountBeforeUFMIP,
+      useManualLoanAmount
+    };
+  }
 
   // 1. Base Numbers
-  let baseLoanAmount = purchasePrice - downPaymentAmount;
+  // For purchases: baseLoanAmount = purchasePrice - downPaymentAmount
+  // For refinances: baseLoanAmount will be calculated based on payoff + costs + cash out
+  let baseLoanAmount: number;
+  
+  if (isRefinance && refinanceDetails) {
+    // For refinances, we'll calculate this after closing costs
+    // For now, use a placeholder that will be updated
+    baseLoanAmount = refinanceDetails.baseLoanAmountBeforeUFMIP;
+  } else {
+    // Purchase: standard calculation
+    baseLoanAmount = purchasePrice - downPaymentAmount;
+  }
   
   // 2. Upfront MIP / Funding Fee Logic
+  // For refinances, this will be recalculated after base loan is finalized
   let ufmipRate = 0;
   if (scenario.loanType === LoanType.FHA) {
-    ufmipRate = 0.0175; // 1.75% standard
+    ufmipRate = 0.0175; // 1.75% standard (for purchases and standard refis)
+    // Note: FHA streamline refis use 0.01% but we'll use standard for now
   } else if (scenario.loanType === LoanType.VA) {
     ufmipRate = scenario.ufmipRate > 0 ? scenario.ufmipRate / 100 : 0.0215; 
   }
   
-  const financedMIP = (scenario.loanType === LoanType.FHA || scenario.loanType === LoanType.VA) 
+  let financedMIP = (scenario.loanType === LoanType.FHA || scenario.loanType === LoanType.VA) 
     ? baseLoanAmount * ufmipRate 
     : 0;
 
-  const totalLoanAmount = baseLoanAmount + financedMIP;
-  const ltv = purchasePrice > 0 ? (baseLoanAmount / purchasePrice) * 100 : 0;
+  let totalLoanAmount = baseLoanAmount + financedMIP;
+  
+  // LTV calculation: use property value for refis, purchase price for purchases
+  const propertyValueForLTV = isRefinance ? (refinanceDetails?.propertyValue || purchasePrice) : purchasePrice;
+  const ltv = propertyValueForLTV > 0 ? (baseLoanAmount / propertyValueForLTV) * 100 : 0;
 
   // 3. Monthly P&I
   const monthlyRate = (interestRate / 100) / 12;
@@ -276,10 +360,146 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     return sum + itemCost;
   }, 0) + buydownCost;
   
+  // REFINANCE: Finalize loan amount and calculate equity/cash to borrower
+  if (isRefinance && refinanceDetails) {
+    const propertyValue = refinanceDetails.propertyValue;
+    const totalPayoff = refinanceDetails.totalPayoff;
+    const maxBaseLoanAmount = refinanceDetails.maxLoanAmount;
+    
+    // Determine how much closing costs to finance (default: finance up to available)
+    const financeClosingCosts = scenario.financeClosingCosts !== false; // Default true
+    
+    // Check if using manual loan amount (work backwards)
+    const useManualLoanAmount = refinanceDetails.useManualLoanAmount && safeNum(scenario.refinanceLoanAmount) > 0;
+    
+    if (useManualLoanAmount) {
+      // Manual loan amount mode: work backwards from user-entered loan amount
+      const manualLoanAmount = safeNum(scenario.refinanceLoanAmount);
+      
+      // Calculate UFMIP rate
+      let ufmipRateRefi = 0;
+      if (scenario.loanType === LoanType.FHA) {
+        ufmipRateRefi = 0.0175;
+      } else if (scenario.loanType === LoanType.VA) {
+        ufmipRateRefi = scenario.ufmipRate > 0 ? scenario.ufmipRate / 100 : 0.0215;
+      }
+      
+      // Calculate base loan amount (before UFMIP)
+      // manualLoanAmount = baseLoanAmount + (baseLoanAmount * ufmipRate)
+      // baseLoanAmount = manualLoanAmount / (1 + ufmipRate)
+      const finalBaseLoanAmountBeforeUFMIP = ufmipRateRefi > 0 
+        ? manualLoanAmount / (1 + ufmipRateRefi)
+        : manualLoanAmount;
+      
+      // Calculate how much closing costs can be financed
+      let financedClosingCostsAmount = 0;
+      if (financeClosingCosts) {
+        // Available for closing costs = base loan - payoff
+        const availableForCosts = finalBaseLoanAmountBeforeUFMIP - totalPayoff;
+        financedClosingCostsAmount = Math.min(totalClosingCosts, Math.max(0, availableForCosts));
+      }
+      
+      // Calculate equity/cash: Base Loan - Payoffs - Financed Closing Costs
+      const equity = finalBaseLoanAmountBeforeUFMIP - totalPayoff - financedClosingCostsAmount;
+      
+      refinanceDetails.financedClosingCosts = financedClosingCostsAmount;
+      refinanceDetails.baseLoanAmountBeforeUFMIP = finalBaseLoanAmountBeforeUFMIP;
+      refinanceDetails.cashOutAmount = Math.max(0, equity); // Cash back (if positive)
+      
+      // Update base loan amount
+      baseLoanAmount = finalBaseLoanAmountBeforeUFMIP;
+      
+      // Recalculate UFMIP and total loan amount
+      financedMIP = (scenario.loanType === LoanType.FHA || scenario.loanType === LoanType.VA)
+        ? baseLoanAmount * ufmipRateRefi
+        : 0;
+      
+      totalLoanAmount = baseLoanAmount + financedMIP;
+      
+      // Calculate net cash to borrower (including lender credits and unfinanced costs)
+      const lenderCreditsForCashCalc = scenario.showLenderCredits 
+        ? (scenario.lenderCreditsMode === 'percent' 
+            ? totalLoanAmount * (safeNum(scenario.lenderCredits) / 100)
+            : safeNum(scenario.lenderCredits))
+        : 0;
+      
+      const unfinancedCosts = totalClosingCosts - financedClosingCostsAmount;
+      // Net cash = equity (cash back from loan) + lender credits - unfinanced costs
+      refinanceDetails.netCashToBorrower = equity + lenderCreditsForCashCalc - unfinancedCosts;
+      
+      if (refinanceDetails.netCashToBorrower < 0) {
+        refinanceDetails.cashNeededAtClosing = Math.abs(refinanceDetails.netCashToBorrower);
+      } else {
+        refinanceDetails.cashNeededAtClosing = 0;
+      }
+    } else {
+      // Forward calculation mode: calculate loan from payoffs and costs
+      // Calculate how much closing costs can be financed (up to available in loan)
+      let financedClosingCostsAmount = 0;
+      if (financeClosingCosts) {
+        // Available for closing costs = max base loan - payoff
+        const availableForCosts = maxBaseLoanAmount - totalPayoff;
+        financedClosingCostsAmount = Math.min(totalClosingCosts, Math.max(0, availableForCosts));
+      }
+      refinanceDetails.financedClosingCosts = financedClosingCostsAmount;
+      
+      // Calculate base loan amount: payoffs + financed closing costs
+      // This may result in equity (cash back) if base loan > payoffs + costs
+      let finalBaseLoanAmountBeforeUFMIP = totalPayoff + financedClosingCostsAmount;
+      
+      // Cap at max LTV
+      finalBaseLoanAmountBeforeUFMIP = Math.min(finalBaseLoanAmountBeforeUFMIP, maxBaseLoanAmount);
+      
+      // Calculate equity: Base Loan - Payoffs - Financed Closing Costs
+      const equity = finalBaseLoanAmountBeforeUFMIP - totalPayoff - financedClosingCostsAmount;
+      
+      // Update base loan amount for refinance
+      baseLoanAmount = finalBaseLoanAmountBeforeUFMIP;
+      refinanceDetails.baseLoanAmountBeforeUFMIP = finalBaseLoanAmountBeforeUFMIP;
+      refinanceDetails.cashOutAmount = Math.max(0, equity); // Cash back (if positive)
+      
+      // Recalculate UFMIP based on new base loan amount
+      let ufmipRateRefi = 0;
+      if (scenario.loanType === LoanType.FHA) {
+        ufmipRateRefi = 0.0175;
+      } else if (scenario.loanType === LoanType.VA) {
+        ufmipRateRefi = scenario.ufmipRate > 0 ? scenario.ufmipRate / 100 : 0.0215;
+      }
+      
+      // Update UFMIP and total loan amount for refinance
+      financedMIP = (scenario.loanType === LoanType.FHA || scenario.loanType === LoanType.VA)
+        ? baseLoanAmount * ufmipRateRefi
+        : 0;
+      
+      totalLoanAmount = baseLoanAmount + financedMIP;
+      
+      // Calculate net cash to borrower (including lender credits and unfinanced costs)
+      const lenderCreditsForCashCalc = scenario.showLenderCredits 
+        ? (scenario.lenderCreditsMode === 'percent' 
+            ? totalLoanAmount * (safeNum(scenario.lenderCredits) / 100)
+            : safeNum(scenario.lenderCredits))
+        : 0;
+      
+      const unfinancedCosts = totalClosingCosts - financedClosingCostsAmount;
+      // Net cash = equity (cash back from loan) + lender credits - unfinanced costs
+      refinanceDetails.netCashToBorrower = equity + lenderCreditsForCashCalc - unfinancedCosts;
+      
+      if (refinanceDetails.netCashToBorrower < 0) {
+        refinanceDetails.cashNeededAtClosing = Math.abs(refinanceDetails.netCashToBorrower);
+      } else {
+        refinanceDetails.cashNeededAtClosing = 0;
+      }
+    }
+  }
+
   // 8. Seller Concessions & Lender Credits Logic
-  const sellerConcessionsPercent = purchasePrice > 0 ? (sellerConcessionsInput / purchasePrice) * 100 : 0;
+  // For refinances: Seller concessions are not applicable
+  const propertyValueForCalc = isRefinance ? (refinanceDetails?.propertyValue || purchasePrice) : purchasePrice;
+  const sellerConcessionsPercent = (!isRefinance && propertyValueForCalc > 0) 
+    ? (sellerConcessionsInput / propertyValueForCalc) * 100 
+    : 0;
   
-  // Lender Credits
+  // Lender Credits (applicable to both purchases and refinances)
   const lenderCreditsVal = scenario.showLenderCredits ? safeNum(scenario.lenderCredits) : 0;
   let lenderCreditsAmount = 0;
   
@@ -289,23 +509,27 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
       lenderCreditsAmount = lenderCreditsVal;
   }
   
-  // Determine Max Allowed % based on Guidelines
+  // Determine Max Allowed % based on Guidelines (only for purchases)
   let maxConcessionsPercent = 0;
-  if (scenario.loanType === LoanType.FHA) maxConcessionsPercent = 6;
-  else if (scenario.loanType === LoanType.VA) maxConcessionsPercent = 4;
-  else if (scenario.loanType === LoanType.CONVENTIONAL) {
-      if (ltv > 90) maxConcessionsPercent = 3;
-      else if (ltv > 75) maxConcessionsPercent = 6;
-      else maxConcessionsPercent = 9;
-  } else {
-      maxConcessionsPercent = 0; // Jumbo varies
+  if (!isRefinance) {
+    if (scenario.loanType === LoanType.FHA) maxConcessionsPercent = 6;
+    else if (scenario.loanType === LoanType.VA) maxConcessionsPercent = 4;
+    else if (scenario.loanType === LoanType.CONVENTIONAL) {
+        if (ltv > 90) maxConcessionsPercent = 3;
+        else if (ltv > 75) maxConcessionsPercent = 6;
+        else maxConcessionsPercent = 9;
+    } else {
+        maxConcessionsPercent = 0; // Jumbo varies
+    }
   }
   
-  const maxConcessionsAllowed = purchasePrice * (maxConcessionsPercent / 100);
+  const maxConcessionsAllowed = (!isRefinance && purchasePrice > 0) 
+    ? purchasePrice * (maxConcessionsPercent / 100) 
+    : 0;
 
-  // Warnings
+  // Warnings (only for purchases - refinances don't have seller concessions)
   const totalCredits = lenderCreditsAmount + sellerConcessionsInput;
-  const isConcessionsExcessive = totalCredits > totalClosingCosts;
+  const isConcessionsExcessive = (!isRefinance && totalCredits > totalClosingCosts);
 
   // 9. Net Closing Costs (Costs - Credits)
   const rawNetClosingCosts = totalClosingCosts - totalCredits;
@@ -318,12 +542,21 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   const totalDPAAmount = dpaAmount + dpa2Amount;
   
   // 10. Cash / Funds Required
-  // Note: Prepaid interest is already included in netClosingCosts when settlement date exists
-  // Logic: Total funds required = down + net closing costs - dpa - dpa2
-  const totalFundsRequired = downPaymentAmount + netClosingCosts - totalDPAAmount;
+  // For purchases: Total funds required = down + net closing costs - dpa - dpa2
+  // For refinances: Based on netCashToBorrower (negative = cash required, positive = cash back)
+  let totalFundsRequired: number;
+  let cashToClose: number;
   
-  // Cash To Close = Funds Required - Earnest
-  const cashToClose = totalFundsRequired - earnestMoney;
+  if (isRefinance && refinanceDetails) {
+    // For refinances: netCashToBorrower is already calculated
+    // Negative = cash required, Positive = cash back
+    cashToClose = -refinanceDetails.netCashToBorrower; // Negative means cash to borrower (refund)
+    totalFundsRequired = refinanceDetails.cashNeededAtClosing;
+  } else {
+    // Purchase: standard calculation
+    totalFundsRequired = downPaymentAmount + netClosingCosts - totalDPAAmount;
+    cashToClose = totalFundsRequired - earnestMoney;
+  }
 
   const isDPAExcessive = totalDPAAmount > (downPaymentAmount + Math.max(0, netClosingCosts));
   
@@ -492,6 +725,9 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
             debtService,
             passes: dscrRatio >= 1.0
         };
-    })() : undefined
+    })() : undefined,
+    
+    // Refinance-specific details (only populated for refinances)
+    refinanceDetails
   };
 };

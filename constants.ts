@@ -2,7 +2,7 @@ import { LoanType, Scenario } from './types';
 
 export const DEFAULT_CLOSING_COSTS = [
   // A. Origination Charges
-  { id: 'discount-points', category: 'A. Origination Charges', name: '% of Loan Amount (Points)', amount: 0, isFixed: false },
+  { id: 'discount-points', category: 'A. Origination Charges', name: '% of Loan Amount (Points)', amount: 1, isFixed: false },
   { id: 'processing', category: 'A. Origination Charges', name: 'Administration Fee', amount: 795, isFixed: true },
   { id: 'tax-service', category: 'A. Origination Charges', name: 'Tax Service Fee', amount: 71, isFixed: true },
   { id: 'underwriting', category: 'A. Origination Charges', name: 'Underwriting Fee', amount: 995, isFixed: true },

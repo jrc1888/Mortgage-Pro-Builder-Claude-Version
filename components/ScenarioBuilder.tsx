@@ -196,12 +196,48 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     }
     if (!hasDiscountPoints) {
         const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'discount-points');
+        if (def) {
+            // Ensure discount points default to 1
+            updatedCosts.push({ ...def, amount: 1 });
+            changed = true;
+        }
+    } else {
+        // Ensure discount points default to 1 if they exist but are 0 or missing
+        const discountPointsIndex = updatedCosts.findIndex(c => c && c.id === 'discount-points');
+        if (discountPointsIndex >= 0) {
+            const currentAmount = updatedCosts[discountPointsIndex].amount;
+            if (!currentAmount || currentAmount === 0) {
+                updatedCosts[discountPointsIndex] = { ...updatedCosts[discountPointsIndex], amount: 1 };
+                changed = true;
+            }
+        }
+    }
+    // Only add buyers agent commission for Purchase transactions (not refinances)
+    if (!hasBuyersAgentCommission && scenario.transactionType === 'Purchase') {
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'buyers-agent-commission');
         if (def) updatedCosts.push(def);
         changed = true;
     }
-    if (!hasBuyersAgentCommission) {
-        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'buyers-agent-commission');
+    
+    // For refinances, remove buyers agent commission if it exists
+    if (scenario.transactionType === 'Refinance' && hasBuyersAgentCommission) {
+        updatedCosts = updatedCosts.filter(c => !c || c.id !== 'buyers-agent-commission');
+        changed = true;
+    }
+    
+    // Check for realtor-admin fee
+    const hasRealtorAdmin = updatedCosts.some(c => c && c.id === 'realtor-admin');
+    
+    // Only add realtor admin fee for Purchase transactions (not refinances)
+    if (!hasRealtorAdmin && scenario.transactionType === 'Purchase') {
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'realtor-admin');
         if (def) updatedCosts.push(def);
+        changed = true;
+    }
+    
+    // For refinances, remove realtor admin fee if it exists
+    if (scenario.transactionType === 'Refinance' && hasRealtorAdmin) {
+        updatedCosts = updatedCosts.filter(c => !c || c.id !== 'realtor-admin');
         changed = true;
     }
     if (!hasTaxService) {
@@ -362,11 +398,20 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           return [];
       }
       
-      // Filter out HOA items if monthly HOA is 0, and filter out any undefined/null items
+      // For refinances, filter out realtor fees (not applicable)
+      // Then filter out HOA items if monthly HOA is 0, and filter out any undefined/null items
       const visibleCosts = scenario.closingCosts.filter(item => {
           // Safety check: ensure item exists and has an id
           if (!item || !item.id) return false;
           
+          // For refinances, exclude realtor fees
+          if (scenario.transactionType === 'Refinance') {
+              if (item.id === 'realtor-admin' || item.id === 'buyers-agent-commission') {
+                  return false;
+              }
+          }
+          
+          // Filter out HOA items if monthly HOA is 0
           if (item.id === 'hoa-transfer' || item.id === 'hoa-prepay') {
               return scenario.hoaMonthly > 0;
           }
@@ -393,7 +438,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           'H. Other'
       ];
       return orderedKeys.filter(k => groups[k]).map(k => ({ category: k, items: groups[k] }));
-  }, [scenario.closingCosts, scenario.hoaMonthly]);
+  }, [scenario.closingCosts, scenario.hoaMonthly, scenario.transactionType]);
 
   // Helper to prevent number inputs from changing on scroll
   const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
@@ -963,48 +1008,117 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     </div>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={labelClass}>Cash Out ($)</label>
-                                        <div className={inputGroupClass}>
-                                            <div className={symbolClass}>$</div>
-                                            <FormattedNumberInput value={scenario.downPaymentAmount || 0} onChangeValue={(val) => handleInputChange('downPaymentAmount', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Loan Amount</label>
-                                        <div className={inputGroupClass}>
-                                            <div className={symbolClass}>$</div>
-                                            <FormattedNumberInput value={(scenario.purchasePrice || 0) - (scenario.downPaymentAmount || 0)} onChangeValue={(val) => {
-                                                const newDownPayment = (scenario.purchasePrice || 0) - val;
-                                                handleInputChange('downPaymentAmount', newDownPayment);
-                                            }} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                        </div>
+                                <div>
+                                    <label className={labelClass}>Loan Amount</label>
+                                    <div className={inputGroupClass}>
+                                        <div className={symbolClass}>$</div>
+                                        <FormattedNumberInput 
+                                            value={scenario.refinanceLoanAmount || results?.totalLoanAmount || 0} 
+                                            onChangeValue={(val) => {
+                                                // For refinances, loan amount is a manual input
+                                                // We'll work backwards to calculate cash out or cash needed
+                                                handleInputChange('refinanceLoanAmount', val);
+                                            }} 
+                                            className="h-full px-4 text-sm text-slate-900 font-medium" 
+                                        />
                                     </div>
                                 </div>
                             )}
                             
-                            <div>
-                                <label className={labelClass}>Property Taxes (Yearly)</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.propertyTaxYearly || 0} onChangeValue={(val) => handleInputChange('propertyTaxYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                </div>
-                            </div>
-                             <div>
-                                <label className={labelClass}>Insurance (Yearly)</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.homeInsuranceYearly || 0} onChangeValue={(val) => handleInputChange('homeInsuranceYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className={labelClass}>HOA (Monthly)</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.hoaMonthly || 0} onChangeValue={(val) => handleInputChange('hoaMonthly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                </div>
-                            </div>
+                            {/* Refinance-specific inputs: Payoffs */}
+                            {scenario.transactionType === 'Refinance' && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={labelClass}>1st Loan Payoff</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput 
+                                                    value={scenario.existingLoanPayoff || 0} 
+                                                    onChangeValue={(val) => handleInputChange('existingLoanPayoff', val)} 
+                                                    className="h-full px-4 text-sm text-slate-900 font-medium" 
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>2nd Loan Payoff</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput 
+                                                    value={scenario.secondMortgagePayoff || 0} 
+                                                    onChangeValue={(val) => handleInputChange('secondMortgagePayoff', val)} 
+                                                    className="h-full px-4 text-sm text-slate-900 font-medium" 
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Property Taxes and Insurance on same line - under payoffs for refinances */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={labelClass}>Taxes (Yrly)</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput value={scenario.propertyTaxYearly || 0} onChangeValue={(val) => handleInputChange('propertyTaxYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Ins (Yrly)</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput value={scenario.homeInsuranceYearly || 0} onChangeValue={(val) => handleInputChange('homeInsuranceYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* HOA - same width as taxes/insurance */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={labelClass}>HOA (Mthly)</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput value={scenario.hoaMonthly || 0} onChangeValue={(val) => handleInputChange('hoaMonthly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                            </div>
+                                        </div>
+                                        <div></div>
+                                    </div>
+                                </>
+                            )}
+                            
+                            {/* For Purchase transactions, show taxes, insurance, and HOA */}
+                            {scenario.transactionType === 'Purchase' && (
+                                <>
+                                    {/* Property Taxes and Insurance on same line */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={labelClass}>Taxes (Yrly)</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput value={scenario.propertyTaxYearly || 0} onChangeValue={(val) => handleInputChange('propertyTaxYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className={labelClass}>Ins (Yrly)</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput value={scenario.homeInsuranceYearly || 0} onChangeValue={(val) => handleInputChange('homeInsuranceYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* HOA - same width as taxes/insurance */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className={labelClass}>HOA (Mthly)</label>
+                                            <div className={inputGroupClass}>
+                                                <div className={symbolClass}>$</div>
+                                                <FormattedNumberInput value={scenario.hoaMonthly || 0} onChangeValue={(val) => handleInputChange('hoaMonthly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                            </div>
+                                        </div>
+                                        <div></div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
 
@@ -1267,8 +1381,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             </div>
                         )}
 
-                        {/* Lender Credit */}
-                        <div className="col-span-1 bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between">
+                        {/* Lender Credit - Wider box (2x width) */}
+                        <div className={`${scenario.transactionType === 'Refinance' ? 'col-span-2' : 'col-span-2'} bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between`}>
                             <div className="flex justify-between items-center">
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-0.5">Lender Credit</label>
                                 <button onClick={() => setScenario(prev => ({ ...prev, showLenderCredits: !prev.showLenderCredits }))} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showLenderCredits ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
@@ -1623,9 +1737,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     }, 0);
                                 };
                                 
-                                const totalD = calcLoanCostsTotal(sectionA) + calcLoanCostsTotal(sectionB) + calcLoanCostsTotal(sectionC);
-                                const totalI = calcOtherCostsTotal(sectionE) + calcOtherCostsTotal(sectionF) + calcOtherCostsTotal(sectionG) + calcOtherCostsTotal(sectionH);
-                                const totalJ = totalD + totalI;
+                                // Use results.totalClosingCosts as the source of truth for Section J
+                                // This ensures consistency with the calculated results and includes buydown costs
+                                const totalJ = results.totalClosingCosts;
                                 
                                 return (
                                     <div className="bg-slate-100 rounded-lg p-4 border-2 border-slate-400 space-y-3">
@@ -2185,7 +2299,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
                     <div className="space-y-2 text-base">
                         <div className="flex justify-between items-center text-slate-600">
-                            <span>{scenario.interestOnly ? 'I/O' : 'P/I'}</span>
+                            <span>{scenario.interestOnly ? 'Interest Only' : 'Principal and Interest'}</span>
                             <span className="font-bold text-slate-900">{formatMoney(results.monthlyPrincipalAndInterest)}</span>
                         </div>
                         <div className="flex justify-between items-center text-slate-600">
@@ -2266,37 +2380,131 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                      </span>
                                  </div>
                                  
-                                 {/* Earnest Money Deduction */}
-                                 <div className="mb-4">
-                                     <div className="flex justify-between text-emerald-600 text-sm">
-                                         <span>Earnest Money</span>
-                                         <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
+                                 {/* Earnest Money Deduction - Only for Purchase */}
+                                 {scenario.transactionType === 'Purchase' && (
+                                     <div className="mb-4">
+                                         <div className="flex justify-between text-emerald-600 text-sm">
+                                             <span>Earnest Money</span>
+                                             <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
+                                         </div>
                                      </div>
-                                 </div>
+                                 )}
                              </>
                          ) : (
                              <>
-                                 <div className="flex justify-between text-slate-600">
-                                     <span>Cash Out</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
-                                 </div>
-                                  <div className="flex justify-between text-slate-600">
-                                     <span>Closing Costs (Net)</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
-                                 </div>
+                                 {results.refinanceDetails && (
+                                     <>
+                                         {/* Loan Payoffs */}
+                                         <div className="flex justify-between text-slate-600">
+                                             <span>Loan Payoffs</span>
+                                             <span className="font-bold text-slate-900">{formatMoney(results.refinanceDetails.totalPayoff || 0)}</span>
+                                         </div>
+                                         
+                                         {/* Total Closing Costs */}
+                                         <div className="flex justify-between text-slate-600">
+                                             <span>Total Closing Costs</span>
+                                             <span className="font-bold text-slate-900">{formatMoney(results.totalClosingCosts || 0)}</span>
+                                         </div>
+                                         
+                                         {/* Cash Back (if any) */}
+                                         {(() => {
+                                             const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
+                                                 - (results.refinanceDetails.totalPayoff || 0) 
+                                                 - (results.refinanceDetails.financedClosingCosts || 0);
+                                             if (equity > 0) {
+                                                 return (
+                                                     <div className="flex justify-between text-slate-600">
+                                                         <span>Cash Back</span>
+                                                         <span className="font-bold text-emerald-600">
+                                                             {formatMoney(equity)}
+                                                         </span>
+                                                     </div>
+                                                 );
+                                             }
+                                             return null;
+                                         })()}
+                                         
+                                         {/* Total */}
+                                         {(() => {
+                                             const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
+                                                 - (results.refinanceDetails.totalPayoff || 0) 
+                                                 - (results.refinanceDetails.financedClosingCosts || 0);
+                                             const total = (results.refinanceDetails.totalPayoff || 0) 
+                                                 + (results.totalClosingCosts || 0) 
+                                                 + Math.max(0, equity);
+                                             return (
+                                                 <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
+                                                     <span className="font-bold">Total</span>
+                                                     <span className="font-bold text-slate-900">{formatMoney(total)}</span>
+                                                 </div>
+                                             );
+                                         })()}
+                                         
+                                         {/* Minus New Loan Amount */}
+                                         <div className="flex justify-between text-slate-600">
+                                             <span>New Loan Amount</span>
+                                             <span className="font-bold text-slate-900">-{formatMoney(results.totalLoanAmount || 0)}</span>
+                                         </div>
+                                         
+                                         {/* Result: Cash Out or Cash Required */}
+                                         {(() => {
+                                             const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
+                                                 - (results.refinanceDetails.totalPayoff || 0) 
+                                                 - (results.refinanceDetails.financedClosingCosts || 0);
+                                             const total = (results.refinanceDetails.totalPayoff || 0) 
+                                                 + (results.totalClosingCosts || 0) 
+                                                 + Math.max(0, equity);
+                                             const result = total - (results.totalLoanAmount || 0);
+                                             
+                                             if (result > 0) {
+                                                 // Positive = Shortfall = Cash Required to Close
+                                                 return (
+                                                     <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
+                                                         <span className="font-bold">Cash Required to Close</span>
+                                                         <span className="font-bold text-slate-900">{formatMoney(result)}</span>
+                                                     </div>
+                                                 );
+                                             } else if (result < 0) {
+                                                 // Negative = Excess = Cash Out (available equity)
+                                                 return (
+                                                     <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
+                                                         <span className="font-bold">Cash Out</span>
+                                                         <span className="font-bold text-emerald-600">{formatMoney(Math.abs(result))}</span>
+                                                     </div>
+                                                 );
+                                             }
+                                             return null;
+                                         })()}
+                                     </>
+                                 )}
                              </>
                          )}
                      </div>
                      
-                     <div className="border-t border-slate-200 pt-3 flex justify-between items-end">
-                         <span className="text-xs font-bold text-slate-500 uppercase">{scenario.transactionType === 'Purchase' ? 'Cash Required' : 'Cash to Close'}</span>
-                         <span className={`text-3xl font-black tracking-tight ${results.cashToClose < 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
-                             {formatMoney(results.cashToClose)}
-                         </span>
+                     <div className="border-t border-slate-200 pt-3 relative">
+                         <div className="flex justify-between items-start gap-4">
+                             <span className="text-lg font-bold text-slate-500 uppercase whitespace-nowrap flex-1 pr-4">
+                                 {scenario.transactionType === 'Purchase' 
+                                     ? 'Cash Required' 
+                                     : (results.refinanceDetails?.netCashToBorrower && results.refinanceDetails.netCashToBorrower > 0 
+                                         ? 'Cash Back' 
+                                         : 'Cash to Close')}
+                             </span>
+                             <span className={`text-3xl font-black tracking-tight text-right shrink-0 ${
+                                 scenario.transactionType === 'Refinance' && results.refinanceDetails
+                                     ? (results.refinanceDetails.netCashToBorrower > 0 
+                                         ? 'text-emerald-600' // Cash back shown in green
+                                         : 'text-slate-900') // Cash required shown in black
+                                     : (results.cashToClose < 0 ? 'text-emerald-600' : 'text-slate-900')
+                             }`}>
+                                 {scenario.transactionType === 'Refinance' && results.refinanceDetails
+                                     ? (results.refinanceDetails.netCashToBorrower > 0 
+                                         ? `-${formatMoney(results.refinanceDetails.netCashToBorrower)}` // Cash back with negative sign
+                                         : formatMoney(Math.abs(results.refinanceDetails.netCashToBorrower))) // Cash required as positive
+                                     : formatMoney(results.cashToClose)}
+                             </span>
+                         </div>
                      </div>
-                     {results.cashToClose < 0 && (
-                         <div className="text-right text-[10px] font-bold text-emerald-600 mt-1 uppercase tracking-wider">Refund to Borrower</div>
-                     )}
                 </div>
 
             </div>
