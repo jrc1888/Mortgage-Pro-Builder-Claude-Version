@@ -27,7 +27,6 @@ const symbolClass = "flex items-center justify-center h-full px-3 bg-slate-50 bo
 const symbolRightClass = "flex items-center justify-center h-full px-3 bg-slate-50 border-l border-slate-200 text-slate-400 text-sm font-semibold text-center min-w-[2.5rem] group-focus-within:bg-indigo-50 group-focus-within:text-indigo-600 group-focus-within:border-indigo-100 transition-colors";
 
 export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateScenario }) => {
-  const [anticipatedClosingDate, setAnticipatedClosingDate] = useState<string>('');
   const [customExtraPayment, setCustomExtraPayment] = useState<number>(100);
   const [desiredPayoffTermMonths, setDesiredPayoffTermMonths] = useState<number>(180); // Default 15 years
   const [generatingPDF, setGeneratingPDF] = useState(false);
@@ -80,15 +79,20 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
     }
   }, [scenario.currentLoan, useManualOverride, currentLoan.manualOverride]);
 
-  // Calculate payoff
+  // Calculate payoff - automatically uses expected closing date from loan tab (settlementDate)
+  // If settlement date is not set, uses current date as fallback
   const payoff = useMemo(() => {
     if (!loanStatus) return null;
+    // Use settlement date from scenario (expected closing date from loan tab)
+    const closingDate = scenario.settlementDate 
+      ? scenario.settlementDate.split('T')[0] // Extract date part from ISO string
+      : undefined;
     return calculatePayoff(
       loanStatus.currentPrincipalBalance,
       currentLoan.originalRate,
-      anticipatedClosingDate || undefined
+      closingDate
     );
-  }, [loanStatus, currentLoan.originalRate, anticipatedClosingDate]);
+  }, [loanStatus, currentLoan.originalRate, scenario.settlementDate]);
 
   // Calculate full payment (PI + taxes/ins/HOA) - for current loan
   const monthlyTax = scenario.propertyTaxYearly / 12;
@@ -668,19 +672,21 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
                     </div>
 
                     <div className="bg-amber-50 p-2 rounded-lg border border-amber-200 flex flex-col">
-                      <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1 min-h-[14px]">Days ({anticipatedClosingDate ? payoff.daysToClosing : 0})</div>
-                      <div className="text-base font-black text-amber-700 font-mono mt-auto">{formatMoney(anticipatedClosingDate ? Math.round(payoff.perDiemInterest * payoff.daysToClosing * 100) / 100 : 0)}</div>
+                      <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1 min-h-[14px]">Days ({payoff.daysToClosing})</div>
+                      <div className="text-base font-black text-amber-700 font-mono mt-auto">{formatMoney(Math.round(payoff.perDiemInterest * payoff.daysToClosing * 100) / 100)}</div>
                     </div>
 
-                    <div className="flex flex-col">
-                      <label className={`${labelClass} mb-1 min-h-[14px] flex items-end`}>Payoff Date</label>
-                      <div className={`${inputGroupClass} mt-auto`}>
-                        <input
-                          type="date"
-                          value={anticipatedClosingDate}
-                          onChange={(e) => setAnticipatedClosingDate(e.target.value)}
-                          className="w-full px-3 py-1.5 text-xs outline-none bg-transparent font-medium text-slate-900"
-                        />
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 min-h-[14px]">Payoff Date</div>
+                      <div className="text-xs font-medium text-slate-600 mt-auto">
+                        {scenario.settlementDate 
+                          ? formatDate(new Date(scenario.settlementDate))
+                          : 'Not set in Loan tab'}
+                      </div>
+                      <div className="text-[9px] text-slate-400 mt-0.5 italic">
+                        {scenario.settlementDate 
+                          ? 'From Expected Closing Date'
+                          : 'Set Expected Closing Date in Loan tab'}
                       </div>
                     </div>
                   </div>
@@ -1103,9 +1109,10 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
         subtitle={pdfFilename}
         maxWidth="max-w-6xl"
         noPadding
+        positionTop={true}
       >
-        <div className="flex flex-col h-[85vh]">
-          <div className="flex-1 bg-slate-100 overflow-hidden">
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 bg-slate-100 overflow-hidden min-h-0">
             {pdfPreviewUrl && (
               <iframe
                 src={pdfPreviewUrl}

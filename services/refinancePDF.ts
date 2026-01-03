@@ -53,6 +53,49 @@ async function loadImageAsBase64(url: string): Promise<string> {
   }
 }
 
+// Get image dimensions from base64 data
+function getImageDimensions(base64: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+    };
+    img.onerror = reject;
+    img.src = base64;
+  });
+}
+
+// Calculate dimensions preserving aspect ratio
+function calculateImageDimensions(
+  originalWidth: number,
+  originalHeight: number,
+  targetWidth?: number,
+  targetHeight?: number
+): { width: number; height: number } {
+  const aspectRatio = originalWidth / originalHeight;
+  
+  if (targetWidth && !targetHeight) {
+    // Calculate height based on target width
+    return { width: targetWidth, height: targetWidth / aspectRatio };
+  } else if (targetHeight && !targetWidth) {
+    // Calculate width based on target height
+    return { width: targetHeight * aspectRatio, height: targetHeight };
+  } else if (targetWidth && targetHeight) {
+    // Use the dimension that maintains aspect ratio better
+    const widthBasedHeight = targetWidth / aspectRatio;
+    const heightBasedWidth = targetHeight * aspectRatio;
+    
+    if (widthBasedHeight <= targetHeight) {
+      return { width: targetWidth, height: widthBasedHeight };
+    } else {
+      return { width: heightBasedWidth, height: targetHeight };
+    }
+  }
+  
+  // Default: use original dimensions
+  return { width: originalWidth, height: originalHeight };
+}
+
 interface RefinanceAnalysisData {
   scenario: Scenario;
   results: CalculatedResults;
@@ -106,12 +149,31 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
 
   // === PAGE 1: HEADER ===
   if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.4, 0.9);
+    try {
+      const logoDims = await getImageDimensions(logoBase64);
+      const logoDisplayDims = calculateImageDimensions(logoDims.width, logoDims.height, 2.4);
+      doc.addImage(logoBase64, 'PNG', marginLeft, yPos, logoDisplayDims.width, logoDisplayDims.height);
+    } catch (error) {
+      // Fallback to default dimensions if image loading fails
+      console.warn('Failed to get logo dimensions, using default:', error);
+      doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.4, 0.9);
+    }
   }
 
-  const headshotX = pageWidth - marginRight - 1.0;
+  // Headshot - right side, aligned with right margin boundary (preserve aspect ratio)
   if (headshotBase64) {
-    doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.0, 1.0);
+    try {
+      const headshotDims = await getImageDimensions(headshotBase64);
+      const headshotDisplayDims = calculateImageDimensions(headshotDims.width, headshotDims.height, 1.0);
+      // Position so right edge aligns with right margin: pageWidth - marginRight - width
+      const headshotX = pageWidth - marginRight - headshotDisplayDims.width;
+      doc.addImage(headshotBase64, 'PNG', headshotX, yPos, headshotDisplayDims.width, headshotDisplayDims.height);
+    } catch (error) {
+      // Fallback to default dimensions if image loading fails
+      console.warn('Failed to get headshot dimensions, using default:', error);
+      const headshotX = pageWidth - marginRight - 1.0;
+      doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.0, 1.0);
+    }
   }
 
   // Contact info - condensed
@@ -127,6 +189,9 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   
   contactY += 0.15;
   doc.text(OFFICER_INFO.email, pageWidth - marginRight, contactY, { align: 'right' });
+  
+  contactY += 0.15;
+  doc.text(OFFICER_INFO.nmls, pageWidth - marginRight, contactY, { align: 'right' });
 
   yPos = contactY + 0.35;
 
@@ -296,7 +361,7 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     const breakEvenText = `Your total refinance costs are ${formatMoney(breakEven.totalCosts)}. ` +
       `With monthly savings of ${formatMoney(breakEven.monthlySavings)}, ` +
       `you'll recover these costs in just ${breakEven.breakEvenMonths} months (${breakEven.breakEvenYears.toFixed(1)} years). ` +
-      `After ${formatDateForPDF(breakEven.breakEvenDate)}, every dollar saved goes straight to you!`;
+      `After ${formatDateForPDF(breakEven.breakEvenDate)}, every dollar you save goes straight into your pocket!`;
     
     const beLines = doc.splitTextToSize(breakEvenText, contentWidth);
     doc.text(beLines, marginLeft, yPos);
@@ -338,11 +403,11 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     yPos += 0.3;
   }
 
-  // === 15-YEAR VS 30-YEAR COMPARISON (Condensed) ===
+  // === TERM COMPARISON (Condensed) ===
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.text('15-Year vs 30-Year Comparison', marginLeft, yPos);
+  doc.text('30-Year vs Accelerated Paydown Comparison', marginLeft, yPos);
   
   yPos += 0.2;
 
@@ -374,7 +439,7 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.text('Lower monthly payment', col1X + 0.08, yPos + 0.8);
   doc.text('More flexibility', col1X + 0.08, yPos + 0.92);
 
-  // 15-Year Box
+  // Accelerated Paydown Box
   doc.setFillColor(230, 245, 255);
   doc.roundedRect(col2X, yPos, termBoxWidth, 0.9, 0.05, 0.05, 'F');
   doc.setDrawColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
@@ -384,7 +449,10 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.text('15-Year Option', col2X + 0.08, yPos + 0.15);
+  // Calculate accelerated term years from payoff date
+  const acceleratedPayoffDate = new Date(termComparison.term15.payoffDate);
+  const acceleratedTermYears = Math.round((acceleratedPayoffDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+  doc.text(`${acceleratedTermYears}-Year Option`, col2X + 0.08, yPos + 0.15);
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -413,8 +481,8 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
     doc.text(`Your current loan balance is ${formatMoney(loanStatus.currentPrincipalBalance)}. ` +
-      `To pay off your existing loan, you'll need approximately ${formatMoney(payoff.payoffAmount)} ` +
-      `(includes accrued interest through closing).`, marginLeft, yPos, { maxWidth: contentWidth });
+      `To pay off your existing loan, you'll need approximately ${formatMoney(payoff.payoffAmount)}, ` +
+      `which includes accrued interest through your expected closing date.`, marginLeft, yPos, { maxWidth: contentWidth });
     
     yPos += 0.35;
   }
@@ -431,9 +499,9 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
     
-    const prepayText = `With a 30-year loan, your required payment is ${formatMoney(prepaymentScenarios.difference)} lower than a 15-year loan. ` +
-      `If you pay the extra ${formatMoney(prepaymentScenarios.difference)} each month, you'll pay off in about ${prepaymentScenarios.matchingPayment.payoffYears.toFixed(1)} years ` +
-      `and save ${formatMoney(prepaymentScenarios.matchingPayment.interestSaved)} in interest - while maintaining the flexibility to reduce payments if needed.`;
+    const prepayText = `With a 30-year loan, your required payment is ${formatMoney(prepaymentScenarios.difference)} lower than the accelerated paydown option. ` +
+      `If you pay the extra ${formatMoney(prepaymentScenarios.difference)} each month, you'll pay off your loan in approximately ${prepaymentScenarios.matchingPayment.payoffYears.toFixed(1)} years ` +
+      `and save ${formatMoney(prepaymentScenarios.matchingPayment.interestSaved)} in total interest, while maintaining the flexibility to reduce payments if needed.`;
     
     const prepayLines = doc.splitTextToSize(prepayText, contentWidth);
     doc.text(prepayLines, marginLeft, yPos);
@@ -464,6 +532,7 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   const sigLines = [
     OFFICER_INFO.name,
     OFFICER_INFO.title,
+    OFFICER_INFO.nmls,
     OFFICER_INFO.phone,
     OFFICER_INFO.email
   ];

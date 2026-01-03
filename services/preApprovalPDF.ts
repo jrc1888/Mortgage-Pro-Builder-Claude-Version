@@ -74,6 +74,49 @@ async function loadImageAsBase64(url: string): Promise<string> {
   }
 }
 
+// Get image dimensions from base64 data
+function getImageDimensions(base64: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+    };
+    img.onerror = reject;
+    img.src = base64;
+  });
+}
+
+// Calculate dimensions preserving aspect ratio
+function calculateImageDimensions(
+  originalWidth: number,
+  originalHeight: number,
+  targetWidth?: number,
+  targetHeight?: number
+): { width: number; height: number } {
+  const aspectRatio = originalWidth / originalHeight;
+  
+  if (targetWidth && !targetHeight) {
+    // Calculate height based on target width
+    return { width: targetWidth, height: targetWidth / aspectRatio };
+  } else if (targetHeight && !targetWidth) {
+    // Calculate width based on target height
+    return { width: targetHeight * aspectRatio, height: targetHeight };
+  } else if (targetWidth && targetHeight) {
+    // Use the dimension that maintains aspect ratio better
+    const widthBasedHeight = targetWidth / aspectRatio;
+    const heightBasedWidth = targetHeight * aspectRatio;
+    
+    if (widthBasedHeight <= targetHeight) {
+      return { width: targetWidth, height: widthBasedHeight };
+    } else {
+      return { width: heightBasedWidth, height: targetHeight };
+    }
+  }
+  
+  // Default: use original dimensions
+  return { width: originalWidth, height: originalHeight };
+}
+
 // Main PDF generation - PROPERLY SPACED TO FILL PAGE
 async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   const {
@@ -121,15 +164,33 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
   const headshotBase64 = await loadImageAsBase64('/john_creager_guild.png');
 
   // === HEADER SECTION === (MUCH more generous spacing)
-  // Logo - left side, even larger
+  // Logo - left side, even larger (preserve aspect ratio)
   if (logoBase64) {
-    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.6, 1.0);
+    try {
+      const logoDims = await getImageDimensions(logoBase64);
+      const logoDisplayDims = calculateImageDimensions(logoDims.width, logoDims.height, 2.6);
+      doc.addImage(logoBase64, 'PNG', marginLeft, yPos, logoDisplayDims.width, logoDisplayDims.height);
+    } catch (error) {
+      // Fallback to default dimensions if image loading fails
+      console.warn('Failed to get logo dimensions, using default:', error);
+      doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.6, 1.0);
+    }
   }
 
-  // Headshot - right side, larger with more space
-  const headshotX = pageWidth - marginRight - 1.1;
+  // Headshot - right side, aligned with right margin boundary (preserve aspect ratio)
   if (headshotBase64) {
-    doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.1, 1.1);
+    try {
+      const headshotDims = await getImageDimensions(headshotBase64);
+      const headshotDisplayDims = calculateImageDimensions(headshotDims.width, headshotDims.height, 1.1);
+      // Position so right edge aligns with right margin: pageWidth - marginRight - width
+      const headshotX = pageWidth - marginRight - headshotDisplayDims.width;
+      doc.addImage(headshotBase64, 'PNG', headshotX, yPos, headshotDisplayDims.width, headshotDisplayDims.height);
+    } catch (error) {
+      // Fallback to default dimensions if image loading fails
+      console.warn('Failed to get headshot dimensions, using default:', error);
+      const headshotX = pageWidth - marginRight - 1.1;
+      doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.1, 1.1);
+    }
   }
 
   // Contact info - MUCH more vertical space between lines

@@ -39,6 +39,24 @@ export const calculatePrepaidInterestDays = (settlementDateISO?: string): number
   }
 };
 
+// Calculate total days in the month for a given date
+export const getTotalDaysInMonth = (dateISO?: string): number => {
+  if (!dateISO) return 0;
+  
+  try {
+    const date = new Date(dateISO);
+    if (isNaN(date.getTime())) return 0;
+    
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const lastDayOfMonth = new Date(year, month + 1, 0);
+    
+    return lastDayOfMonth.getDate();
+  } catch {
+    return 0;
+  }
+};
+
 // Calculate prepaid interest amount
 export const calculatePrepaidInterest = (
   loanAmount: number,
@@ -64,6 +82,36 @@ export const calculatePrepaidInterest = (
   
   // Prepaid interest = Daily Interest × Days
   return dailyInterest * days;
+};
+
+// Calculate interest credit (remaining days in month after prepaid interest days)
+// This gives a credit for the days from first of month to settlement date
+// Credit = (Days from 1st of month to settlement date) × Daily Interest
+export const calculateInterestCredit = (
+  loanAmount: number,
+  annualInterestRate: number,
+  settlementDateISO?: string
+): number => {
+  if (loanAmount <= 0 || annualInterestRate <= 0 || !settlementDateISO) return 0;
+  
+  try {
+    const settlementDate = new Date(settlementDateISO);
+    if (isNaN(settlementDate.getTime())) return 0;
+    
+    // Days from 1st of month to settlement date (exclusive of settlement date)
+    // If settlement is on the 15th, credit is for days 1-14 (14 days)
+    const daysFromFirstOfMonth = settlementDate.getDate() - 1;
+    
+    if (daysFromFirstOfMonth <= 0) return 0;
+    
+    // Daily interest = (Loan Amount × Annual Rate) / 365
+    const dailyInterest = (loanAmount * (annualInterestRate / 100)) / 365;
+    
+    // Interest credit = Daily Interest × Days from first of month
+    return dailyInterest * daysFromFirstOfMonth;
+  } catch {
+    return 0;
+  }
 };
 
 // Calculate Lenders Title Insurance based on loan amount tiers
@@ -317,10 +365,35 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
 
   // 7. Closing Costs
   // Calculate prepaid interest first (from settlement date if available, otherwise from manual input)
-  const prepaidInterestDays = calculatePrepaidInterestDays(scenario.settlementDate);
-  const prepaidInterest = scenario.settlementDate 
+  let prepaidInterestDays = calculatePrepaidInterestDays(scenario.settlementDate);
+  let prepaidInterest = scenario.settlementDate 
     ? calculatePrepaidInterest(totalLoanAmount, interestRate, scenario.settlementDate)
     : 0;
+  
+  // If interest credit is enabled, count days from 1st of month UP TO AND INCLUDING settlement date
+  // This number is then made negative to show as a credit
+  if (scenario.showInterestCredit && scenario.settlementDate) {
+    try {
+      const settlementDate = new Date(scenario.settlementDate);
+      if (!isNaN(settlementDate.getTime())) {
+        // Days from 1st of month up to and including settlement date
+        // If settlement is on the 5th, that's 5 days (1, 2, 3, 4, 5)
+        const daysIncludingSettlement = settlementDate.getDate();
+        
+        // Make it negative (credit)
+        prepaidInterestDays = -daysIncludingSettlement;
+        
+        // Calculate daily interest
+        const dailyInterest = (totalLoanAmount * (interestRate / 100)) / 365;
+        
+        // Prepaid interest becomes negative (credit) = -(days including settlement × daily interest)
+        prepaidInterest = -(dailyInterest * daysIncludingSettlement);
+      }
+    } catch (error) {
+      console.warn('Error calculating interest credit:', error);
+      // Fall back to normal prepaid interest calculation
+    }
+  }
   
   // Use utility function to calculate closing costs (single source of truth)
   const totalClosingCosts = (scenario.closingCosts || []).reduce((sum, item) => {

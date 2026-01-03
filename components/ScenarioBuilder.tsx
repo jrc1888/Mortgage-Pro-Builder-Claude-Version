@@ -543,6 +543,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                  downPaymentPercent: roundedPercent
              };
         }
+        if (field === 'settlementDate') {
+            // If settlement date is cleared, also uncheck interest credit
+            const updated = { ...prev, [field]: value };
+            if (!value && prev.showInterestCredit) {
+                updated.showInterestCredit = false;
+            }
+            return updated;
+        }
         if (field === 'loanType') {
             let newUfmip = 0;
             if (value === LoanType.FHA) newUfmip = 1.75;
@@ -766,32 +774,32 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     <div className="flex flex-col h-full bg-slate-50">
       
       {/* Header - Dark Theme - Desktop Only on Mobile */}
-      <header className="desktop-only scenario-header-desktop bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-32">
-          <div className="flex items-center gap-6 flex-1 min-w-0">
-          <button onClick={handleExit} className="p-2.5 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800 shrink-0">
-            <ArrowLeft size={20} />
+      <header className="desktop-only scenario-header-desktop bg-slate-950 border-b border-slate-800 px-6 py-3 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-[6.4rem]">
+          <div className="flex items-center gap-5 flex-1 min-w-0">
+          <button onClick={handleExit} className="p-2 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800 shrink-0">
+            <ArrowLeft size={18} />
           </button>
           
-          <div className="flex items-center gap-8 w-full min-w-0">
+          <div className="flex items-center gap-6 w-full min-w-0">
               {/* Client Name */}
               <div className="min-w-[200px] shrink-0">
-                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Borrower</label>
-                   <div className="text-4xl font-black text-indigo-400 tracking-tight truncate">{scenario.clientName || "Client Name"}</div>
+                   <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-0.5">Borrower</label>
+                   <div className="text-3xl font-black text-indigo-400 tracking-tight truncate">{scenario.clientName || "Client Name"}</div>
               </div>
 
               {/* Divider */}
-              <div className="h-12 w-px bg-slate-800 shrink-0"></div>
+              <div className="h-10 w-px bg-slate-800 shrink-0"></div>
 
               {/* Scenario Name Input - Maximize space */}
               <div className="flex-1 min-w-0 mr-8">
                    <div className="flex items-end gap-2 w-full">
                        <div className="flex-1">
-                           <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Scenario Name</label>
+                           <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-0.5">Scenario Name</label>
                            <input 
                                 value={scenario.name} 
                                 onChange={(e) => handleInputChange('name', e.target.value)}
                                 onBlur={addToHistory}
-                                className="bg-transparent border-none p-0 text-4xl font-black text-emerald-400 placeholder-slate-600 w-full outline-none focus:ring-0"
+                                className="bg-transparent border-none p-0 text-3xl font-black text-emerald-400 placeholder-slate-600 w-full outline-none focus:ring-0"
                                 placeholder="Scenario Name"
                             />
                        </div>
@@ -851,16 +859,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
               </div>
 
                {/* Divider */}
-               <div className="h-12 w-px bg-slate-800 shrink-0"></div>
+               <div className="h-10 w-px bg-slate-800 shrink-0"></div>
 
                {/* Property, Price & Date */}
                <div className="min-w-[240px] shrink-0 text-right">
-                    <div className="flex flex-col items-end gap-1 mb-1">
-                        <div className="flex items-center justify-end gap-1.5 text-sm text-indigo-400 font-medium">
-                            <MapPin size={14} />
+                    <div className="flex flex-col items-end gap-0.5 mb-0.5">
+                        <div className="flex items-center justify-end gap-1.5 text-xs text-indigo-400 font-medium">
+                            <MapPin size={12} />
                             <span className="truncate max-w-[200px]">{scenario.propertyAddress || "No Address/Zip"}</span>
                         </div>
-                        <div className="text-xl font-bold text-white">
+                        <div className="text-lg font-bold text-white">
                             {formatMoney(scenario.purchasePrice)}
                         </div>
                     </div>
@@ -871,12 +879,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           </div>
         </div>
 
-        <div className="flex gap-3 pl-6 border-l border-slate-800 ml-6">
+        <div className="flex gap-2 pl-5 border-l border-slate-800 ml-5">
              <button 
                 onClick={() => setShowPreApprovalOptionsModal(true)}
-                className="flex items-center gap-2 px-4 py-2 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
             >
-                <FileBadge size={16} /> Pre-Approval
+                <FileBadge size={14} /> Pre-Approval
             </button>
              <button 
                 onClick={async () => {
@@ -898,22 +906,22 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         setGeneratingSubmission(false);
                     }
                 }}
-                className="flex items-center gap-2 px-4 py-2 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
             >
-                <FileText size={16} /> Submission Email
+                <FileText size={14} /> Submission Email
             </button>
             <button 
                 onClick={() => setShowHistoryModal(true)}
-                className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
                 title="History"
             >
-                <History size={20} />
+                <History size={18} />
             </button>
             <button 
                 onClick={prepareLog}
-                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 shadow-lg shadow-indigo-900/20 transition-all transform hover:-translate-y-0.5 text-xs font-bold uppercase tracking-wide"
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 shadow-lg shadow-indigo-900/20 transition-all transform hover:-translate-y-0.5 text-xs font-bold uppercase tracking-wide"
             >
-                <CheckCircle size={16} /> Log Update
+                <CheckCircle size={14} /> Log Update
             </button>
         </div>
       </header>
@@ -982,36 +990,44 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             </div>
                             
                             {(() => {
-                                // Only show dates if it's a full address (not just a zip code)
-                                const zipCode = extractZipCode(scenario.propertyAddress);
-                                const isFullAddress = scenario.propertyAddress && 
-                                    scenario.propertyAddress.trim().length > 5 && 
-                                    scenario.propertyAddress.trim() !== zipCode;
+                                const isRefinance = scenario.transactionType === 'Refinance';
                                 
-                                if (!isFullAddress) return null;
+                                // For purchases: Only show dates if it's a full address (not just a zip code)
+                                // For refinances: Always show Expected Closing Date regardless of address
+                                if (!isRefinance) {
+                                    const zipCode = extractZipCode(scenario.propertyAddress);
+                                    const isFullAddress = scenario.propertyAddress && 
+                                        scenario.propertyAddress.trim().length > 5 && 
+                                        scenario.propertyAddress.trim() !== zipCode;
+                                    
+                                    if (!isFullAddress) return null;
+                                }
                                 
                                 return (
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className={labelClass}>F&A Date</label>
-                                            <div className={inputGroupClass}>
-                                                <input 
-                                                    type="date" 
-                                                    value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
-                                                    onChange={(e) => {
-                                                        if (e.target.value) {
-                                                            const date = new Date(e.target.value + 'T00:00:00');
-                                                            handleInputChange('faDate', date.toISOString());
-                                                        } else {
-                                                            handleInputChange('faDate', undefined);
-                                                        }
-                                                    }} 
-                                                    className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
-                                                />
+                                    <div className={`grid gap-4 ${isRefinance ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                                        {/* F&A Date - Only show for Purchase transactions */}
+                                        {!isRefinance && (
+                                            <div>
+                                                <label className={labelClass}>F&A Date</label>
+                                                <div className={inputGroupClass}>
+                                                    <input 
+                                                        type="date" 
+                                                        value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
+                                                        onChange={(e) => {
+                                                            if (e.target.value) {
+                                                                const date = new Date(e.target.value + 'T00:00:00');
+                                                                handleInputChange('faDate', date.toISOString());
+                                                            } else {
+                                                                handleInputChange('faDate', undefined);
+                                                            }
+                                                        }} 
+                                                        className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                                    />
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                         <div>
-                                            <label className={labelClass}>Settlement Date</label>
+                                            <label className={labelClass}>{isRefinance ? 'Expected Closing Date' : 'Settlement Date'}</label>
                                             <div className={inputGroupClass}>
                                                 <input 
                                                     type="date" 
@@ -1521,29 +1537,44 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         {group.items.filter(cost => cost && cost.id).map((cost) => (
                                         <div key={cost.id} className="flex items-center gap-4 py-3 px-4 hover:bg-slate-50 transition-colors group">
                                             {/* Editable name for misc fees (misc-1 through misc-4) */}
-                                            {(cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') ? (
-                                                <input
-                                                    type="text"
-                                                    value={cost.name}
-                                                    onChange={(e) => {
-                                                        setScenario(prev => ({
-                                                            ...prev,
-                                                            closingCosts: prev.closingCosts.map(item =>
-                                                                item.id === cost.id ? { ...item, name: e.target.value } : item
-                                                            )
-                                                        }));
-                                                    }}
-                                                    className="flex-1 text-sm font-medium text-slate-700 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 transition-colors"
-                                                    placeholder={`Other Fee ${cost.id.slice(-1)}`}
-                                                />
-                                            ) : (
-                                                <label className="flex-1 text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
-                                            )}
+                                            <div className="flex items-center gap-4 flex-1">
+                                                {(cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') ? (
+                                                    <input
+                                                        type="text"
+                                                        value={cost.name}
+                                                        onChange={(e) => {
+                                                            setScenario(prev => ({
+                                                                ...prev,
+                                                                closingCosts: prev.closingCosts.map(item =>
+                                                                    item.id === cost.id ? { ...item, name: e.target.value } : item
+                                                                )
+                                                            }));
+                                                        }}
+                                                        className="flex-1 text-sm font-medium text-slate-700 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 transition-colors"
+                                                        placeholder={`Other Fee ${cost.id.slice(-1)}`}
+                                                    />
+                                                ) : cost.id === 'prepaid-interest' ? (
+                                                    <div className="flex items-center gap-2 flex-1">
+                                                        <label className="text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
+                                                        <div className={`flex items-center gap-2 ${!scenario.settlementDate ? 'opacity-50' : ''} ${scenario.showInterestCredit && scenario.settlementDate ? 'bg-amber-50 border border-amber-200 rounded-lg px-2 py-1' : ''}`}>
+                                                            <CustomCheckbox 
+                                                                checked={scenario.showInterestCredit || false} 
+                                                                onChange={(checked) => handleInputChange('showInterestCredit', checked)} 
+                                                                label="Interest Credit"
+                                                                labelClassName={scenario.showInterestCredit && scenario.settlementDate ? 'text-amber-900' : 'text-slate-400'}
+                                                                disabled={!scenario.settlementDate}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <label className="flex-1 text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
+                                                )}
+                                            </div>
                                             
                                             {/* Cost Render Logic */}
                                             {cost.id === 'prepaid-interest' ? (
-                                                <div className="flex items-center gap-3">
-                                                     <div className={`flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden ${scenario.settlementDate ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'focus-within:ring-1 focus-within:ring-indigo-500'}`}>
+                                                <>
+                                                    <div className={`flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden ${scenario.settlementDate ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'focus-within:ring-1 focus-within:ring-indigo-500'}`}>
                                                         <input 
                                                             type="number" 
                                                             value={scenario.settlementDate ? results.prepaidInterestDays : (cost.days ?? 0)} 
@@ -1557,11 +1588,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                             className={`w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium ${scenario.settlementDate ? 'cursor-not-allowed text-slate-500' : ''}`} 
                                                         />
                                                         <span className="px-3 text-slate-400 text-xs font-bold bg-slate-50 h-full flex items-center border-l border-slate-200">d</span>
-                                                     </div>
-                                                     <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
-                                                         {formatMoney(scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)))}
-                                                     </div>
-                                                </div>
+                                                    </div>
+                                                    <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
+                                                        {formatMoney(scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)))}
+                                                    </div>
+                                                </>
                                             ) : (cost.id === 'prepaid-insurance' || cost.id === 'tax-reserves' || cost.id === 'insurance-reserves' || cost.id === 'hoa-prepay') ? (
                                                 <div className="flex items-center gap-3">
                                                      <div className="flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500">
@@ -2630,7 +2661,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
       </div>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-3 px-8 flex justify-between items-center shrink-0">
+      <footer className="bg-white border-t border-slate-200 py-1.5 px-8 flex justify-between items-center shrink-0">
           <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">MortgagePro © 2025</p>
           <p className="text-[10px] text-slate-300 font-medium">v1.0.5</p>
       </footer>
@@ -2891,9 +2922,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
            URL.revokeObjectURL(preApprovalPdfUrl);
            setPreApprovalPdfUrl(null);
          }
-       }} title="Pre-Approval Letter Preview" maxWidth="max-w-6xl" noPadding>
-          <div className="flex flex-col h-[85vh]">
-              <div className="flex-1 bg-slate-100 overflow-hidden">
+       }} title="Pre-Approval Letter Preview" maxWidth="max-w-6xl" noPadding positionTop={true}>
+          <div className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 bg-slate-100 overflow-hidden min-h-0">
                   {preApprovalPdfUrl && (
                     <iframe
                       src={preApprovalPdfUrl}

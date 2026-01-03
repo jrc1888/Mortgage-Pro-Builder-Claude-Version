@@ -192,6 +192,7 @@ export interface Scenario {
 
   // Costs
   closingCosts: ClosingCostItem[];
+  showInterestCredit?: boolean; // Interest credit option for prepaid interest (reduces closing costs, doesn't skip payment)
   
   // Notes
   notes: string;

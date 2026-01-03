@@ -371,19 +371,19 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
   
   const renderEmptyState = () => (
       <div className="flex flex-col h-full bg-slate-50">
-          <header className="bg-slate-950 border-b border-slate-800 h-28 px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
+          <header className="bg-slate-950 border-b border-slate-800 h-[5.5rem] px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
                 {/* Decorative Background Icon */}
                 <div className="absolute right-32 top-1/2 -translate-y-1/2 text-slate-900/80 pointer-events-none transform group-hover:scale-105 transition-transform duration-1000">
-                    <Target size={240} strokeWidth={0.5} />
+                    <Target size={200} strokeWidth={0.5} />
                 </div>
 
                 <div className="flex items-center gap-6 relative z-10 h-full max-w-4xl flex-1">
-                    <div className="w-16 h-16 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl flex items-center justify-center shadow-2xl shadow-black/50 shrink-0">
-                        <Home size={32} className="text-indigo-400" />
+                    <div className="w-14 h-14 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl flex items-center justify-center shadow-2xl shadow-black/50 shrink-0">
+                        <Home size={28} className="text-indigo-400" />
                     </div>
                     
                     <div className="flex flex-col justify-center h-full">
-                        <h2 className="text-5xl font-black text-white tracking-tight leading-none shadow-sm pb-1">Dashboard</h2>
+                        <h2 className="text-4xl font-black text-white tracking-tight leading-none shadow-sm pb-1">Dashboard</h2>
                     </div>
                 </div>
           </header>
@@ -402,7 +402,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
               </button>
           </div>
 
-          <footer className="bg-white border-t border-slate-300 py-3 px-8 flex justify-between items-center shrink-0">
+          <footer className="bg-white border-t border-slate-300 py-1.5 px-8 flex justify-between items-center shrink-0">
               <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">MortgagePro © 2025</p>
               <p className="text-[10px] text-slate-300 font-medium">v1.0.5</p>
           </footer>

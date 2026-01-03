@@ -153,25 +153,34 @@ export const LiveDecimalInput: React.FC<{
 };
 
 // --- Custom Checkbox Component ---
-export const CustomCheckbox = ({ checked, onChange, label, warning, className }: { checked: boolean, onChange: (c: boolean) => void, label?: React.ReactNode, warning?: string, className?: string }) => (
-  <div className={`flex flex-col ${className}`}>
-      <div 
-          onClick={() => onChange(!checked)} 
-          className="flex items-center gap-2.5 cursor-pointer group select-none"
-      >
-          <div className={`w-5 h-5 rounded flex items-center justify-center transition-all border shadow-sm ${
-              checked 
-              ? 'bg-indigo-600 border-indigo-600' 
-              : 'bg-white border-slate-300 group-hover:border-indigo-400'
-          }`}>
-              {checked && <Check size={14} className="text-white" strokeWidth={3} />}
-          </div>
-          {label && <span className={`text-sm font-semibold tracking-tight ${checked ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-700'}`}>{label}</span>}
-      </div>
-      {warning && checked && (
-           <p className="text-[10px] text-amber-700 font-medium mt-1.5 ml-8 bg-amber-50 p-2 rounded border border-amber-100">
-              {warning}
-           </p>
-      )}
-  </div>
-);
+export const CustomCheckbox = ({ checked, onChange, label, warning, className, disabled, labelClassName }: { checked: boolean, onChange: (c: boolean) => void, label?: React.ReactNode, warning?: string, className?: string, disabled?: boolean, labelClassName?: string }) => {
+  // If label is already a React element, use it directly; otherwise wrap in span
+  const labelElement = typeof label === 'string' || typeof label === 'number' 
+    ? <span className={`text-sm font-semibold tracking-tight ${checked ? 'text-slate-900' : disabled ? 'text-slate-400' : 'text-slate-500 group-hover:text-slate-700'} ${labelClassName || ''}`}>{label}</span>
+    : label;
+  
+  return (
+    <div className={`flex flex-col ${className}`}>
+        <div 
+            onClick={() => !disabled && onChange(!checked)} 
+            className={`flex items-center gap-2.5 select-none ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer group'}`}
+        >
+            <div className={`w-5 h-5 rounded flex items-center justify-center transition-all border shadow-sm ${
+                checked 
+                ? 'bg-indigo-600 border-indigo-600' 
+                : disabled
+                ? 'bg-slate-100 border-slate-200'
+                : 'bg-white border-slate-300 group-hover:border-indigo-400'
+            }`}>
+                {checked && <Check size={14} className="text-white" strokeWidth={3} />}
+            </div>
+            {labelElement}
+        </div>
+        {warning && checked && (
+             <p className="text-[10px] text-amber-700 font-medium mt-1.5 ml-8 bg-amber-50 p-2 rounded border border-amber-100">
+                {warning}
+             </p>
+        )}
+    </div>
+  );
+};

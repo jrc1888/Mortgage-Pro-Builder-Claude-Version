@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -9,6 +10,7 @@ interface ModalProps {
   children: React.ReactNode;
   maxWidth?: string;
   noPadding?: boolean;
+  positionTop?: boolean; // If true, positions modal at top of screen instead of center
 }
 
 export const Modal: React.FC<ModalProps> = ({ 
@@ -18,7 +20,8 @@ export const Modal: React.FC<ModalProps> = ({
   subtitle, 
   children, 
   maxWidth = 'max-w-lg',
-  noPadding = false 
+  noPadding = false,
+  positionTop = false
 }) => {
   if (!isOpen) return null;
 
@@ -35,10 +38,10 @@ export const Modal: React.FC<ModalProps> = ({
     }
   }, [isOpen, onClose]);
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+  const modalContent = (
+    <div className={`fixed inset-0 bg-slate-900/60 z-[100] flex ${positionTop ? 'items-start justify-center pt-4' : 'items-center justify-center'} ${positionTop ? 'p-4' : 'p-4'} backdrop-blur-sm animate-fadeIn`}>
       <div 
-        className={`bg-white rounded-xl shadow-2xl w-full ${maxWidth} overflow-hidden transform transition-all border border-slate-300 flex flex-col max-h-[90vh]`}
+        className={`bg-white rounded-xl shadow-2xl w-full ${maxWidth} overflow-hidden transform transition-all border border-slate-300 flex flex-col ${positionTop ? 'h-[calc(100vh-2rem)]' : 'max-h-[90vh]'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-white shrink-0">
@@ -55,10 +58,13 @@ export const Modal: React.FC<ModalProps> = ({
             <X size={20} />
           </button>
         </div>
-        <div className={`overflow-y-auto ${noPadding ? '' : 'p-6'}`}>
+        <div className={`${positionTop && noPadding ? 'flex-1 min-h-0 flex flex-col' : 'overflow-y-auto'} ${noPadding ? '' : 'p-6'}`}>
           {children}
         </div>
       </div>
     </div>
   );
+
+  // Use portal to render at document body level to avoid parent container constraints
+  return isOpen ? createPortal(modalContent, document.body) : null;
 };
