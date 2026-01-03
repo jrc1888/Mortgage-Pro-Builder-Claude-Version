@@ -264,6 +264,58 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'misc-4');
         if (def) { updatedCosts.push(def); changed = true; }
     }
+    
+    // Add/Remove Origination Fee based on DPA status
+    const hasOriginationFee = updatedCosts.some(c => c && c.id === 'origination-fee');
+    if (scenario.dpa.active) {
+        // DPA is active - add origination fee if it doesn't exist
+        if (!hasOriginationFee) {
+            // Default to 1.5% (as percentage, not dollar amount)
+            const originationFeeItem = {
+                id: 'origination-fee',
+                category: 'A. Origination Charges',
+                name: 'Origination Fee',
+                amount: 1.5, // Default to 1.5% (percentage mode)
+                isFixed: false // Start as percentage
+            };
+            
+            // Insert origination fee right after discount points in Section A
+            const discountPointsIndex = updatedCosts.findIndex(c => c && c.id === 'discount-points');
+            if (discountPointsIndex >= 0) {
+                updatedCosts.splice(discountPointsIndex + 1, 0, originationFeeItem);
+            } else {
+                // If discount points not found, just add to Section A items
+                const sectionAIndex = updatedCosts.findIndex(c => c && c.category === 'A. Origination Charges');
+                if (sectionAIndex >= 0) {
+                    updatedCosts.splice(sectionAIndex + 1, 0, originationFeeItem);
+                } else {
+                    updatedCosts.push(originationFeeItem);
+                }
+            }
+            changed = true;
+        } else {
+            // Update default if it's 0 or very small (might be from old data)
+            const originationFeeIndex = updatedCosts.findIndex(c => c && c.id === 'origination-fee');
+            if (originationFeeIndex >= 0) {
+                const currentAmount = updatedCosts[originationFeeIndex].amount;
+                // If amount is 0 or very small, set to 1.5% default (as percentage)
+                if (!currentAmount || currentAmount < 0.01) {
+                    updatedCosts[originationFeeIndex] = {
+                        ...updatedCosts[originationFeeIndex],
+                        amount: 1.5, // Default to 1.5% (percentage mode)
+                        isFixed: false
+                    };
+                    changed = true;
+                }
+            }
+        }
+    } else {
+        // DPA is not active - remove origination fee if it exists
+        if (hasOriginationFee) {
+            updatedCosts = updatedCosts.filter(c => !c || c.id !== 'origination-fee');
+            changed = true;
+        }
+    }
 
     
     // 3. Ensure Income/Debt Objects exist
@@ -279,7 +331,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     if (changed) {
         setScenario(prev => ({ ...prev, closingCosts: updatedCosts }));
     }
-  }, [scenario.closingCosts.length, scenario.income, scenario.debts]);
+  }, [scenario.closingCosts.length, scenario.income, scenario.debts, scenario.dpa.active, results?.totalLoanAmount]);
 
   // Function to add current state to history (called when field editing is complete)
   const addToHistory = () => {
@@ -1512,8 +1564,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             ) : (
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center w-48 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                                                        {/* Discount points, Buyer's Agent Commission, and Other Fees can toggle between $ and %} */}
-                                                        {(cost.id === 'discount-points' || cost.id === 'buyers-agent-commission' || cost.id === 'hoa-transfer' || (cost.category === 'H. Other' && cost.id !== 'hoa-prepay')) ? (
+                                                        {/* Discount points, Origination Fee, Buyer's Agent Commission, and Other Fees can toggle between $ and %} */}
+                                                        {(cost.id === 'discount-points' || cost.id === 'origination-fee' || cost.id === 'buyers-agent-commission' || cost.id === 'hoa-transfer' || (cost.category === 'H. Other' && cost.id !== 'hoa-prepay')) ? (
                                                             <>
                                                                 {cost.isFixed ? (
                                                                     <>
@@ -1590,7 +1642,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         if (cost.id === 'title-insurance') {
                                             return sum + (cost.amount || calculateLendersTitleInsurance(results.totalLoanAmount));
                                         }
-                                        if (cost.id === 'discount-points') {
+                                        if (cost.id === 'discount-points' || cost.id === 'origination-fee') {
                                             if (cost.isFixed) {
                                                 return sum + safeNum(cost.amount);
                                             } else {

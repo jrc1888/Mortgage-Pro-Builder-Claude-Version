@@ -95,7 +95,7 @@ export const calculateItemCost = (
       // These use purchase price
       return scenario.purchasePrice * (val / 100);
     } else {
-      // All other percentage fees use loan amount (discount-points, misc-1, misc-2, misc-3, misc-4)
+      // All other percentage fees use loan amount (discount-points, origination-fee, misc-1, misc-2, misc-3, misc-4)
       return results.totalLoanAmount * (val / 100);
     }
   }
