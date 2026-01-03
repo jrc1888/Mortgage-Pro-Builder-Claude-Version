@@ -33,6 +33,10 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfFilename, setPdfFilename] = useState<string>('');
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [showGoalsModal, setShowGoalsModal] = useState(false);
+  const [userGoals, setUserGoals] = useState<string>('');
+  const [parsedGoals, setParsedGoals] = useState<any>(null);
+  const [parsingGoals, setParsingGoals] = useState(false);
   const [acceleratedTermMonths, setAcceleratedTermMonths] = useState<number>(180); // Default 15 years
   const [acceleratedRateOverride, setAcceleratedRateOverride] = useState<number | null>(null); // Manual rate override
 
@@ -199,53 +203,58 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
     };
   }, [loanStatus, currentLoan, useManualOverride, results.totalLoanAmount, scenario.interestRate, scenario.loanTermMonths]);
 
-  // Calculate 30 year vs accelerated paydown comparison
+  // Calculate actual loan term vs accelerated paydown comparison
   const termComparison = useMemo(() => {
-    const term30 = calculateTermComparison(results.totalLoanAmount, scenario.interestRate, 360);
+    // Use actual loan term from scenario, not hardcoded 30 years
+    const actualLoanTermMonths = scenario.loanTermMonths || 360;
+    const termActual = calculateTermComparison(results.totalLoanAmount, scenario.interestRate, actualLoanTermMonths);
     // Use manual rate override if provided, otherwise assume 0.375% lower rate for accelerated term
     const acceleratedRate = acceleratedRateOverride !== null 
       ? acceleratedRateOverride 
       : scenario.interestRate - 0.375;
     const termAccelerated = calculateTermComparison(results.totalLoanAmount, acceleratedRate, acceleratedTermMonths);
     
-    const yearsSaved = (term30.term - termAccelerated.term) / 12;
-    const interestSaved = term30.totalInterest - termAccelerated.totalInterest;
-    const monthlyDifference = termAccelerated.monthlyPayment - term30.monthlyPayment;
+    const yearsSaved = (termActual.term - termAccelerated.term) / 12;
+    const interestSaved = termActual.totalInterest - termAccelerated.totalInterest;
+    const monthlyDifference = termAccelerated.monthlyPayment - termActual.monthlyPayment;
 
     return {
-      term30: { ...term30, yearsSaved: 0, interestSaved: 0, monthlyDifference: 0 },
+      term30: { ...termActual, yearsSaved: 0, interestSaved: 0, monthlyDifference: 0 }, // Keep term30 name for PDF compatibility
+      termActual: { ...termActual, yearsSaved: 0, interestSaved: 0, monthlyDifference: 0 },
       term15: { ...termAccelerated, yearsSaved, interestSaved, monthlyDifference }, // Keep term15 name for PDF compatibility
       termAccelerated: { ...termAccelerated, yearsSaved, interestSaved, monthlyDifference },
       acceleratedTermMonths,
-      acceleratedRate
+      acceleratedRate,
+      actualLoanTermMonths
     };
-  }, [results.totalLoanAmount, scenario.interestRate, acceleratedTermMonths, acceleratedRateOverride]);
+  }, [results.totalLoanAmount, scenario.interestRate, scenario.loanTermMonths, acceleratedTermMonths, acceleratedRateOverride]);
 
   // Calculate prepayment scenarios (using accelerated term from comparison)
   const prepaymentScenarios = useMemo(() => {
     if (!loanStatus) return null;
-    const base30YearPayment = termComparison.term30.monthlyPayment;
+    const actualLoanTermMonths = scenario.loanTermMonths || 360;
+    const baseActualPayment = termComparison.termActual.monthlyPayment;
     const baseAcceleratedPayment = termComparison.termAccelerated.monthlyPayment;
-    const difference = baseAcceleratedPayment - base30YearPayment;
+    const difference = baseAcceleratedPayment - baseActualPayment;
 
     const matchingPayment = calculatePrepaymentScenario(
       results.totalLoanAmount,
       scenario.interestRate,
-      360,
+      actualLoanTermMonths,
       difference
     );
 
     const halfDifference = calculatePrepaymentScenario(
       results.totalLoanAmount,
       scenario.interestRate,
-      360,
+      actualLoanTermMonths,
       difference / 2
     );
 
     const custom = customExtraPayment > 0 ? calculatePrepaymentScenario(
       results.totalLoanAmount,
       scenario.interestRate,
-      360,
+      actualLoanTermMonths,
       customExtraPayment
     ) : null;
 
@@ -253,12 +262,13 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
       matchingPayment,
       halfDifference,
       custom,
-      base30YearPayment,
+      base30YearPayment: baseActualPayment, // Keep for PDF compatibility
+      baseActualPayment: baseActualPayment,
       base15YearPayment: baseAcceleratedPayment, // Keep for PDF compatibility
       baseAcceleratedPayment: baseAcceleratedPayment,
       difference
     };
-  }, [termComparison, results.totalLoanAmount, scenario.interestRate, customExtraPayment, loanStatus]);
+  }, [termComparison, results.totalLoanAmount, scenario.interestRate, scenario.loanTermMonths, customExtraPayment, loanStatus]);
 
   // Calculate desired payoff term scenario
   const desiredPayoffScenario = useMemo(() => {
@@ -278,8 +288,9 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
       (results.monthlyDPA2Payment || 0);
     
     const totalInterestForTerm = calculateTotalInterest(results.totalLoanAmount, scenario.interestRate, desiredPayoffTermMonths);
-    const totalInterest30Year = calculateTotalInterest(results.totalLoanAmount, scenario.interestRate, 360);
-    const interestSavings = totalInterest30Year - totalInterestForTerm;
+    const actualLoanTermMonths = scenario.loanTermMonths || 360;
+    const totalInterestActual = calculateTotalInterest(results.totalLoanAmount, scenario.interestRate, actualLoanTermMonths);
+    const interestSavings = totalInterestActual - totalInterestForTerm;
     const paymentDifference = requiredFullPayment - newFullPayment;
 
     return {
@@ -835,10 +846,10 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
         </div>
       )}
 
-      {/* Section 4: 30 Year vs Accelerated - Compact */}
+      {/* Section 4: Actual Loan Term vs Accelerated - Compact */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide border-b border-slate-100 pb-2">
-          <TrendingUp size={16} className="text-slate-400" /> 30yr vs Accelerated
+          <TrendingUp size={16} className="text-slate-400" /> {Math.round((scenario.loanTermMonths || 360) / 12)}yr vs Accelerated
         </h3>
         
         {/* Controls for Accelerated Term */}
@@ -876,26 +887,26 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
             <thead>
               <tr className="border-b-2 border-slate-200">
                 <th className="text-left p-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider"></th>
-                <th className="text-center p-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-indigo-50">30yr</th>
+                <th className="text-center p-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-indigo-50">{Math.round((scenario.loanTermMonths || 360) / 12)}yr</th>
                 <th className="text-center p-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-emerald-50">{acceleratedTermMonths / 12}yr</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-slate-100">
                 <td className="p-2 text-xs font-medium text-slate-700">Rate</td>
-                <td className="p-2 text-center font-mono text-sm text-slate-900">{formatPercent(termComparison.term30.interestRate, 3)}</td>
+                <td className="p-2 text-center font-mono text-sm text-slate-900">{formatPercent(termComparison.termActual.interestRate, 3)}</td>
                 <td className="p-2 text-center font-mono text-sm text-slate-900 bg-emerald-50/50">{formatPercent(termComparison.acceleratedRate, 3)}</td>
               </tr>
               <tr className="border-b border-slate-100">
                 <td className="p-2 text-xs font-medium text-slate-700">Monthly P&I</td>
-                <td className="p-2 text-center font-mono text-sm text-slate-900">{formatMoney(termComparison.term30.monthlyPayment)}</td>
+                <td className="p-2 text-center font-mono text-sm text-slate-900">{formatMoney(termComparison.termActual.monthlyPayment)}</td>
                 <td className="p-2 text-center font-mono text-sm text-slate-900 bg-emerald-50/50">{formatMoney(termComparison.termAccelerated.monthlyPayment)}</td>
               </tr>
               <tr className="border-b border-slate-100">
                 <td className="p-2 text-xs font-medium text-slate-700">Full Payment</td>
                 <td className="p-2 text-center font-mono text-sm text-slate-900">
                   {formatMoney(
-                    termComparison.term30.monthlyPayment + 
+                    termComparison.termActual.monthlyPayment + 
                     results.monthlyTax + 
                     results.monthlyInsurance + 
                     results.monthlyMI + 
@@ -918,12 +929,12 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
               </tr>
               <tr className="border-b border-slate-100">
                 <td className="p-2 text-xs font-medium text-slate-700">Total Interest</td>
-                <td className="p-2 text-center font-mono text-sm text-slate-900">{formatMoney(termComparison.term30.totalInterest)}</td>
+                <td className="p-2 text-center font-mono text-sm text-slate-900">{formatMoney(termComparison.termActual.totalInterest)}</td>
                 <td className="p-2 text-center font-mono text-sm text-slate-900 bg-emerald-50/50">{formatMoney(termComparison.termAccelerated.totalInterest)}</td>
               </tr>
               <tr className="border-b border-slate-100">
                 <td className="p-2 text-xs font-medium text-slate-700">Payoff Date</td>
-                <td className="p-2 text-center text-xs text-slate-900">{formatDate(termComparison.term30.payoffDate)}</td>
+                <td className="p-2 text-center text-xs text-slate-900">{formatDate(termComparison.termActual.payoffDate)}</td>
                 <td className="p-2 text-center text-xs text-slate-900 bg-emerald-50/50">{formatDate(termComparison.termAccelerated.payoffDate)}</td>
               </tr>
               <tr className="border-b border-slate-200">
@@ -1048,34 +1059,8 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
                 return;
               }
 
-              setGeneratingPDF(true);
-              try {
-                const analysisData = {
-                  loanStatus,
-                  payoff,
-                  breakEven,
-                  interestComparison,
-                  termComparison,
-                  prepaymentScenarios,
-                  currentMonthlyPayment: currentFullPayment, // Pass full payment for PDF
-                  monthlySavings
-                };
-
-                const { pdfUrl, filename } = await generateRefinancePDFPreview(
-                  scenario,
-                  results,
-                  analysisData
-                );
-
-                setPdfPreviewUrl(pdfUrl);
-                setPdfFilename(filename);
-                setShowPdfModal(true);
-              } catch (error) {
-                console.error('Error generating PDF:', error);
-                alert('Error generating PDF. Please try again.');
-              } finally {
-                setGeneratingPDF(false);
-              }
+              // Show goals modal first
+              setShowGoalsModal(true);
             }}
             disabled={generatingPDF || !loanStatus || !payoff}
             className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors text-xs uppercase tracking-wide shadow-lg shadow-indigo-900/20"
@@ -1147,6 +1132,153 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
               className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold text-xs uppercase hover:bg-indigo-500 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2"
             >
               <Download size={16} /> Download PDF
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Goals Input Modal */}
+      <Modal
+        isOpen={showGoalsModal}
+        onClose={() => {
+          setShowGoalsModal(false);
+          setUserGoals('');
+          setParsedGoals(null);
+        }}
+        title="Refinance Goals"
+        subtitle="Optional: Describe the goals for this refinance to customize the PDF report"
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Refinance Goals (Optional)
+            </label>
+            <textarea
+              value={userGoals}
+              onChange={(e) => setUserGoals(e.target.value)}
+              placeholder="e.g., Focus on monthly savings, emphasize break-even point, highlight cash flow benefits..."
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-slate-900 resize-none"
+              rows={6}
+            />
+            <p className="mt-2 text-xs text-slate-500">
+              Leave blank to use default PDF format. Your goals will be used to customize which metrics and sections are emphasized in the report.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+            <button
+              onClick={() => {
+                setShowGoalsModal(false);
+                setUserGoals('');
+                setParsedGoals(null);
+              }}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (!loanStatus || !payoff || !termComparison) {
+                  alert('Please fill in current loan information to generate the report.');
+                  return;
+                }
+
+                setParsingGoals(true);
+                setGeneratingPDF(true);
+                try {
+                  let parsed = null;
+                  
+                  // If user provided goals, parse them
+                  if (userGoals.trim()) {
+                    try {
+                      // Prepare refinance data for AI parsing
+                      const refinanceDataForAI = {
+                        currentMonthlyPayment: currentFullPayment,
+                        currentInterestRate: currentLoan?.originalRate || scenario.interestRate,
+                        currentBalance: loanStatus?.currentPrincipalBalance || 0,
+                        remainingTermMonths: loanStatus?.remainingTermMonths || 0,
+                        newMonthlyPayment: results.monthlyPrincipalAndInterest + results.monthlyTax + results.monthlyInsurance + results.monthlyMI + results.monthlyHOA + (results.monthlyDPAPayment || 0) + (results.monthlyDPA2Payment || 0),
+                        newInterestRate: scenario.interestRate,
+                        newLoanAmount: results.totalLoanAmount,
+                        newTermMonths: scenario.loanTermMonths || 360,
+                        monthlySavings: monthlySavings,
+                        totalInterestSavings: interestComparison?.netSavings || 0,
+                        breakEvenMonths: breakEven?.breakEvenMonths || null,
+                        cashToClose: results.refinanceDetails?.cashNeededAtClosing || 0,
+                        cashBack: results.refinanceDetails?.netCashToBorrower > 0 ? results.refinanceDetails.netCashToBorrower : 0,
+                        acceleratedTermMonths: termComparison?.acceleratedTermMonths || null,
+                        acceleratedInterestSavings: termComparison?.termAccelerated?.interestSaved || null
+                      };
+
+                      const response = await fetch('/api/parse-refi-goals', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          userGoals: userGoals.trim(),
+                          refinanceData: refinanceDataForAI
+                        })
+                      });
+
+                      if (response.ok) {
+                        parsed = await response.json();
+                        setParsedGoals(parsed);
+                      } else {
+                        console.error('Error parsing goals:', await response.text());
+                        // Continue with default PDF if parsing fails
+                      }
+                    } catch (error) {
+                      console.error('Error parsing goals:', error);
+                      // Continue with default PDF if parsing fails
+                    }
+                  }
+
+                  const analysisData = {
+                    loanStatus,
+                    payoff,
+                    breakEven,
+                    interestComparison,
+                    termComparison,
+                    prepaymentScenarios,
+                    currentMonthlyPayment: currentFullPayment,
+                    monthlySavings
+                  };
+
+                  const { pdfUrl, filename } = await generateRefinancePDFPreview(
+                    scenario,
+                    results,
+                    analysisData,
+                    parsed // Pass parsed goals to PDF generation
+                  );
+
+                  setPdfPreviewUrl(pdfUrl);
+                  setPdfFilename(filename);
+                  setShowGoalsModal(false);
+                  setShowPdfModal(true);
+                } catch (error) {
+                  console.error('Error generating PDF:', error);
+                  alert('Error generating PDF. Please try again.');
+                } finally {
+                  setParsingGoals(false);
+                  setGeneratingPDF(false);
+                }
+              }}
+              disabled={parsingGoals}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {parsingGoals ? (
+                <>
+                  <Clock size={16} className="animate-spin" />
+                  Analyzing Goals...
+                </>
+              ) : (
+                <>
+                  <FileText size={16} />
+                  Generate PDF
+                </>
+              )}
             </button>
           </div>
         </div>

@@ -199,21 +199,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     if (!hasDiscountPoints) {
         const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'discount-points');
         if (def) {
-            // Ensure discount points default to 1
+            // Only set default to 1 if discount points don't exist at all (new scenario)
             updatedCosts.push({ ...def, amount: 1 });
             changed = true;
         }
-    } else {
-        // Ensure discount points default to 1 if they exist but are 0 or missing
-        const discountPointsIndex = updatedCosts.findIndex(c => c && c.id === 'discount-points');
-        if (discountPointsIndex >= 0) {
-            const currentAmount = updatedCosts[discountPointsIndex].amount;
-            if (!currentAmount || currentAmount === 0) {
-                updatedCosts[discountPointsIndex] = { ...updatedCosts[discountPointsIndex], amount: 1 };
-                changed = true;
-            }
-        }
     }
+    // Note: We no longer reset existing discount points to 1 - user-entered values are preserved
     // Only add buyers agent commission for Purchase transactions (not refinances)
     if (!hasBuyersAgentCommission && scenario.transactionType === 'Purchase') {
         const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'buyers-agent-commission');

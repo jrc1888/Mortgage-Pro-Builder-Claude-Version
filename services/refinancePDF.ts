@@ -120,10 +120,19 @@ interface RefinanceAnalysisData {
   } | null;
   currentMonthlyPayment: number;
   monthlySavings: number;
+  parsedGoals?: any; // Optional parsed goals from AI to customize PDF
 }
 
 async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promise<jsPDF> {
-  const { scenario, results, loanStatus, payoff, breakEven, interestComparison, termComparison, prepaymentScenarios, currentMonthlyPayment, monthlySavings } = data;
+  const { scenario, results, loanStatus, payoff, breakEven, interestComparison, termComparison, prepaymentScenarios, currentMonthlyPayment, monthlySavings, parsedGoals } = data;
+  
+  // Extract customization instructions from parsed goals
+  const focusAreas = parsedGoals?.focusAreas || [];
+  const emphasizeMetrics = parsedGoals?.emphasizeMetrics || [];
+  const tone = parsedGoals?.tone || 'professional';
+  const keyMessages = parsedGoals?.keyMessages || [];
+  const dataHighlights = parsedGoals?.dataHighlights || {};
+  const skipSections = parsedGoals?.skipSections || [];
 
   // Create PDF
   const doc = new jsPDF({
@@ -223,16 +232,53 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
   
+  // Customize benefits based on parsed goals
   const benefits = [];
+  
+  // If monthly savings is emphasized in goals, make it more prominent
+  const emphasizeMonthlySavings = emphasizeMetrics.includes('monthly_savings') || focusAreas.includes('monthly_savings');
+  
   if (monthlySavings > 0) {
-    benefits.push(`✓ Save ${formatMoney(monthlySavings)} every month - that's ${formatMoney(monthlySavings * 12)} per year`);
+    if (emphasizeMonthlySavings && dataHighlights.monthly_savings) {
+      // Use AI-generated highlight if available
+      benefits.push(`✓ ${dataHighlights.monthly_savings}`);
+    } else {
+      benefits.push(`✓ Save ${formatMoney(monthlySavings)} every month - that's ${formatMoney(monthlySavings * 12)} per year`);
+    }
   }
+  
+  // Customize break-even message based on goals
+  const emphasizeBreakEven = emphasizeMetrics.includes('break_even_months') || focusAreas.includes('break_even');
+  
   if (breakEven && breakEven.breakEvenMonths !== Infinity && breakEven.breakEvenMonths < 60) {
-    benefits.push(`✓ Break even in just ${breakEven.breakEvenMonths} months (${breakEven.breakEvenYears.toFixed(1)} years)`);
+    if (emphasizeBreakEven && dataHighlights.break_even) {
+      // Use AI-generated highlight if available
+      benefits.push(`✓ ${dataHighlights.break_even}`);
+    } else {
+      benefits.push(`✓ Break even in just ${breakEven.breakEvenMonths} months (${breakEven.breakEvenYears.toFixed(1)} years)`);
+    }
   }
+  
+  // Customize interest savings message based on goals
+  const emphasizeInterestSavings = emphasizeMetrics.includes('total_interest_savings') || focusAreas.includes('interest_reduction');
+  
   if (interestComparison && interestComparison.netSavings > 0) {
-    benefits.push(`✓ Save ${formatMoney(interestComparison.netSavings)} in total interest over the life of the loan`);
+    if (emphasizeInterestSavings && dataHighlights.total_interest_savings) {
+      benefits.push(`✓ ${dataHighlights.total_interest_savings}`);
+    } else {
+      benefits.push(`✓ Save ${formatMoney(interestComparison.netSavings)} in total interest over the life of the loan`);
+    }
   }
+  
+  // Add any custom key messages from parsed goals
+  if (keyMessages && keyMessages.length > 0) {
+    keyMessages.forEach((msg: string) => {
+      if (msg && msg.trim()) {
+        benefits.push(`✓ ${msg}`);
+      }
+    });
+  }
+  
   if (benefits.length === 0) {
     benefits.push('✓ Lower your interest rate and improve your financial position');
   }
@@ -404,17 +450,20 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   }
 
   // === TERM COMPARISON (Condensed) ===
+  const actualLoanTermMonths = scenario.loanTermMonths || 360;
+  const actualLoanTermYears = Math.round(actualLoanTermMonths / 12);
+  
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.text('30-Year vs Accelerated Paydown Comparison', marginLeft, yPos);
+  doc.text(`${actualLoanTermYears}-Year vs Accelerated Paydown Comparison`, marginLeft, yPos);
   
   yPos += 0.2;
 
   // Compact comparison boxes
   const termBoxWidth = contentWidth / 2 - 0.1;
   
-  // 30-Year Box
+  // Actual Loan Term Box
   doc.setFillColor(248, 248, 248);
   doc.roundedRect(col1X, yPos, termBoxWidth, 0.9, 0.05, 0.05, 'F');
   doc.setDrawColor(200, 200, 200);
@@ -424,7 +473,7 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
-  doc.text('30-Year Option', col1X + 0.08, yPos + 0.15);
+  doc.text(`${actualLoanTermYears}-Year Option`, col1X + 0.08, yPos + 0.15);
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -499,7 +548,8 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
     
-    const prepayText = `With a 30-year loan, your required payment is ${formatMoney(prepaymentScenarios.difference)} lower than the accelerated paydown option. ` +
+    const actualLoanTermYears = Math.round((scenario.loanTermMonths || 360) / 12);
+    const prepayText = `With a ${actualLoanTermYears}-year loan, your required payment is ${formatMoney(prepaymentScenarios.difference)} lower than the accelerated paydown option. ` +
       `If you pay the extra ${formatMoney(prepaymentScenarios.difference)} each month, you'll pay off your loan in approximately ${prepaymentScenarios.matchingPayment.payoffYears.toFixed(1)} years ` +
       `and save ${formatMoney(prepaymentScenarios.matchingPayment.interestSaved)} in total interest, while maintaining the flexibility to reduce payments if needed.`;
     
@@ -633,12 +683,14 @@ export async function generateRefinancePDFPreview(
     } | null;
     currentMonthlyPayment: number;
     monthlySavings: number;
-  }
+  },
+  parsedGoals?: any // Optional parsed goals from AI
 ): Promise<{ pdfUrl: string; filename: string }> {
   const data: RefinanceAnalysisData = {
     scenario,
     results,
-    ...analysisData
+    ...analysisData,
+    parsedGoals // Include parsed goals in data
   };
   
   const doc = await generateRefinancePDFWithData(data);
