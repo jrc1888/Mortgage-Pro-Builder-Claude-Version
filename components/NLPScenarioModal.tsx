@@ -291,7 +291,7 @@ export const NLPScenarioModal: React.FC<Props> = ({
 
         {/* Parsed Results */}
         {parsedData && (
-          <div className="bg-white p-5 rounded-xl border-2 border-slate-200 shadow-sm space-y-4 animate-fadeIn">
+          <div className="bg-white p-5 rounded-xl border-2 border-slate-300 shadow-sm space-y-4 animate-fadeIn">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <h4 className="font-bold text-slate-900 text-lg">Extracted Data</h4>

@@ -84,7 +84,7 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, onClose }) => {
       {/* Comparison Content */}
       <div className="flex-1 overflow-auto p-8">
         <div className="max-w-[1800px] mx-auto">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
+          <div className="bg-white rounded-xl border border-slate-300 shadow-lg overflow-hidden">
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 border-b-2 border-slate-300">

@@ -258,7 +258,9 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   }
 
   // Common fixed monthly costs (Tax, Ins, MI, HOA, DPA, DPA2)
-  const fixedMonthlyCosts = (propertyTaxYearly / 12) + (homeInsuranceYearly / 12) + monthlyMI + hoaMonthly + dpaPayment + dpa2Payment;
+  // NOTE: monthlyMI will be calculated later after LTV is determined, so we'll recalculate fixedMonthlyCosts then
+  // For now, calculate without MI - it will be added later
+  let fixedMonthlyCosts = (propertyTaxYearly / 12) + (homeInsuranceYearly / 12) + hoaMonthly + dpaPayment + dpa2Payment;
 
   // 6. Buydown Calculation (Subsidy)
   let buydownCost = 0;
@@ -512,6 +514,9 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
       monthlyMI = (totalLoanAmount * factor) / 12;
     }
   }
+
+  // Recalculate fixedMonthlyCosts now that monthlyMI is known
+  fixedMonthlyCosts = (propertyTaxYearly / 12) + (homeInsuranceYearly / 12) + monthlyMI + hoaMonthly + dpaPayment + dpa2Payment;
 
   // 8. Seller Concessions & Lender Credits Logic
   // For refinances: Seller concessions are not applicable

@@ -211,10 +211,23 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.setTextColor(100, 100, 100);
   doc.text('Your Current Loan', col1X + 0.1, yPos + 0.15);
   
+  // Calculate current full payment for PDF
+  const currentFullPayment = currentMonthlyPayment; // This should already be full payment from RefiAnalysisTab
+  // Calculate new full payment
+  const newFullPayment = results.totalMonthlyPayment || (
+    results.monthlyPrincipalAndInterest + 
+    results.monthlyTax + 
+    results.monthlyInsurance + 
+    results.monthlyMI + 
+    results.monthlyHOA + 
+    results.monthlyDPAPayment + 
+    (results.monthlyDPA2Payment || 0)
+  );
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(0, 0, 0);
-  doc.text(formatMoney(currentMonthlyPayment), col1X + 0.1, yPos + 0.4);
+  doc.text(formatMoney(currentFullPayment), col1X + 0.1, yPos + 0.4);
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -237,7 +250,7 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.text(formatMoney(results.monthlyPrincipalAndInterest), col2X + 0.1, yPos + 0.4);
+  doc.text(formatMoney(newFullPayment), col2X + 0.1, yPos + 0.4);
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);

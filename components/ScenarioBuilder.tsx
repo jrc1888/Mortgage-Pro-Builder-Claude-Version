@@ -926,10 +926,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           <div className="max-w-3xl mx-auto space-y-4 pb-8">
             
             {/* Tabs */}
-            <div className="flex bg-white rounded-xl p-1.5 shadow-sm border border-slate-200 mb-6 sticky top-0 z-20">
+            <div className="flex bg-white rounded-xl p-1.5 shadow-sm border border-slate-300 mb-6 sticky top-0 z-20">
                 <button onClick={() => setActiveTab('loan')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'loan' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Loan</button>
                 <button onClick={() => setActiveTab('costs')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'costs' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Costs</button>
-                <button onClick={() => setActiveTab('advanced')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'advanced' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Assistance</button>
+                {scenario.transactionType !== 'Refinance' && (
+                    <button 
+                        onClick={() => setActiveTab('advanced')} 
+                        className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                            activeTab === 'advanced' 
+                                ? 'bg-slate-900 text-white shadow-md' 
+                                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                        }`}
+                    >
+                        Assistance
+                    </button>
+                )}
                 <button onClick={() => setActiveTab('income')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'income' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Income</button>
                 {getScenarioType(scenario) === 'refinance' && (
                     <button onClick={() => setActiveTab('refi')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'refi' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Refi Analysis</button>
@@ -943,8 +954,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     <ValidationBanner errors={validationErrors} />
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide border-b border-slate-100 pb-2">
+                    <div className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm">
+                        <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide border-b border-slate-200 pb-2">
                             <Building size={16} className="text-slate-400" /> Property Profile
                         </h3>
                         <div className="space-y-3">
@@ -1021,11 +1032,24 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 );
                             })()}
                             
-                            <div>
-                                <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
-                                <div className={inputGroupClass}>
-                                    <div className={symbolClass}>$</div>
-                                    <FormattedNumberInput value={scenario.purchasePrice || 0} onChangeValue={(val) => handleInputChange('purchasePrice', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
+                                    <div className={inputGroupClass}>
+                                        <div className={symbolClass}>$</div>
+                                        <FormattedNumberInput value={scenario.purchasePrice || 0} onChangeValue={(val) => handleInputChange('purchasePrice', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className={labelClass}>
+                                        LTV
+                                        {scenario.transactionType === 'Refinance' && results.ltv > 80 && (
+                                            <span className="ml-2 text-[9px] text-amber-600 font-medium">({'>'} 80%)</span>
+                                        )}
+                                    </label>
+                                    <div className="flex items-center w-full bg-slate-100 border border-slate-200 rounded-lg shadow-sm h-10 px-4">
+                                        <span className="text-sm font-bold text-slate-600 ml-auto">{formatPercent(results.ltv, 2)}</span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1161,8 +1185,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </div>
                     </div>
 
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-fit">
-                         <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide border-b border-slate-100 pb-2">
+                    <div className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm h-fit">
+                         <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-4 text-sm uppercase tracking-wide border-b border-slate-200 pb-2">
                             <Calculator size={16} className="text-slate-400" /> Loan Details
                         </h3>
                         
@@ -1273,10 +1297,15 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             </div>
 
                              {scenario.loanType === LoanType.FHA && (
-                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-300">
                                     <div className="flex justify-between items-center mb-3">
                                         <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">FHA Details</p>
-                                        <span className="text-[10px] bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">{results.ltv > 95 ? "LTV > 95%" : "LTV ≤ 95%"}</span>
+                                        {scenario.transactionType === 'Purchase' && (
+                                            <span className="text-[10px] bg-white border border-slate-300 text-slate-700 px-2 py-0.5 rounded font-bold">{results.ltv > 95 ? "LTV > 95%" : "LTV ≤ 95%"}</span>
+                                        )}
+                                        {scenario.transactionType === 'Refinance' && results.ltv > 80 && (
+                                            <span className="text-[10px] bg-white border border-slate-300 text-slate-700 px-2 py-0.5 rounded font-bold">LTV {'>'} 80%</span>
+                                        )}
                                     </div>
                                     <div className="flex justify-between items-center text-sm text-slate-600 mb-2">
                                         <span>UFMIP (1.75%)</span>
@@ -1339,7 +1368,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         </div>
 
                         {/* NEW: Total Loan Amount Footer */}
-                        <div className="mt-4 pt-4 border-t border-slate-100">
+                        <div className="mt-4 pt-4 border-t border-slate-200">
                             <div className="flex justify-between items-end">
                                 <div>
                                     <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Base Loan Amount</span>
@@ -1363,8 +1392,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
             
              {/* Costs Tab Content */}
              {activeTab === 'costs' && (
-                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm animate-fadeIn">
-                    <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-6 text-sm uppercase tracking-wide border-b border-slate-100 pb-3">
+                <div className="bg-white p-6 rounded-xl border border-slate-300 shadow-sm animate-fadeIn">
+                    <h3 className="flex items-center gap-2 text-slate-900 font-bold mb-6 text-sm uppercase tracking-wide border-b border-slate-200 pb-3">
                         <DollarSign size={16} className="text-slate-400" /> Closing Costs & Credits
                     </h3>
                     
@@ -1818,7 +1847,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
             )}
 
             {/* Assistance Tab Content */}
-            {activeTab === 'advanced' && (
+            {activeTab === 'advanced' && scenario.transactionType !== 'Refinance' && (
                 <div className="space-y-6 animate-fadeIn">
                      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                          <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-3">
@@ -2251,6 +2280,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         {/* Middle Panel: Results & Breakdown */}
         <div className="w-full lg:w-[380px] bg-white border-l border-slate-200 overflow-y-auto print:w-full print:border-none">
             <div className="p-4 space-y-4">
+                {/* Transaction Type Header */}
+                <div className={`py-2 px-3 rounded-lg border-2 font-bold text-sm uppercase tracking-wide text-center ${
+                    scenario.transactionType === 'Purchase' 
+                        ? 'bg-blue-100 border-blue-300 text-blue-800' 
+                        : 'bg-purple-100 border-purple-300 text-purple-800'
+                }`}>
+                    {scenario.transactionType}
+                </div>
                 
                 {/* Total Payment Hero */}
                 <div>
@@ -2311,7 +2348,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     <div className="mt-3 pt-3 border-t border-slate-100/50 space-y-2">
                         <div className="flex justify-between items-center">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
-                            <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(results.totalLoanAmount)}</span>
+                            <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(Math.round(results.totalLoanAmount * 100) / 100)}</span>
                         </div>
                         {/* Prominent LTV and Rate/APR display */}
                         <div className="flex gap-2">

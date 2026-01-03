@@ -38,10 +38,10 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <div className="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
       <div 
-        className={`bg-white rounded-xl shadow-2xl w-full ${maxWidth} overflow-hidden transform transition-all border border-slate-100 flex flex-col max-h-[90vh]`}
+        className={`bg-white rounded-xl shadow-2xl w-full ${maxWidth} overflow-hidden transform transition-all border border-slate-300 flex flex-col max-h-[90vh]`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+        <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-white shrink-0">
           <div>
             <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
               {title}

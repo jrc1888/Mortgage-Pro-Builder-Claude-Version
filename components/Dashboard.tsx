@@ -292,7 +292,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 </div>
                                 
                                 {/* Key Metrics - Larger and More Prominent */}
-                                <div className="grid grid-cols-2 gap-4 mb-5 pt-4 border-t border-slate-200">
+                                <div className="grid grid-cols-2 gap-4 mb-5 pt-4 border-t border-slate-300">
                                     <div>
                                         <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Purchase Price</span>
                                         <span className="text-2xl font-black text-slate-900">${scenario.purchasePrice.toLocaleString()}</span>
@@ -325,7 +325,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 </div>
                                 
                                 {/* Property Info - Smaller */}
-                                <div className="space-y-2 text-sm text-slate-500 mt-auto pt-4 border-t border-slate-100">
+                                <div className="space-y-2 text-sm text-slate-500 mt-auto pt-4 border-t border-slate-200">
                                     <div className="flex items-center gap-2">
                                         <MapPin size={14} className="text-slate-300 shrink-0" />
                                         <span className="truncate text-xs font-medium">{scenario.propertyAddress || "No Address/Zip"}</span>
@@ -340,7 +340,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             </div>
                             
                             {/* Footer Actions */}
-                            <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex justify-between items-center group-hover:bg-indigo-50/50 transition-colors">
+                            <div className="bg-slate-50 px-4 py-3 border-t border-slate-300 flex justify-between items-center group-hover:bg-indigo-50/50 transition-colors">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                                     Open Scenario <ArrowRight size={12} />
                                 </span>
@@ -402,7 +402,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
               </button>
           </div>
 
-          <footer className="bg-white border-t border-slate-200 py-3 px-8 flex justify-between items-center shrink-0">
+          <footer className="bg-white border-t border-slate-300 py-3 px-8 flex justify-between items-center shrink-0">
               <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">MortgagePro © 2025</p>
               <p className="text-[10px] text-slate-300 font-medium">v1.0.5</p>
           </footer>
@@ -595,7 +595,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                     </div>
 
                     {/* Footer */}
-                    <footer className="bg-white border-t border-slate-200 py-3 px-8 flex justify-between items-center shrink-0">
+                    <footer className="bg-white border-t border-slate-300 py-3 px-8 flex justify-between items-center shrink-0">
                         <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">MortgagePro © 2025</p>
                         <p className="text-[10px] text-slate-300 font-medium">v1.0.5</p>
                     </footer>
@@ -643,7 +643,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                 subtitle={settingsTab === 'defaults' ? "Configure system defaults" : "Track feature ideas"}
              >
                 {/* Tabs */}
-                <div className="flex gap-2 mb-6 border-b border-slate-200">
+                <div className="flex gap-2 mb-6 border-b border-slate-300">
                     <button
                         onClick={() => setSettingsTab('defaults')}
                         className={`px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors border-b-2 ${
@@ -683,7 +683,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                         )}
                         
                         <div className="pt-2">
-                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">Default Assumptions</h4>
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-200 pb-2">Default Assumptions</h4>
                             
                             <div className="space-y-4">
                                 <div>

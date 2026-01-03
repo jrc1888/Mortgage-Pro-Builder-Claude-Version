@@ -185,22 +185,27 @@ const App: React.FC = () => {
     const scenarioToUpdate = scenarios.find(s => s.id === id);
     if (!scenarioToUpdate) return;
     
-    // If pinning a scenario, unpin all others first (only one can be starred)
+    // If pinning a scenario, unpin all others in the same client first (only one can be starred per client)
     if (isPinned) {
-      // Unpin all other scenarios first
-      const otherScenarios = scenarios.filter(s => s.id !== id && s.isPinned);
+      // Unpin all other scenarios in the same client first
+      const otherScenarios = scenarios.filter(s => 
+        s.id !== id && 
+        s.isPinned && 
+        s.clientName === scenarioToUpdate.clientName
+      );
       for (const other of otherScenarios) {
         const unpinned = { ...other, isPinned: false };
         await saveScenario(unpinned);
       }
       
-      // Update state to unpin all others and pin the selected one
+      // Update state to unpin all others in the same client and pin the selected one
       setScenarios(prev => prev.map(s => {
         if (s.id === id) {
           return { ...s, isPinned: true };
-        } else {
+        } else if (s.clientName === scenarioToUpdate.clientName && s.isPinned) {
           return { ...s, isPinned: false };
         }
+        return s;
       }));
       
       // Update the specific scenario

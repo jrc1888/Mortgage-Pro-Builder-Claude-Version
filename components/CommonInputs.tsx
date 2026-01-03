@@ -23,27 +23,38 @@ export const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ valu
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
-    // Allow digits and one dot
+    // Remove all non-numeric characters except decimal point
     const clean = raw.replace(/[^0-9.]/g, '');
     
     // Prevent multiple dots
     if ((clean.match(/\./g) || []).length > 1) return;
 
-    setInputValue(raw); // Keep user input as they type (including commas if they type them)
-    
-    // Parse for parent
+    // Parse the number (before formatting with commas)
     const num = parseFloat(clean);
     if (!isNaN(num)) {
-      onChangeValue(num);
+      // Round to 2 decimal places for dollar amounts
+      const roundedNum = Math.round(num * 100) / 100;
+      onChangeValue(roundedNum);
+      // Format with commas as user types
+      // Split by decimal point to handle formatting separately
+      const parts = clean.split('.');
+      const integerPart = parts[0] || '0';
+      // Limit decimal part to 2 digits
+      const decimalPart = parts[1] !== undefined ? '.' + parts[1].substring(0, 2) : '';
+      
+      // Add commas to integer part
+      const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      setInputValue(formattedInteger + decimalPart);
     } else {
       onChangeValue(0);
+      setInputValue(raw); // Keep raw input for display
     }
   };
 
   const handleBlur = () => {
     setIsFocused(false);
-    // On blur, re-format the valid number to 2 decimal places
-    const num = parseFloat(inputValue.replace(/,/g, ''));
+    // On blur, re-format the valid number to 2 decimal places with commas
+    const num = parseFloat(value.toString().replace(/,/g, ''));
     if (!isNaN(num)) {
       setInputValue(num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     } else {
@@ -57,8 +68,15 @@ export const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ valu
 
   const handleFocus = () => {
     setIsFocused(true);
-    // On focus, remove commas for easier editing
-    setInputValue(inputValue.replace(/,/g, ''));
+    // Keep commas when focused, but ensure the value is formatted
+    const num = parseFloat(value.toString().replace(/,/g, ''));
+    if (!isNaN(num)) {
+      const parts = num.toString().split('.');
+      const integerPart = parts[0] || '0';
+      const decimalPart = parts[1] !== undefined ? '.' + parts[1] : '';
+      const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      setInputValue(formattedInteger + decimalPart);
+    }
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
@@ -89,7 +107,8 @@ export const LiveDecimalInput: React.FC<{
     placeholder?: string;
     precision?: number;
     onBlur?: () => void;
-}> = ({ value, onChange, className, step = "0.01", placeholder, precision = 3, onBlur }) => {
+    disabled?: boolean;
+}> = ({ value, onChange, className, step = "0.01", placeholder, precision = 3, onBlur, disabled }) => {
     const [localVal, setLocalVal] = useState(value.toString());
     const [focused, setFocused] = useState(false);
 
@@ -126,7 +145,8 @@ export const LiveDecimalInput: React.FC<{
               }
             }}
             onWheel={(e) => e.currentTarget.blur()}
-            className={`bg-transparent outline-none w-full placeholder-slate-300 ${className}`}
+            disabled={disabled}
+            className={`bg-transparent outline-none w-full placeholder-slate-300 ${className} ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
             placeholder={placeholder}
         />
     );

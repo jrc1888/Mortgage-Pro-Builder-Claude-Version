@@ -148,6 +148,21 @@ export interface Scenario {
     fundingDate: string; // ISO date string
     originalTerm: number; // Loan term in months (e.g., 360 for 30-year)
     currentMonthlyPayment?: number; // Optional override for monthly P&I payment
+    newLoanPaymentOverride?: number; // Optional override for new loan monthly P&I payment (PI only)
+    useManualOverride?: boolean; // Checkbox to toggle between original loan info and manual override
+    manualOverride?: {
+      interestRate?: number;
+      estimatedBalance?: number;
+      estimatedPIPayment?: number;
+      estimatedTotalPayment?: number;
+    };
+    originalPaymentBreakdown?: {
+      monthlyTax?: number;
+      monthlyInsurance?: number;
+      monthlyMI?: number;
+      hoaMonthly?: number;
+      monthlyDPA?: number;
+    };
   };
 
   // Loan Logic
