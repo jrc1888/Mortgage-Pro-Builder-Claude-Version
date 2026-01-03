@@ -15,6 +15,8 @@ import { validateScenario, ValidationError, ValidationThresholds, DEFAULT_VALIDA
 import { ValidationBanner } from './ValidationBanner';
 import { extractZipCode } from '../services/amiService';
 import { AMISection } from './AMISection';
+import { getScenarioType } from '../utils/scenarioTypeHelpers';
+import { RefiAnalysisTab } from './RefiAnalysisTab';
 
 interface Props {
   initialScenario: Scenario;
@@ -90,7 +92,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   })();
   const [scenario, setScenario] = useState<Scenario>(scenarioWithDefaults);
   const [results, setResults] = useState<CalculatedResults>(calculateScenario(scenarioWithDefaults));
-  const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income'>('loan');
+  const [activeTab, setActiveTab] = useState<'loan' | 'costs' | 'advanced' | 'income' | 'refi'>('loan');
   
   // Undo/Redo History (20 revisions max) - tracks per input field, not per keystroke
   const [history, setHistory] = useState<Scenario[]>([scenarioWithDefaults]);
@@ -877,6 +879,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                 <button onClick={() => setActiveTab('costs')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'costs' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Costs</button>
                 <button onClick={() => setActiveTab('advanced')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'advanced' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Assistance</button>
                 <button onClick={() => setActiveTab('income')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'income' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Income</button>
+                {getScenarioType(scenario) === 'refinance' && (
+                    <button onClick={() => setActiveTab('refi')} className={`flex-1 py-2 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === 'refi' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>Refi Analysis</button>
+                )}
             </div>
 
             {/* Loan Tab Content */}
@@ -891,24 +896,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <Building size={16} className="text-slate-400" /> Property Profile
                         </h3>
                         <div className="space-y-3">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide">Transaction Type</label>
-                                <div className="flex bg-slate-100 p-1 rounded-lg">
-                                    <button 
-                                        onClick={() => handleInputChange('transactionType', 'Purchase')}
-                                        className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${scenario.transactionType === 'Purchase' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                                    >
-                                        Purchase
-                                    </button>
-                                    <button 
-                                        onClick={() => handleInputChange('transactionType', 'Refinance')}
-                                        className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${scenario.transactionType === 'Refinance' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                                    >
-                                        Refinance
-                                    </button>
-                                </div>
-                            </div>
-
                             <div>
                                 <label className={labelClass}>Property Address or Zip Code</label>
                                 <div className={inputGroupClass}>
@@ -2193,6 +2180,18 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     </div>
                 </div>
              )}
+
+            {/* Refi Analysis Tab Content */}
+            {activeTab === 'refi' && getScenarioType(scenario) === 'refinance' && (
+                <RefiAnalysisTab
+                    scenario={scenario}
+                    results={results}
+                    onUpdateScenario={(updates) => {
+                        setScenario(prev => ({ ...prev, ...updates }));
+                        addToHistory();
+                    }}
+                />
+            )}
 
           </div>
         </div>

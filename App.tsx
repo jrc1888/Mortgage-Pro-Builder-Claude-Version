@@ -6,6 +6,7 @@ import { Auth } from './components/Auth';
 import { Modal } from './components/Modal';
 import { Scenario, ScenarioDefaults } from './types';
 import { DEFAULT_SCENARIO } from './constants';
+import { scenarioTypeToTransactionType, migrateScenarioType } from './utils/scenarioTypeHelpers';
 import { loadScenarios, saveScenario, deleteScenario, deleteClientFolder } from './services/supabase';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { User, MapPin, Check, ArrowRight, Loader2, Sparkles } from 'lucide-react';
@@ -45,7 +46,12 @@ const App: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [showTypeSelectionModal, setShowTypeSelectionModal] = useState(false);
+  const [selectedScenarioType, setSelectedScenarioType] = useState<'purchase' | 'refinance'>('purchase');
   const [newScenarioData, setNewScenarioData] = useState({ clientName: '', address: '', transactionType: 'Purchase' as 'Purchase' | 'Refinance' });
+  const [showDuplicateTypeModal, setShowDuplicateTypeModal] = useState(false);
+  const [duplicateScenarioId, setDuplicateScenarioId] = useState<string | null>(null);
+  const [duplicateScenarioType, setDuplicateScenarioType] = useState<'purchase' | 'refinance'>('purchase');
 
   // 1. Handle Session State
   useEffect(() => {
@@ -78,7 +84,18 @@ const App: React.FC = () => {
   const fetchData = async () => {
       setIsLoadingData(true);
       const { data } = await loadScenarios();
-      setScenarios(data);
+      // Migrate scenarios to ensure scenarioType is set (backward compatibility)
+      const migratedScenarios = data.map(migrateScenarioType);
+      setScenarios(migratedScenarios);
+      
+      // Save migrated scenarios back if any were updated (one-time migration)
+      for (const scenario of migratedScenarios) {
+        const original = data.find(s => s.id === scenario.id);
+        if (original && (!original.scenarioType || original.scenarioType !== scenario.scenarioType)) {
+          await saveScenario(scenario);
+        }
+      }
+      
       setIsLoadingData(false);
   };
 
@@ -92,15 +109,28 @@ const App: React.FC = () => {
       localStorage.setItem('mortgage_defaults', JSON.stringify(newDefaults));
   };
 
-  const handleOpenNewModal = (prefilledClientName?: string) => {
-      setNewScenarioData({ clientName: prefilledClientName || '', address: '', transactionType: 'Purchase' });
+  const handleOpenNewModal = (prefilledClientName?: string, scenarioType: 'purchase' | 'refinance' = 'purchase') => {
+      const transactionType = scenarioType === 'purchase' ? 'Purchase' : 'Refinance';
+      setNewScenarioData({ clientName: prefilledClientName || '', address: '', transactionType });
       setIsModalOpen(true);
+  };
+  
+  // Store prefilled client name for use after type selection
+  const [pendingClientName, setPendingClientName] = useState<string | undefined>(undefined);
+  
+  // Show scenario type selection modal first, then show creation modal
+  const handleOpenNewWithType = (prefilledClientName?: string) => {
+      // Store the client name for later use
+      setPendingClientName(prefilledClientName);
+      setSelectedScenarioType('purchase');
+      setShowTypeSelectionModal(true);
   };
 
   const startNewScenario = async () => {
     if (!newScenarioData.clientName) return;
 
     const now = new Date().toISOString();
+    const scenarioType = newScenarioData.transactionType === 'Purchase' ? 'purchase' : 'refinance';
     const scenario: Scenario = {
         ...DEFAULT_SCENARIO,
         ...userDefaults,
@@ -110,6 +140,7 @@ const App: React.FC = () => {
         lastUpdated: now,
         name: 'New Scenario',
         clientName: newScenarioData.clientName,
+        scenarioType,
         transactionType: newScenarioData.transactionType,
         propertyAddress: newScenarioData.address,
         isAddressTBD: false
@@ -127,12 +158,9 @@ const App: React.FC = () => {
   };
 
   const handleSelect = (scenario: Scenario) => {
-    // Ensure transactionType exists for backward compatibility
-    const scenarioWithDefaults = {
-      ...scenario,
-      transactionType: scenario.transactionType || 'Purchase'
-    };
-    setActiveScenario(scenarioWithDefaults);
+    // Migrate scenario to ensure scenarioType is set (backward compatibility)
+    const migratedScenario = migrateScenarioType(scenario);
+    setActiveScenario(migratedScenario);
     setView('builder');
   };
 
@@ -194,7 +222,23 @@ const App: React.FC = () => {
   const handleDuplicate = async (id: string) => {
     const original = scenarios.find(s => s.id === id);
     if (!original) return;
+    
+    // Show type selection modal for duplication
+    setDuplicateScenarioId(id);
+    // Default to the original scenario's type
+    const originalType = original.scenarioType || (original.transactionType === 'Purchase' ? 'purchase' : 'refinance');
+    setDuplicateScenarioType(originalType);
+    setShowDuplicateTypeModal(true);
+  };
+  
+  const confirmDuplicate = async () => {
+    if (!duplicateScenarioId) return;
+    
+    const original = scenarios.find(s => s.id === duplicateScenarioId);
+    if (!original) return;
+    
     const now = new Date().toISOString();
+    const transactionType = scenarioTypeToTransactionType(duplicateScenarioType);
     const copy: Scenario = {
         ...JSON.parse(JSON.stringify(original)), 
         id: crypto.randomUUID(),
@@ -202,11 +246,15 @@ const App: React.FC = () => {
         dateCreated: now,
         lastUpdated: now,
         history: [],
-        isPinned: false // Don't copy the pinned status - only one scenario can be starred
+        isPinned: false, // Don't copy the pinned status - only one scenario can be starred
+        scenarioType: duplicateScenarioType,
+        transactionType
     };
 
     setScenarios(prev => [copy, ...prev]);
     await saveScenario(copy);
+    setShowDuplicateTypeModal(false);
+    setDuplicateScenarioId(null);
   };
 
   // --- Renders ---
@@ -228,7 +276,7 @@ const App: React.FC = () => {
         {view === 'dashboard' ? (
           <Dashboard 
               scenarios={scenarios} 
-              onCreateNew={handleOpenNewModal} 
+              onCreateNew={handleOpenNewWithType} 
               onSelect={handleSelect}
               onSave={handleSave}
               onDelete={handleDelete}
@@ -252,6 +300,56 @@ const App: React.FC = () => {
           />
         )}
 
+        {/* Scenario Type Selection Modal - Shows FIRST */}
+        <Modal
+          isOpen={showTypeSelectionModal}
+          onClose={() => setShowTypeSelectionModal(false)}
+          title="New Scenario"
+          subtitle="Select the type of scenario you want to create"
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-6">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 ml-0.5">Scenario Type</label>
+              <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setSelectedScenarioType('purchase')}
+                  className={`flex-1 py-3 px-4 text-sm font-bold uppercase rounded-md transition-all ${selectedScenarioType === 'purchase' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Purchase
+                </button>
+                <button
+                  onClick={() => setSelectedScenarioType('refinance')}
+                  className={`flex-1 py-3 px-4 text-sm font-bold uppercase rounded-md transition-all ${selectedScenarioType === 'refinance' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Refinance
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-4 flex gap-3">
+              <button
+                onClick={() => setShowTypeSelectionModal(false)}
+                className="flex-1 h-10 text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg font-bold transition-all text-xs uppercase tracking-wide"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowTypeSelectionModal(false);
+                  handleOpenNewModal(pendingClientName, selectedScenarioType);
+                  setPendingClientName(undefined);
+                }}
+                className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 bg-emerald-400 hover:bg-emerald-600 text-white shadow-emerald-900/20 px-4"
+              >
+                <span>Continue</span>
+                <ArrowRight size={16} className="flex-shrink-0" />
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Scenario Creation Modal */}
         <Modal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
@@ -287,24 +385,6 @@ const App: React.FC = () => {
                                 <option key={idx} value={name} />
                             ))}
                         </datalist>
-                    </div>
-                </div>
-                
-                <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 ml-0.5">Transaction Type</label>
-                    <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
-                        <button 
-                            onClick={() => setNewScenarioData(prev => ({...prev, transactionType: 'Purchase'}))}
-                            className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${newScenarioData.transactionType === 'Purchase' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            Purchase
-                        </button>
-                        <button 
-                            onClick={() => setNewScenarioData(prev => ({...prev, transactionType: 'Refinance'}))}
-                            className={`flex-1 py-2 px-4 text-xs font-bold uppercase rounded-md transition-all ${newScenarioData.transactionType === 'Refinance' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            Refinance
-                        </button>
                     </div>
                 </div>
                 
@@ -354,6 +434,57 @@ const App: React.FC = () => {
             </div>
         </Modal>
 
+        {/* Duplicate Scenario Type Selection Modal */}
+        <Modal
+          isOpen={showDuplicateTypeModal}
+          onClose={() => {
+            setShowDuplicateTypeModal(false);
+            setDuplicateScenarioId(null);
+          }}
+          title="Duplicate Scenario"
+          subtitle="Choose scenario type for the duplicate"
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-6">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 ml-0.5">Scenario Type</label>
+              <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setDuplicateScenarioType('purchase')}
+                  className={`flex-1 py-3 px-4 text-sm font-bold uppercase rounded-md transition-all ${duplicateScenarioType === 'purchase' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Purchase
+                </button>
+                <button
+                  onClick={() => setDuplicateScenarioType('refinance')}
+                  className={`flex-1 py-3 px-4 text-sm font-bold uppercase rounded-md transition-all ${duplicateScenarioType === 'refinance' ? 'bg-white shadow text-indigo-700 ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Refinance
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-4 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDuplicateTypeModal(false);
+                  setDuplicateScenarioId(null);
+                }}
+                className="flex-1 h-10 text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg font-bold transition-all text-xs uppercase tracking-wide"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDuplicate}
+                className="flex-1 h-10 rounded-lg font-bold shadow-lg transition-all text-xs uppercase tracking-wide flex items-center justify-center gap-2.5 bg-emerald-400 hover:bg-emerald-600 text-white shadow-emerald-900/20 px-4"
+              >
+                <span>Create Duplicate</span>
+                <ArrowRight size={16} className="flex-shrink-0" />
+              </button>
+            </div>
+          </div>
+        </Modal>
+
         {/* AI Scenario Creation Modal */}
         <NLPScenarioModal
           isOpen={showAIModal}
@@ -361,6 +492,8 @@ const App: React.FC = () => {
           onCreateScenario={async (data) => {
             // Create full scenario from AI-extracted data
             const now = new Date().toISOString();
+            const transactionTypeFromData = data.transactionType || newScenarioData.transactionType || 'Purchase';
+            const scenarioTypeFromData = (transactionTypeFromData === 'Refinance') ? 'refinance' : 'purchase';
             const scenario: Scenario = {
               ...DEFAULT_SCENARIO,
               ...userDefaults,
@@ -370,7 +503,8 @@ const App: React.FC = () => {
               lastUpdated: data.lastUpdated || now,
               name: data.name || 'New Scenario',
               clientName: data.clientName || newScenarioData.clientName || '',
-              transactionType: data.transactionType || newScenarioData.transactionType || 'Purchase',
+              scenarioType: scenarioTypeFromData,
+              transactionType: transactionTypeFromData,
               propertyAddress: data.propertyAddress || newScenarioData.address,
               isAddressTBD: data.isAddressTBD !== undefined ? data.isAddressTBD : false,
               // Ensure down payment amount and percent are always synced

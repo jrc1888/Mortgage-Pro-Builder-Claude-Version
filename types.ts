@@ -101,8 +101,9 @@ export interface Scenario {
   name: string;
   clientName: string;
   
-  // Transaction Type
-  transactionType: 'Purchase' | 'Refinance';
+  // Transaction Type (scenarioType is the new field, transactionType kept for backward compatibility)
+  scenarioType?: 'purchase' | 'refinance'; // New field - preferred
+  transactionType: 'Purchase' | 'Refinance'; // Legacy field - kept for backward compatibility
   
   // Property Identity
   propertyAddress: string;
@@ -139,6 +140,15 @@ export interface Scenario {
   cashOutCalculationMode?: 'specified' | 'maximum'; // How cash out is determined
   financeClosingCosts?: boolean; // Whether to finance closing costs in loan (default: true for refis)
   cashOutRateAdjustment?: number; // Additional rate for cash-out refi (default: 0.25-0.50%, user customizable)
+  
+  // Current loan information for refinance analysis (only for refinance scenarios)
+  currentLoan?: {
+    originalAmount: number;
+    originalRate: number;
+    fundingDate: string; // ISO date string
+    originalTerm: number; // Loan term in months (e.g., 360 for 30-year)
+    currentMonthlyPayment?: number; // Optional override for monthly P&I payment
+  };
 
   // Loan Logic
   loanType: LoanType;

@@ -194,11 +194,11 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
 
   let totalLoanAmount = baseLoanAmount + financedMIP;
   
-  // LTV calculation: use property value for refis, purchase price for purchases
-  const propertyValueForLTV = isRefinance ? (refinanceDetails?.propertyValue || purchasePrice) : purchasePrice;
-  const ltv = propertyValueForLTV > 0 ? (baseLoanAmount / propertyValueForLTV) * 100 : 0;
+  // Note: LTV and MI calculations will be done AFTER refinance logic updates baseLoanAmount
+  // (for refinances, baseLoanAmount includes financed closing costs, which affects LTV and MI)
 
-  // 3. Monthly P&I
+  // 3. Monthly P&I (will use updated totalLoanAmount after refinance logic)
+  // For now, calculate with initial values - will recalculate if refinance logic changes amounts
   const monthlyRate = (interestRate / 100) / 12;
   let monthlyPrincipalAndInterest = 0;
 
@@ -219,32 +219,13 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     monthlyPrincipalAndInterest = calculatePMT(monthlyRate, loanTermMonths, totalLoanAmount);
   }
 
-  // 4. Monthly MI
+  // Monthly MI will be calculated AFTER refinance logic updates baseLoanAmount and totalLoanAmount
+  // (because LTV depends on baseLoanAmount, and MI depends on LTV)
   let monthlyMI = 0;
   let miRatePercent = 0;
-
-  if (scenario.manualMI !== null && scenario.manualMI !== undefined) {
-    monthlyMI = safeNum(scenario.manualMI);
-    // Reverse calculate the % for display if manual
-    miRatePercent = totalLoanAmount > 0 ? (monthlyMI * 12 / totalLoanAmount) * 100 : 0;
-  } else {
-    if (scenario.loanType === LoanType.FHA) {
-      // FHA Rules (Annual):
-      const factor = ltv > 95 ? 0.0055 : 0.0050; 
-      miRatePercent = factor * 100;
-      monthlyMI = (totalLoanAmount * factor) / 12;
-    } else if (scenario.loanType === LoanType.CONVENTIONAL && ltv > 80) {
-      // Standard Conventional Logic (Simplified)
-      let factor = 0;
-      if (ltv > 95) factor = 0.0095;
-      else if (ltv > 90) factor = 0.0075;
-      else if (ltv > 85) factor = 0.0048;
-      else factor = 0.0028;
-
-      miRatePercent = factor * 100;
-      monthlyMI = (totalLoanAmount * factor) / 12;
-    }
-  }
+  
+  // Store initial values for later recalculation if needed
+  let initialTotalLoanAmount = totalLoanAmount;
 
   // 5. DPA
   let dpaPayment = 0;
@@ -489,6 +470,46 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
       } else {
         refinanceDetails.cashNeededAtClosing = 0;
       }
+    }
+    
+    // After refinance logic, recalculate monthly P&I if totalLoanAmount changed
+    if (isRefinance && totalLoanAmount !== initialTotalLoanAmount) {
+      const updatedMonthlyRate = (interestRate / 100) / 12;
+      if (scenario.interestOnly) {
+        const ioTermMonths = scenario.ioTermMonths || 120;
+        monthlyPrincipalAndInterest = totalLoanAmount * updatedMonthlyRate;
+      } else {
+        monthlyPrincipalAndInterest = calculatePMT(updatedMonthlyRate, loanTermMonths, totalLoanAmount);
+      }
+    }
+  }
+
+  // LTV calculation: MUST be done AFTER refinance logic updates baseLoanAmount
+  // For refinances with financed closing costs, this ensures LTV includes those costs
+  const propertyValueForLTV = isRefinance ? (refinanceDetails?.propertyValue || purchasePrice) : purchasePrice;
+  const ltv = propertyValueForLTV > 0 ? (baseLoanAmount / propertyValueForLTV) * 100 : 0;
+
+  // Monthly MI calculation: depends on LTV, so must be after LTV is calculated
+  if (scenario.manualMI !== null && scenario.manualMI !== undefined) {
+    monthlyMI = safeNum(scenario.manualMI);
+    // Reverse calculate the % for display if manual
+    miRatePercent = totalLoanAmount > 0 ? (monthlyMI * 12 / totalLoanAmount) * 100 : 0;
+  } else {
+    if (scenario.loanType === LoanType.FHA) {
+      // FHA Rules (Annual):
+      const factor = ltv > 95 ? 0.0055 : 0.0050; 
+      miRatePercent = factor * 100;
+      monthlyMI = (totalLoanAmount * factor) / 12;
+    } else if (scenario.loanType === LoanType.CONVENTIONAL && ltv > 80) {
+      // Standard Conventional Logic (Simplified)
+      let factor = 0;
+      if (ltv > 95) factor = 0.0095;
+      else if (ltv > 90) factor = 0.0075;
+      else if (ltv > 85) factor = 0.0048;
+      else factor = 0.0028;
+
+      miRatePercent = factor * 100;
+      monthlyMI = (totalLoanAmount * factor) / 12;
     }
   }
 
