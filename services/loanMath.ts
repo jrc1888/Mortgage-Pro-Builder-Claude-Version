@@ -356,48 +356,89 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     const useManualLoanAmount = refinanceDetails.useManualLoanAmount && safeNum(scenario.refinanceLoanAmount) > 0;
     
     if (useManualLoanAmount) {
-      // Manual loan amount mode: work backwards from user-entered loan amount
+      // ============================================================================
+      // MANUAL LOAN AMOUNT MODE (Refinance)
+      // ============================================================================
+      // User enters the TOTAL loan amount they want (base loan + UFMIP/funding fee)
+      // System works backwards to calculate:
+      //   1. Base loan amount (before UFMIP)
+      //   2. How much closing costs can be financed
+      //   3. Equity/cash available to borrower
+      //
+      // IMPORTANT: refinanceLoanAmount represents TOTAL loan amount including UFMIP
+      // For FHA: Total = Base + (Base × 1.75%)
+      // For VA: Total = Base + (Base × Funding Fee %)
+      // ============================================================================
+      
       const manualLoanAmount = safeNum(scenario.refinanceLoanAmount);
       
-      // Calculate UFMIP rate
-      let ufmipRateRefi = 0;
-      if (scenario.loanType === LoanType.FHA) {
-        ufmipRateRefi = 0.0175;
-      } else if (scenario.loanType === LoanType.VA) {
-        ufmipRateRefi = scenario.ufmipRate > 0 ? scenario.ufmipRate / 100 : 0.0215;
+      // Validate manual loan amount is reasonable
+      if (manualLoanAmount <= 0) {
+        throw new Error('Manual loan amount must be greater than zero');
+      }
+      if (manualLoanAmount > propertyValue * 1.1) {
+        // Allow up to 110% of property value to account for UFMIP on high-LTV loans
+        console.warn(`Manual loan amount ($${manualLoanAmount.toLocaleString()}) exceeds 110% of property value ($${propertyValue.toLocaleString()})`);
       }
       
-      // Calculate base loan amount (before UFMIP)
-      // manualLoanAmount = baseLoanAmount + (baseLoanAmount * ufmipRate)
-      // baseLoanAmount = manualLoanAmount / (1 + ufmipRate)
+      // Calculate UFMIP/funding fee rate based on loan type
+      let ufmipRateRefi = 0;
+      if (scenario.loanType === LoanType.FHA) {
+        ufmipRateRefi = 0.0175; // FHA standard: 1.75%
+      } else if (scenario.loanType === LoanType.VA) {
+        ufmipRateRefi = scenario.ufmipRate > 0 ? scenario.ufmipRate / 100 : 0.0215; // VA default: 2.15%
+      }
+      
+      // Calculate base loan amount (before UFMIP) by working backwards
+      // Math: manualLoanAmount = baseLoanAmount + (baseLoanAmount × ufmipRate)
+      //       manualLoanAmount = baseLoanAmount × (1 + ufmipRate)
+      //       baseLoanAmount = manualLoanAmount / (1 + ufmipRate)
       const finalBaseLoanAmountBeforeUFMIP = ufmipRateRefi > 0 
         ? manualLoanAmount / (1 + ufmipRateRefi)
         : manualLoanAmount;
       
+      // Validate calculated base loan amount is reasonable
+      if (finalBaseLoanAmountBeforeUFMIP <= 0) {
+        throw new Error('Calculated base loan amount is invalid. Please check manual loan amount entry.');
+      }
+      if (finalBaseLoanAmountBeforeUFMIP > maxBaseLoanAmount * 1.01) {
+        // Allow 1% tolerance for rounding
+        console.warn(`Calculated base loan amount ($${finalBaseLoanAmountBeforeUFMIP.toLocaleString()}) exceeds max LTV limit ($${maxBaseLoanAmount.toLocaleString()})`);
+      }
+      
       // Calculate how much closing costs can be financed
+      // Available space = base loan - existing loan payoffs
       let financedClosingCostsAmount = 0;
       if (financeClosingCosts) {
-        // Available for closing costs = base loan - payoff
         const availableForCosts = finalBaseLoanAmountBeforeUFMIP - totalPayoff;
         financedClosingCostsAmount = Math.min(totalClosingCosts, Math.max(0, availableForCosts));
       }
       
-      // Calculate equity/cash: Base Loan - Payoffs - Financed Closing Costs
+      // Calculate equity/cash available: Base Loan - Payoffs - Financed Closing Costs
+      // Positive equity = cash back to borrower
+      // Negative equity = cash required from borrower
       const equity = finalBaseLoanAmountBeforeUFMIP - totalPayoff - financedClosingCostsAmount;
       
       refinanceDetails.financedClosingCosts = financedClosingCostsAmount;
       refinanceDetails.baseLoanAmountBeforeUFMIP = finalBaseLoanAmountBeforeUFMIP;
       refinanceDetails.cashOutAmount = Math.max(0, equity); // Cash back (if positive)
       
-      // Update base loan amount
+      // Update base loan amount for use in rest of calculation
       baseLoanAmount = finalBaseLoanAmountBeforeUFMIP;
       
-      // Recalculate UFMIP and total loan amount
+      // Recalculate UFMIP and total loan amount to verify math
+      // This should match the manualLoanAmount entered by user (within rounding)
       financedMIP = (scenario.loanType === LoanType.FHA || scenario.loanType === LoanType.VA)
         ? baseLoanAmount * ufmipRateRefi
         : 0;
       
       totalLoanAmount = baseLoanAmount + financedMIP;
+      
+      // Verify the calculated total matches what user entered (within $1 tolerance for rounding)
+      const difference = Math.abs(totalLoanAmount - manualLoanAmount);
+      if (difference > 1) {
+        console.warn(`Calculated total loan amount ($${totalLoanAmount.toLocaleString()}) does not match manual entry ($${manualLoanAmount.toLocaleString()}). Difference: $${difference.toFixed(2)}`);
+      }
       
       // Calculate net cash to borrower (including lender credits and unfinanced costs)
       const lenderCreditsForCashCalc = scenario.showLenderCredits 
@@ -499,11 +540,14 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   } else {
     if (scenario.loanType === LoanType.FHA) {
       // FHA Rules (Annual):
+      // IMPORTANT: FHA MI is calculated on BASE loan amount (before UFMIP), not total loan amount
+      // This is per HUD guidelines - UFMIP is financed separately and does not affect MI calculation
       const factor = ltv > 95 ? 0.0055 : 0.0050; 
       miRatePercent = factor * 100;
-      monthlyMI = (totalLoanAmount * factor) / 12;
+      monthlyMI = (baseLoanAmount * factor) / 12;
     } else if (scenario.loanType === LoanType.CONVENTIONAL && ltv > 80) {
       // Standard Conventional Logic (Simplified)
+      // Conventional MI is calculated on total loan amount (including any financed fees)
       let factor = 0;
       if (ltv > 95) factor = 0.0095;
       else if (ltv > 90) factor = 0.0075;
