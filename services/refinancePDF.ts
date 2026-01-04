@@ -283,27 +283,23 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     benefits.push('✓ Lower your interest rate and improve your financial position');
   }
 
-  benefits.forEach((benefit, idx) => {
-    if (yPos > marginTop + 0.85) {
-      // Split if needed
-      const lines = doc.splitTextToSize(benefit, contentWidth - 0.2);
-      doc.text(lines[0], marginLeft + 0.1, yPos);
-      yPos += 0.16;
-    } else {
-      doc.text(benefit, marginLeft + 0.1, yPos);
-      yPos += 0.16;
-    }
+  benefits.forEach((benefit) => {
+    const lines = doc.splitTextToSize(benefit, contentWidth - 0.2);
+    lines.forEach((line: string) => {
+      doc.text(line, marginLeft + 0.1, yPos);
+      yPos += 0.15;
+    });
   });
 
-  yPos += 0.4;
+  yPos += 0.5;
 
   // === MONTHLY PAYMENT COMPARISON - Side by Side ===
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
+  doc.setFontSize(11);
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.text('Monthly Payment Comparison', marginLeft, yPos);
   
-  yPos += 0.22;
+  yPos += 0.25;
 
   // Two-column layout
   const col1X = marginLeft;
@@ -370,8 +366,8 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.text(`Amount: ${formatMoney(results.totalLoanAmount)}`, col2X + 0.1, yPos + 0.75);
 
   // Monthly Savings Callout
+  yPos += 1.05;
   if (monthlySavings > 0) {
-    yPos += 1.0;
     doc.setFillColor(232, 245, 233); // Light green
     doc.roundedRect(marginLeft, yPos, contentWidth, 0.5, 0.05, 0.05, 'F');
     
@@ -395,14 +391,16 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
 
   // === BREAK-EVEN ANALYSIS ===
   if (breakEven && breakEven.breakEvenMonths !== Infinity) {
+    yPos += 0.35;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     doc.text('When Will You Break Even?', marginLeft, yPos);
     
-    yPos += 0.2;
+    yPos += 0.22;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
     
     const breakEvenText = `Your total refinance costs are ${formatMoney(breakEven.totalCosts)}. ` +
       `With monthly savings of ${formatMoney(breakEven.monthlySavings)}, ` +
@@ -411,7 +409,7 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     
     const beLines = doc.splitTextToSize(breakEvenText, contentWidth);
     doc.text(beLines, marginLeft, yPos);
-    yPos += beLines.length * 0.16 + 0.2;
+    yPos += beLines.length * 0.15 + 0.25;
   }
 
   // === TOTAL INTEREST SAVINGS ===
@@ -453,12 +451,13 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   const actualLoanTermMonths = scenario.loanTermMonths || 360;
   const actualLoanTermYears = Math.round(actualLoanTermMonths / 12);
   
+  yPos += 0.25;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
   doc.text(`${actualLoanTermYears}-Year vs Accelerated Paydown Comparison`, marginLeft, yPos);
   
-  yPos += 0.2;
+  yPos += 0.25;
 
   // Compact comparison boxes
   const termBoxWidth = contentWidth / 2 - 0.1;
@@ -478,15 +477,15 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
-  doc.text(`Payment: ${formatMoney(termComparison.term30.monthlyPayment)}`, col1X + 0.08, yPos + 0.3);
-  doc.text(`Total Interest: ${formatMoney(termComparison.term30.totalInterest)}`, col1X + 0.08, yPos + 0.45);
-  doc.text(`Paid off: ${formatDateForPDF(termComparison.term30.payoffDate).split(',')[0]}`, col1X + 0.08, yPos + 0.6);
+  doc.text(`Payment: ${formatMoney(termComparison.term30.monthlyPayment)}`, col1X + 0.08, yPos + 0.32);
+  doc.text(`Total Interest: ${formatMoney(termComparison.term30.totalInterest)}`, col1X + 0.08, yPos + 0.47);
+  doc.text(`Paid off: ${formatDateForPDF(termComparison.term30.payoffDate).split(',')[0]}`, col1X + 0.08, yPos + 0.62);
   
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
-  doc.text('Lower monthly payment', col1X + 0.08, yPos + 0.8);
-  doc.text('More flexibility', col1X + 0.08, yPos + 0.92);
+  doc.text('Lower monthly payment', col1X + 0.08, yPos + 0.78);
+  doc.text('More flexibility', col1X + 0.08, yPos + 0.90);
 
   // Accelerated Paydown Box
   doc.setFillColor(230, 245, 255);
@@ -506,46 +505,49 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
-  doc.text(`Payment: ${formatMoney(termComparison.term15.monthlyPayment)}`, col2X + 0.08, yPos + 0.3);
-  doc.text(`Total Interest: ${formatMoney(termComparison.term15.totalInterest)}`, col2X + 0.08, yPos + 0.45);
-  doc.text(`Paid off: ${formatDateForPDF(termComparison.term15.payoffDate).split(',')[0]}`, col2X + 0.08, yPos + 0.6);
+  doc.text(`Payment: ${formatMoney(termComparison.term15.monthlyPayment)}`, col2X + 0.08, yPos + 0.32);
+  doc.text(`Total Interest: ${formatMoney(termComparison.term15.totalInterest)}`, col2X + 0.08, yPos + 0.47);
+  doc.text(`Paid off: ${formatDateForPDF(termComparison.term15.payoffDate).split(',')[0]}`, col2X + 0.08, yPos + 0.62);
   
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(BRAND_COLOR_R, BRAND_COLOR_G, BRAND_COLOR_B);
-  doc.text(`Save ${formatMoney(termComparison.term15.interestSaved)}`, col2X + 0.08, yPos + 0.8);
-  doc.text(`Paid off ${termComparison.term15.yearsSaved} years sooner`, col2X + 0.08, yPos + 0.92);
+  doc.text(`Save ${formatMoney(termComparison.term15.interestSaved)}`, col2X + 0.08, yPos + 0.78);
+  doc.text(`Paid off ${termComparison.term15.yearsSaved} years sooner`, col2X + 0.08, yPos + 0.90);
 
-  yPos += 1.1;
+  yPos += 1.15;
 
   // === PAYOFF INFORMATION ===
   if (payoff && loanStatus) {
+    yPos += 0.25;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     doc.text('Current Loan Payoff', marginLeft, yPos);
     
-    yPos += 0.18;
+    yPos += 0.2;
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(9);
     doc.setTextColor(100, 100, 100);
-    doc.text(`Your current loan balance is ${formatMoney(loanStatus.currentPrincipalBalance)}. ` +
+    const payoffText = `Your current loan balance is ${formatMoney(loanStatus.currentPrincipalBalance)}. ` +
       `To pay off your existing loan, you'll need approximately ${formatMoney(payoff.payoffAmount)}, ` +
-      `which includes accrued interest through your expected closing date.`, marginLeft, yPos, { maxWidth: contentWidth });
-    
-    yPos += 0.35;
+      `which includes accrued interest through your expected closing date.`;
+    const payoffLines = doc.splitTextToSize(payoffText, contentWidth);
+    doc.text(payoffLines, marginLeft, yPos);
+    yPos += payoffLines.length * 0.15 + 0.25;
   }
 
   // === PREPAYMENT STRATEGY (Condensed) ===
   if (prepaymentScenarios && prepaymentScenarios.difference > 0) {
+    yPos += 0.2;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     doc.text('Smart Prepayment Strategy', marginLeft, yPos);
     
-    yPos += 0.18;
+    yPos += 0.2;
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(9);
     doc.setTextColor(100, 100, 100);
     
     const actualLoanTermYears = Math.round((scenario.loanTermMonths || 360) / 12);
@@ -555,7 +557,7 @@ async function generateRefinancePDFWithData(data: RefinanceAnalysisData): Promis
     
     const prepayLines = doc.splitTextToSize(prepayText, contentWidth);
     doc.text(prepayLines, marginLeft, yPos);
-    yPos += prepayLines.length * 0.14 + 0.25;
+    yPos += prepayLines.length * 0.15 + 0.25;
   }
 
   // Ensure we don't go past page 2

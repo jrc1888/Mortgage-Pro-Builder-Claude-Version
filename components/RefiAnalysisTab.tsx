@@ -1158,7 +1158,7 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
               value={userGoals}
               onChange={(e) => setUserGoals(e.target.value)}
               placeholder="e.g., Focus on monthly savings, emphasize break-even point, highlight cash flow benefits..."
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-slate-900 resize-none"
+              className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-slate-900 resize-none"
               rows={6}
             />
             <p className="mt-2 text-xs text-slate-500">

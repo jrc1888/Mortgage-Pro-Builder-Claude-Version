@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import ScenarioBuilder from './components/ScenarioBuilder';
 import { Auth } from './components/Auth';
@@ -98,6 +98,44 @@ const App: React.FC = () => {
       
       setIsLoadingData(false);
   };
+
+  // Auto-star single scenarios per client
+  useEffect(() => {
+    if (scenarios.length === 0) return;
+
+    const autoStarSingleScenarios = async () => {
+      // Group scenarios by client
+      const clientGroups: Record<string, Scenario[]> = {};
+      scenarios.forEach(s => {
+        const clientName = s.clientName?.trim() || "Unassigned";
+        if (!clientGroups[clientName]) {
+          clientGroups[clientName] = [];
+        }
+        clientGroups[clientName].push(s);
+      });
+
+      // For each client with exactly one scenario, auto-star it if not already starred
+      const updates: Promise<any>[] = [];
+      Object.entries(clientGroups).forEach(([clientName, clientScenarios]) => {
+        if (clientScenarios.length === 1) {
+          const singleScenario = clientScenarios[0];
+          if (!singleScenario.isPinned) {
+            // Auto-star the single scenario
+            const updated = { ...singleScenario, isPinned: true };
+            setScenarios(prev => prev.map(s => s.id === singleScenario.id ? updated : s));
+            updates.push(saveScenario(updated));
+          }
+        }
+      });
+
+      // Wait for all updates to complete
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+    };
+
+    autoStarSingleScenarios();
+  }, [scenarios.length]); // Only run when number of scenarios changes (to avoid infinite loops)
 
   const handleLogout = async () => {
       await supabase.auth.signOut();
