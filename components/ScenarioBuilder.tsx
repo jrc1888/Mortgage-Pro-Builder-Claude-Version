@@ -2315,10 +2315,19 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                 <div>
                     <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Monthly Payment</h2>
                     <div className="flex justify-between items-end">
-                        <div className="text-5xl font-black text-emerald-600 tracking-tight leading-none">
-                            {formatMoney(scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 
-                                ? results.totalMonthlyPayment - (scenario.income?.rental || 0)
-                                : results.totalMonthlyPayment)}
+                        <div className="flex items-baseline gap-2">
+                            <div className="text-5xl font-black text-emerald-600 tracking-tight leading-none">
+                                {formatMoney(scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 
+                                    ? results.totalMonthlyPayment - (scenario.income?.rental || 0)
+                                    : results.totalMonthlyPayment)}
+                            </div>
+                            {(scenario.buydown.active || (scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0)) && (
+                                <div className="text-xl font-medium text-slate-400 line-through decoration-slate-300">
+                                    {formatMoney(scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0
+                                        ? results.baseMonthlyPayment - (scenario.income?.rental || 0)
+                                        : results.baseMonthlyPayment)}
+                                </div>
+                            )}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 mb-1.5">
                              {scenario.occupancyType === 'Investment Property' && results.dscr ? (
@@ -2360,11 +2369,6 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                              })() : null}
                         </div>
                     </div>
-                    {(scenario.buydown.active || (scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0)) && (
-                         <div className="text-sm font-medium text-slate-400 mt-1 line-through decoration-slate-300">
-                             {formatMoney(results.totalMonthlyPayment)}
-                         </div>
-                    )}
 
                      {/* Total Loan Amount & LTV Display */}
                     <div className="mt-3 pt-3 border-t border-slate-100/50 space-y-2">
@@ -2375,8 +2379,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         {/* Prominent LTV and Rate/APR display */}
                         <div className="flex gap-2">
                             {/* LTV - Slightly Narrower */}
-                            <div className="w-[40%] bg-indigo-50 rounded-lg p-3 border border-indigo-100">
-                                <div className="flex justify-between items-center gap-3">
+                            <div className="w-[40%] bg-indigo-50 rounded-lg px-2 py-1 border border-indigo-100">
+                                <div className="flex justify-between items-center gap-2">
                                     <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">LTV</span>
                                     <span className="text-lg font-black text-indigo-600">
                                         {formatPercent(results.ltv, 2)}
@@ -2384,8 +2388,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 </div>
                             </div>
                             {/* Rate/APR - Slightly Wider */}
-                            <div className="flex-1 bg-indigo-50 rounded-lg p-3 border border-indigo-100">
-                                <div className="flex justify-between items-center gap-3">
+                            <div className="flex-1 bg-indigo-50 rounded-lg px-2 py-1 border border-indigo-100">
+                                <div className="flex justify-between items-center gap-2">
                                     <div className="flex flex-col">
                                         <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">RATE</span>
                                         <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">APR</span>
@@ -2405,7 +2409,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                 </div>
                 
                 {/* Monthly Breakdown List */}
-                <div className="border-t border-slate-100 pt-4">
+                <div className="border-t border-slate-100 pt-2">
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
                     <div className="space-y-2 text-base">
                         <div className="flex justify-between items-center text-slate-600">
@@ -2429,25 +2433,25 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <span className="font-bold text-slate-900">{formatMoney(results.monthlyHOA)}</span>
                         </div>
                          {scenario.dpa.active && (
-                             <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
+                             <div className="flex justify-between items-center text-indigo-600">
                                 <span>DPA Loan (1st){scenario.dpa.isDeferred ? ' (Deferred)' : ''}</span>
                                 <span className="font-bold">{scenario.dpa.isDeferred ? formatMoney(0) : formatMoney(results.monthlyDPAPayment)}</span>
                             </div>
                         )}
                          {scenario.dpa2?.active && (
-                             <div className="flex justify-between items-center text-indigo-600 border-t border-indigo-50 pt-2 mt-2">
+                             <div className="flex justify-between items-center text-indigo-600">
                                 <span>DPA Loan (2nd){scenario.dpa2.isDeferred ? ' (Deferred)' : ''}</span>
                                 <span className="font-bold">{scenario.dpa2.isDeferred ? formatMoney(0) : formatMoney(results.monthlyDPA2Payment)}</span>
                             </div>
                         )}
                          {scenario.buydown.active && (
-                             <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
+                             <div className="flex justify-between items-center text-emerald-600">
                                 <span>Buydown Subsidy (Yr 1)</span>
                                 <span className="font-bold">-{formatMoney(results.baseMonthlyPayment - results.totalMonthlyPayment)}</span>
                             </div>
                         )}
                          {scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 && (
-                             <div className="flex justify-between items-center text-emerald-600 border-t border-emerald-50 pt-2 mt-2">
+                             <div className="flex justify-between items-center text-emerald-600">
                                 <span>ADU Income Credit</span>
                                 <span className="font-bold">-{formatMoney(scenario.income?.rental || 0)}</span>
                             </div>
