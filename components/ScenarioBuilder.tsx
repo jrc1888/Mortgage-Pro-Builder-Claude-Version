@@ -324,6 +324,18 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     }
   }, [scenario.closingCosts.length, scenario.income, scenario.debts, scenario.dpa.active, results?.totalLoanAmount]);
 
+  // Auto-disable DPA and buydown when DSCR is enabled
+  useEffect(() => {
+    if (scenario.isDSCRLoan && (scenario.dpa.active || scenario.buydown.active || scenario.dpa2?.active)) {
+      setScenario(prev => ({
+        ...prev,
+        dpa: prev.dpa.active ? { ...prev.dpa, active: false } : prev.dpa,
+        buydown: prev.buydown.active ? { ...prev.buydown, active: false } : prev.buydown,
+        ...(prev.dpa2?.active ? { dpa2: undefined } : {})
+      }));
+    }
+  }, [scenario.isDSCRLoan]);
+
   // Function to add current state to history (called when field editing is complete)
   const addToHistory = () => {
     // Skip if this is from undo/redo
@@ -1876,10 +1888,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                              <h3 className="flex items-center gap-2 text-slate-900 font-bold text-sm uppercase tracking-wide">
                                 <TrendingUp size={16} className="text-slate-400" /> Temporary Buydown
                             </h3>
-                            <CustomCheckbox checked={scenario.buydown.active} onChange={(c) => setScenario(prev => ({ ...prev, buydown: { ...prev.buydown, active: c } }))} label="Enable Buydown" />
+                            <CustomCheckbox 
+                                checked={scenario.buydown.active && !scenario.isDSCRLoan} 
+                                onChange={(c) => {
+                                    if (scenario.isDSCRLoan && c) {
+                                        // Don't allow enabling buydown if DSCR is active
+                                        return;
+                                    }
+                                    setScenario(prev => ({ ...prev, buydown: { ...prev.buydown, active: c } }));
+                                }} 
+                                label="Enable Buydown"
+                                disabled={scenario.isDSCRLoan}
+                            />
                         </div>
 
-                        <div className={`space-y-5 transition-all ${!scenario.buydown.active ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <div className={`space-y-5 transition-all ${!scenario.buydown.active || scenario.isDSCRLoan ? 'opacity-50 pointer-events-none' : ''}`}>
                              <div>
                                 <label className={labelClass}>Buydown Type</label>
                                 <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -1932,6 +1955,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <CustomCheckbox 
                                 checked={scenario.dpa.active} 
                                 onChange={(c) => {
+                                    if (scenario.isDSCRLoan && c) {
+                                        // Don't allow enabling DPA if DSCR is active
+                                        return;
+                                    }
                                     setScenario(prev => {
                                         // If disabling first DPA, also disable second DPA
                                         const updated = { ...prev, dpa: { ...prev.dpa, active: c } };
@@ -1941,11 +1968,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         return updated;
                                     });
                                 }} 
-                                label="Enable DPA" 
+                                label="Enable DPA"
+                                disabled={scenario.isDSCRLoan}
                             />
                         </div>
 
-                         <div className={`space-y-5 transition-all ${!scenario.dpa.active ? 'opacity-50 pointer-events-none' : ''}`}>
+                         <div className={`space-y-5 transition-all ${!scenario.dpa.active || scenario.isDSCRLoan ? 'opacity-50 pointer-events-none' : ''}`}>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className={labelClass}>Assistance Amount ($)</label>
@@ -1989,22 +2017,22 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                          </div>
                          
                          {/* Second DPA Section */}
-                         <div className={`pt-6 border-t border-slate-200 ${!scenario.dpa.active ? 'opacity-50' : ''}`}>
+                         <div className={`pt-6 border-t border-slate-200 ${!scenario.dpa.active || scenario.isDSCRLoan ? 'opacity-50' : ''}`}>
                             <div className="flex justify-between items-start mb-4">
                                 <h4 className="text-slate-700 font-semibold text-xs uppercase tracking-wide">Second DPA</h4>
                                 <div 
                                     onClick={(e) => {
-                                        if (!scenario.dpa.active) {
+                                        if (!scenario.dpa.active || scenario.isDSCRLoan) {
                                             e.stopPropagation();
                                             return;
                                         }
                                     }}
-                                    className={!scenario.dpa.active ? 'cursor-not-allowed' : ''}
+                                    className={!scenario.dpa.active || scenario.isDSCRLoan ? 'cursor-not-allowed' : ''}
                                 >
                                     <CustomCheckbox 
                                         checked={scenario.dpa2?.active || false} 
                                         onChange={(c) => {
-                                            if (!scenario.dpa.active) return; // Prevent enabling if first DPA is not active
+                                            if (!scenario.dpa.active || scenario.isDSCRLoan) return; // Prevent enabling if first DPA is not active or DSCR is active
                                             setScenario(prev => ({ 
                                                 ...prev, 
                                                 dpa2: c ? {
@@ -2018,15 +2046,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 } : undefined
                                             }));
                                         }} 
+                                        disabled={!scenario.dpa.active || scenario.isDSCRLoan}
                                         label="Enable Second DPA" 
                                     />
                                 </div>
                             </div>
-                            {!scenario.dpa.active && (
-                                <p className="text-[9px] text-slate-400 mb-3 italic">Enable first DPA to use second DPA</p>
+                            {(!scenario.dpa.active || scenario.isDSCRLoan) && (
+                                <p className="text-[9px] text-slate-400 mb-3 italic">{scenario.isDSCRLoan ? 'DPA is disabled for DSCR loans' : 'Enable first DPA to use second DPA'}</p>
                             )}
                             
-                            <div className={`space-y-4 transition-all ${!scenario.dpa2?.active || !scenario.dpa.active ? 'opacity-40 pointer-events-none max-h-0 overflow-hidden' : 'max-h-[500px]'}`}>
+                            <div className={`space-y-4 transition-all ${!scenario.dpa2?.active || !scenario.dpa.active || scenario.isDSCRLoan ? 'opacity-40 pointer-events-none max-h-0 overflow-hidden' : 'max-h-[500px]'}`}>
                                 {scenario.dpa2?.active && (
                                     <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-3 mb-4">
                                         <p className="text-xs text-amber-900 font-semibold flex items-start gap-2">
@@ -2137,9 +2166,18 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         <div className="mb-6 p-4 rounded-lg border-2 bg-indigo-50 border-indigo-200">
                             <CustomCheckbox 
                                 checked={scenario.isDSCRLoan || false} 
-                                onChange={(checked) => handleInputChange('isDSCRLoan', checked)} 
+                                onChange={(checked) => {
+                                    setScenario(prev => ({
+                                        ...prev,
+                                        isDSCRLoan: checked,
+                                        // Disable DPA and buydown when DSCR is enabled
+                                        dpa: checked ? { ...prev.dpa, active: false } : prev.dpa,
+                                        buydown: checked ? { ...prev.buydown, active: false } : prev.buydown,
+                                        ...(checked && prev.dpa2?.active ? { dpa2: undefined } : {})
+                                    }));
+                                }} 
                                 label="DSCR Loan" 
-                                warning="Borrower income and debt information will be ignored. Only rental income and DSCR ratio will be used for qualification." 
+                                warning="Borrower income and debt information will be ignored. Only rental income and DSCR ratio will be used for qualification. DPA and buydown will be disabled." 
                             />
                         </div>
                     )}
@@ -2330,14 +2368,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             )}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 mb-1.5">
-                             {scenario.occupancyType === 'Investment Property' && results.dscr ? (
-                                 <div className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg bg-slate-50 border-2 ${results.dscr.passes ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
-                                     <span className="text-slate-500 uppercase text-[10px] font-bold tracking-wider">DSCR</span>
-                                     <span className={`text-2xl font-black ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
+                             {scenario.isDSCRLoan && results.dscr ? (
+                                 <div className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-slate-50 border-2 ${results.dscr.passes ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                                     <span className={`text-xl font-black ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
                                          {formatPercent(results.dscr.ratio, 2)}
                                      </span>
                                      <span className={`text-[9px] font-bold uppercase ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
-                                         {results.dscr.passes ? 'Pass' : 'Fail'}
+                                         DSCR {results.dscr.passes ? 'PASS' : 'FAIL'}
                                      </span>
                                  </div>
                              ) : !scenario.isDSCRLoan ? (() => {
