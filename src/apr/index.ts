@@ -133,21 +133,22 @@ export class APRCalculator {
 
     // Finance charges from fees
     feeClassifications.forEach(fc => {
-      if (fc.is_finance_charge) {
-        const amount = fc.fee.amount;
-        if (amount > 0) {
-          if (fc.fee.paid_by === 'borrower_cash' || fc.fee.paid_by === 'lender_credit') {
-            cash += amount;
-          } else if (fc.fee.paid_by === 'financed') {
-            financed += amount;
-          }
-        } else if (amount < 0) {
-          // Negative fee (credit) reduces finance charges
-          // Both lender credits and seller credits reduce finance charges
-          if (fc.fee.paid_by === 'lender_credit' || fc.fee.paid_by === 'seller_credit') {
-            cash += amount; // Subtract (amount is already negative)
-          }
+      const amount = fc.fee.amount;
+      
+      // Process positive finance charges
+      if (fc.is_finance_charge && amount > 0) {
+        if (fc.fee.paid_by === 'borrower_cash' || fc.fee.paid_by === 'lender_credit') {
+          cash += amount;
+        } else if (fc.fee.paid_by === 'financed') {
+          financed += amount;
         }
+      }
+      
+      // Process negative fees (credits) - these reduce finance charges
+      // Lender credits and seller credits reduce finance charges regardless of classification
+      // because they offset finance charges paid by the borrower
+      if (amount < 0 && (fc.fee.paid_by === 'lender_credit' || fc.fee.paid_by === 'seller_credit')) {
+        cash += amount; // Subtract (amount is already negative)
       }
     });
 
