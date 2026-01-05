@@ -158,20 +158,65 @@ export const validateScenario = (
   
   // Only validate DTI if there's borrower income (not rental-only qualification)
   if (hasBorrowerIncome || !hasRentalIncome) {
-    if (results.dti.frontEnd > thresholds.dtiFrontEndWarning) {
-      errors.push({
-        field: 'income',
-        message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiFrontEndWarning}%)`,
-        severity: 'warning'
-      });
-    }
+    // Loan-type specific DTI limits
+    if (scenario.loanType === LoanType.FHA) {
+      // FHA: Front-end up to 46.99%, Back-end up to 56.99%
+      if (results.dti.frontEnd > 46.99) {
+        errors.push({
+          field: 'income',
+          message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds FHA limit (46.99%)`,
+          severity: 'error'
+        });
+      }
 
-    if (results.dti.backEnd > thresholds.dtiBackEndMax) {
-      errors.push({
-        field: 'income',
-        message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiBackEndMax}%)`,
-        severity: 'error'
-      });
+      if (results.dti.backEnd > 56.99) {
+        errors.push({
+          field: 'income',
+          message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds FHA limit (56.99%)`,
+          severity: 'error'
+        });
+      }
+    } else if (scenario.loanType === LoanType.CONVENTIONAL) {
+      // Conventional: Front-end up to 49%, Back-end up to 49.99%
+      // Front-end warning between 45.00% and 49% (exception area requiring AUS approval)
+      if (results.dti.frontEnd >= 45.00 && results.dti.frontEnd <= 49.00) {
+        errors.push({
+          field: 'income',
+          message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) is in exception area (45-49%). AUS approval required.`,
+          severity: 'warning'
+        });
+      } else if (results.dti.frontEnd > 49.00) {
+        errors.push({
+          field: 'income',
+          message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds Conventional limit (49.00%)`,
+          severity: 'error'
+        });
+      }
+
+      if (results.dti.backEnd > 49.99) {
+        errors.push({
+          field: 'income',
+          message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds Conventional limit (49.99%)`,
+          severity: 'error'
+        });
+      }
+    } else {
+      // For other loan types (VA, Jumbo, etc.), use generic thresholds
+      if (results.dti.frontEnd > thresholds.dtiFrontEndWarning) {
+        errors.push({
+          field: 'income',
+          message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiFrontEndWarning}%)`,
+          severity: 'warning'
+        });
+      }
+
+      if (results.dti.backEnd > thresholds.dtiBackEndMax) {
+        errors.push({
+          field: 'income',
+          message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiBackEndMax}%)`,
+          severity: 'error'
+        });
+      }
     }
   }
 
