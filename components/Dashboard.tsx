@@ -190,12 +190,17 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {sortedList.map((scenario) => {
                     const isSelected = selectedForComparison.includes(scenario.id);
-                    
-                    const ltv = scenario.purchasePrice > 0 
-                        ? (1 - (scenario.downPaymentAmount / scenario.purchasePrice)) * 100 
-                        : 0;
-
                     const transactionType = scenario.transactionType || 'Purchase';
+                    const isRefinance = transactionType === 'Refinance';
+                    
+                    // Calculate results to get accurate LTV and loan amount
+                    const results = calculateScenario(scenario);
+                    
+                    // For refinances: LTV = (totalLoanAmount / propertyValue) * 100
+                    // For purchases: LTV = (1 - (downPaymentAmount / purchasePrice)) * 100
+                    const ltv = isRefinance 
+                        ? (scenario.purchasePrice > 0 ? (results.totalLoanAmount / scenario.purchasePrice) * 100 : 0)
+                        : (scenario.purchasePrice > 0 ? (1 - (scenario.downPaymentAmount / scenario.purchasePrice)) * 100 : 0);
                     
                     const downPaymentPercent = scenario.purchasePrice > 0 
                         ? (scenario.downPaymentAmount / scenario.purchasePrice) * 100 
@@ -292,30 +297,29 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 </div>
                                 
                                 {/* Key Metrics - Larger and More Prominent */}
-                                <div className="grid grid-cols-2 gap-4 mb-5 pt-4 border-t border-slate-300">
+                                <div className={`grid gap-4 mb-5 pt-4 border-t border-slate-300 ${isRefinance ? 'grid-cols-3' : 'grid-cols-2'}`}>
                                     <div>
-                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Purchase Price</span>
+                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                            {isRefinance ? 'Property Value' : 'Purchase Price'}
+                                        </span>
                                         <span className="text-2xl font-black text-slate-900">${scenario.purchasePrice.toLocaleString()}</span>
                                     </div>
-                                    <div>
-                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Down Payment</span>
-                                        <div className="flex flex-col">
-                                            <span className="text-2xl font-black text-slate-900">${scenario.downPaymentAmount.toLocaleString()}</span>
-                                            <span className="text-sm font-semibold text-slate-600 mt-0.5">({downPaymentPercent.toFixed(2)}%)</span>
+                                    {!isRefinance && (
+                                        <div>
+                                            <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Down Payment</span>
+                                            <div className="flex flex-col">
+                                                <span className="text-2xl font-black text-slate-900">${scenario.downPaymentAmount.toLocaleString()}</span>
+                                                <span className="text-sm font-semibold text-slate-600 mt-0.5">({downPaymentPercent.toFixed(2)}%)</span>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
                                     <div>
                                         <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Interest Rate</span>
                                         <div className="flex flex-col">
                                             <span className="text-2xl font-black text-slate-900">{scenario.interestRate.toFixed(2)}%</span>
-                                            {(() => {
-                                                const results = calculateScenario(scenario);
-                                                return (
-                                                    <span className="text-xs font-semibold text-slate-600 mt-0.5">
-                                                        APR: {formatPercent(calculateAPRFromScenario(scenario, results), 3)}
-                                                    </span>
-                                                );
-                                            })()}
+                                            <span className="text-xs font-semibold text-slate-600 mt-0.5">
+                                                APR: {formatPercent(calculateAPRFromScenario(scenario, results), 3)}
+                                            </span>
                                         </div>
                                     </div>
                                     <div>
