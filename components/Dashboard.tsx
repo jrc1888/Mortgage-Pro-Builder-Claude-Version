@@ -221,7 +221,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             }}
                         >
                             {/* Header with Star, Compare, and Transaction Type */}
-                            <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+                            <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 flex-wrap justify-end">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -229,14 +229,14 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                             onPin(scenario.id, !scenario.isPinned);
                                         }
                                     }}
-                                    className={`p-2.5 rounded-lg transition-all ${
+                                    className={`p-2 rounded-lg transition-all shrink-0 ${
                                         scenario.isPinned 
                                             ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-md shadow-amber-300/40' 
                                             : 'bg-white/95 backdrop-blur-sm text-slate-400 hover:text-amber-500 hover:bg-amber-50 border border-slate-200'
                                     }`}
                                     title={scenario.isPinned ? "Unpin scenario" : "Pin scenario to top"}
                                 >
-                                    <Star size={20} className={scenario.isPinned ? 'fill-current' : ''} strokeWidth={scenario.isPinned ? 0 : 2} />
+                                    <Star size={18} className={scenario.isPinned ? 'fill-current' : ''} strokeWidth={scenario.isPinned ? 0 : 2} />
                                 </button>
                             
                                 <button
@@ -250,7 +250,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                             }
                                         }
                                     }}
-                                    className={`w-7 h-7 rounded border-2 flex items-center justify-center transition-all ${
+                                    className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all shrink-0 ${
                                         isSelected 
                                             ? 'bg-indigo-600 border-indigo-600 text-white' 
                                             : selectedForComparison.length >= 3
@@ -260,11 +260,11 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                     disabled={!isSelected && selectedForComparison.length >= 3}
                                     title={isSelected ? "Remove from comparison" : selectedForComparison.length >= 3 ? "Maximum 3 scenarios" : "Add to comparison"}
                                 >
-                                    {isSelected && <CheckSquare size={16} />}
+                                    {isSelected && <CheckSquare size={14} />}
                                 </button>
                                 
-                                {/* Transaction Type Badge - Larger */}
-                                <span className={`inline-block px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border shadow-sm ${
+                                {/* Transaction Type Badge - Responsive */}
+                                <span className={`inline-block px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg border shadow-sm shrink-0 ${
                                     transactionType === 'Refinance' 
                                         ? 'bg-purple-50 text-purple-700 border-purple-200' 
                                         : 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -274,14 +274,14 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                             </div>
                             
                             {/* Main Content */}
-                            <div className="p-6 flex-1 flex flex-col">
+                            <div className="p-6 flex-1 flex flex-col min-w-0">
                                 {/* Client Name - Smaller */}
                                 <div className="mb-2">
                                     <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">{scenario.clientName}</span>
                                 </div>
                                 
-                                {/* Scenario Name - Much Larger */}
-                                <h3 className="font-bold text-2xl text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight mb-4 pr-32">
+                                {/* Scenario Name - Much Larger with responsive padding */}
+                                <h3 className="font-bold text-xl sm:text-2xl text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight mb-4 pr-24 sm:pr-32 break-words">
                                     {scenario.name || "Untitled Scenario"}
                                 </h3>
                                 
@@ -297,35 +297,58 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                                 </div>
                                 
                                 {/* Key Metrics - Larger and More Prominent */}
-                                <div className={`grid gap-4 mb-5 pt-4 border-t border-slate-300 ${isRefinance ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                                    <div>
-                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-5 pt-4 border-t border-slate-300">
+                                    {/* First Row */}
+                                    <div className="min-w-0">
+                                        <span className="block text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 truncate">
                                             {isRefinance ? 'Property Value' : 'Purchase Price'}
                                         </span>
-                                        <span className="text-2xl font-black text-slate-900">${scenario.purchasePrice.toLocaleString()}</span>
+                                        <span className="text-xl sm:text-2xl font-black text-slate-900 break-words">${scenario.purchasePrice.toLocaleString()}</span>
                                     </div>
-                                    {!isRefinance && (
-                                        <div>
-                                            <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Down Payment</span>
+                                    {!isRefinance ? (
+                                        <div className="min-w-0">
+                                            <span className="block text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Down Payment</span>
                                             <div className="flex flex-col">
-                                                <span className="text-2xl font-black text-slate-900">${scenario.downPaymentAmount.toLocaleString()}</span>
-                                                <span className="text-sm font-semibold text-slate-600 mt-0.5">({downPaymentPercent.toFixed(2)}%)</span>
+                                                <span className="text-xl sm:text-2xl font-black text-slate-900 break-words">${scenario.downPaymentAmount.toLocaleString()}</span>
+                                                <span className="text-xs sm:text-sm font-semibold text-slate-600 mt-0.5">({downPaymentPercent.toFixed(2)}%)</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="min-w-0">
+                                            <span className="block text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Interest Rate</span>
+                                            <div className="flex flex-col">
+                                                <span className="text-xl sm:text-2xl font-black text-slate-900">{scenario.interestRate.toFixed(2)}%</span>
+                                                <span className="text-[10px] sm:text-xs font-semibold text-slate-600 mt-0.5">
+                                                    APR: {formatPercent(calculateAPRFromScenario(scenario, results), 3)}
+                                                </span>
                                             </div>
                                         </div>
                                     )}
-                                    <div>
-                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Interest Rate</span>
-                                        <div className="flex flex-col">
-                                            <span className="text-2xl font-black text-slate-900">{scenario.interestRate.toFixed(2)}%</span>
-                                            <span className="text-xs font-semibold text-slate-600 mt-0.5">
-                                                APR: {formatPercent(calculateAPRFromScenario(scenario, results), 3)}
-                                            </span>
+                                    {/* Second Row - Only for Purchase (Interest Rate and LTV) */}
+                                    {!isRefinance && (
+                                        <>
+                                            <div className="min-w-0">
+                                                <span className="block text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Interest Rate</span>
+                                                <div className="flex flex-col">
+                                                    <span className="text-xl sm:text-2xl font-black text-slate-900">{scenario.interestRate.toFixed(2)}%</span>
+                                                    <span className="text-[10px] sm:text-xs font-semibold text-slate-600 mt-0.5">
+                                                        APR: {formatPercent(calculateAPRFromScenario(scenario, results), 3)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <span className="block text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">LTV</span>
+                                                <span className="text-xl sm:text-2xl font-black text-slate-900">{ltv.toFixed(2)}%</span>
+                                            </div>
+                                        </>
+                                    )}
+                                    {/* Second Row - Only for Refinance (LTV spans full width) */}
+                                    {isRefinance && (
+                                        <div className="min-w-0 col-span-2">
+                                            <span className="block text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">LTV</span>
+                                            <span className="text-xl sm:text-2xl font-black text-slate-900">{ltv.toFixed(2)}%</span>
                                         </div>
-                                    </div>
-                                    <div>
-                                        <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">LTV</span>
-                                        <span className="text-2xl font-black text-slate-900">{ltv.toFixed(2)}%</span>
-                                    </div>
+                                    )}
                                 </div>
                                 
                                 {/* Property Info - Smaller */}
