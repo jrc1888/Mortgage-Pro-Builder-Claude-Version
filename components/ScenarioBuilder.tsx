@@ -2387,22 +2387,46 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                  
                                  if (!shouldShowDTI) return null;
                                  
-                                 // Determine if DTI should show warnings (only if borrower income exists)
-                                 const frontEndWarning = validationThresholds.dtiFrontEndWarning || 47;
-                                 const backEndMax = validationThresholds.dtiBackEndMax || 50;
-                                 
-                                 return (
-                                     <>
-                                         <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.frontEnd > frontEndWarning ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                             <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
-                                             <span>{formatPercent(results.dti.frontEnd, 1)}</span>
-                                         </div>
-                                         <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${results.dti.backEnd > backEndMax ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                             <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
-                                             <span>{formatPercent(results.dti.backEnd, 1)}</span>
-                                         </div>
-                                     </>
-                                 );
+                                // Determine DTI limits based on loan type (matching validation logic)
+                                let frontEndMax = 47; // Default
+                                let backEndMax = 50; // Default
+                                
+                                if (scenario.loanType === LoanType.FHA) {
+                                    // FHA: Front-end up to 46.99%, Back-end up to 56.99%
+                                    // Green if <= 46.99%, Red if > 46.99%
+                                    frontEndMax = 46.99;
+                                    backEndMax = 56.99;
+                                } else if (scenario.loanType === LoanType.CONVENTIONAL) {
+                                    // Conventional: Front-end up to 49%, Back-end up to 49.99%
+                                    // Front-end: Green if < 45%, Red if >= 45% (warning area 45-49%, error if > 49%)
+                                    // Back-end: Green if <= 49.99%, Red if > 49.99%
+                                    frontEndMax = 45.00; // Show red for 45%+ (warning/error area)
+                                    backEndMax = 49.99;
+                                } else {
+                                    // For other loan types, use validation thresholds
+                                    frontEndMax = validationThresholds.dtiFrontEndWarning || 47;
+                                    backEndMax = validationThresholds.dtiBackEndMax || 50;
+                                }
+                                
+                                // Check if DTI exceeds limits (red) or is within limits (green)
+                                // Use >= for front-end on Conventional (45%+ shows red), > for others
+                                const frontEndExceeds = scenario.loanType === LoanType.CONVENTIONAL
+                                    ? results.dti.frontEnd >= frontEndMax
+                                    : results.dti.frontEnd > frontEndMax;
+                                const backEndExceeds = results.dti.backEnd > backEndMax;
+                                
+                                return (
+                                    <>
+                                        <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${frontEndExceeds ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
+                                            <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
+                                            <span>{formatPercent(results.dti.frontEnd, 1)}</span>
+                                        </div>
+                                        <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${backEndExceeds ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
+                                            <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
+                                            <span>{formatPercent(results.dti.backEnd, 1)}</span>
+                                        </div>
+                                    </>
+                                );
                              })() : null}
                         </div>
                     </div>
