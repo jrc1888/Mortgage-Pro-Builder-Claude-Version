@@ -215,6 +215,20 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     return match ? match[0] : null;
   };
 
+  const detectMLS = (text: string): string | null => {
+    // Match MLS numbers (common patterns: MLS#, MLS, #123456, etc.)
+    const mlsPattern = /(?:mls|mls#|mls\s*#?)\s*:?\s*([0-9]{6,10})/i;
+    const match = text.match(mlsPattern);
+    return match ? match[1] : null;
+  };
+
+  const detectAddress = (text: string): string | null => {
+    // Simple address detection - look for street numbers and common address patterns
+    const addressPattern = /(\d+\s+[A-Za-z0-9\s,.-]+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Boulevard|Blvd|Court|Ct|Way|Circle|Cir|Place|Pl)[\s,]*[A-Za-z\s,]+(?:[A-Z]{2})?[\s,]*\d{5}(?:-\d{4})?)/i;
+    const match = text.match(addressPattern);
+    return match ? match[0].trim() : null;
+  };
+
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
