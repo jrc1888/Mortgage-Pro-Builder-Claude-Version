@@ -216,8 +216,12 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         details: `Found URL: ${url}`
       });
 
-      // Step 2: Call OpenAI API
-      const step2Id = addStep('Calling OpenAI', 'processing');
+      // Step 2: Fetch page content
+      const step2Id = addStep('Fetching page content', 'processing');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Step 3: Call OpenAI API
+      const step3Id = addStep('Calling OpenAI', 'processing');
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const response = await fetch('/api/sms-process', {
@@ -228,9 +232,15 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         body: JSON.stringify({ url })
       });
 
+      updateStep(step2Id, { 
+        status: 'success', 
+        icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+        details: 'Page content fetched successfully'
+      });
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        updateStep(step2Id, { 
+        updateStep(step3Id, { 
           status: 'error', 
           icon: <XCircle className="w-4 h-4 text-red-500" />,
           details: errorData.error || 'Failed to call OpenAI API',
@@ -247,20 +257,20 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       }
 
       const data = await response.json();
-      updateStep(step2Id, { 
+      updateStep(step3Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: 'Property data extracted successfully',
         rawData: data.propertyData
       });
 
-      // Step 3: Parse JSON response
-      const step3Id = addStep('Processing property data', 'processing');
+      // Step 4: Parse JSON response
+      const step4Id = addStep('Processing property data', 'processing');
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const propertyData = data.propertyData;
       if (!propertyData) {
-        updateStep(step3Id, { 
+        updateStep(step4Id, { 
           status: 'error', 
           icon: <XCircle className="w-4 h-4 text-red-500" />,
           details: 'No property data returned'
@@ -269,15 +279,15 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         return;
       }
 
-      updateStep(step3Id, { 
+      updateStep(step4Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: `Address: ${propertyData.address}`,
         rawData: propertyData
       });
 
-      // Step 4: Enrich data with estimates
-      const step4Id = addStep('Enriching data with estimates', 'processing');
+      // Step 5: Enrich data with estimates
+      const step5Id = addStep('Enriching data with estimates', 'processing');
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const enrichedData = { ...propertyData };
@@ -297,15 +307,15 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       enrichedData.insurance = propertyData.price * insuranceRate / 12;
       estimates.push('Insurance');
 
-      updateStep(step4Id, { 
+      updateStep(step5Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: `Estimated: ${estimates.join(', ')}`,
         rawData: enrichedData
       });
 
-      // Step 5: Load mock client pre-qualification
-      const step5Id = addStep('Loading client pre-qualification', 'processing');
+      // Step 6: Load mock client pre-qualification
+      const step6Id = addStep('Loading client pre-qualification', 'processing');
       await new Promise(resolve => setTimeout(resolve, 300));
 
       const clientData = {
@@ -314,15 +324,15 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         interestRate: 6.875
       };
 
-      updateStep(step5Id, { 
+      updateStep(step6Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: `10% down, $${clientData.maxMonthlyPayment}/mo max, ${clientData.interestRate}% rate`,
         rawData: clientData
       });
 
-      // Step 6: Calculate mortgage payment
-      const step6Id = addStep('Calculating payment', 'processing');
+      // Step 7: Calculate mortgage payment
+      const step7Id = addStep('Calculating payment', 'processing');
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const payment = calculateMortgagePayment(
@@ -336,21 +346,21 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         740 // Credit score
       );
 
-      updateStep(step6Id, { 
+      updateStep(step7Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: `Total payment: ${formatCurrency(payment.total)}/month`,
         rawData: payment
       });
 
-      // Step 7: Check affordability
-      const step7Id = addStep('Checking affordability', 'processing');
+      // Step 8: Check affordability
+      const step8Id = addStep('Checking affordability', 'processing');
       await new Promise(resolve => setTimeout(resolve, 300));
 
       const overage = payment.total - clientData.maxMonthlyPayment;
       const isAffordable = payment.total <= clientData.maxMonthlyPayment;
 
-      updateStep(step7Id, { 
+      updateStep(step8Id, { 
         status: isAffordable ? 'success' : 'error', 
         icon: isAffordable 
           ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -361,8 +371,8 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         rawData: { isAffordable, overage, maxPayment: clientData.maxMonthlyPayment, actualPayment: payment.total }
       });
 
-      // Step 8: Generate formatted SMS response
-      const step8Id = addStep('Generating response', 'processing');
+      // Step 9: Generate formatted SMS response
+      const step9Id = addStep('Generating response', 'processing');
       await new Promise(resolve => setTimeout(resolve, 400));
 
       let responseText = `🏡 Found it! ${enrichedData.address}\n\n`;
@@ -399,7 +409,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         responseText += `Reply OPTIONS to see solutions`;
       }
 
-      updateStep(step8Id, { 
+      updateStep(step9Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: 'Response generated',

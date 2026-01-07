@@ -39,7 +39,45 @@ export default async function handler(
       return response.status(400).json({ error: 'Invalid URL format' });
     }
 
-    const prompt = `You are a real estate data extraction assistant. Visit this URL: ${url}
+    // Step 1: Fetch the HTML content from the URL
+    let htmlContent = '';
+    try {
+      const fetchResponse = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        redirect: 'follow',
+      });
+
+      if (!fetchResponse.ok) {
+        return response.status(400).json({ 
+          error: `Failed to fetch URL: ${fetchResponse.status} ${fetchResponse.statusText}`,
+          details: 'The URL may be invalid, require authentication, or be blocked.'
+        });
+      }
+
+      htmlContent = await fetchResponse.text();
+      
+      // Limit HTML size to avoid token limits (keep first 50k characters)
+      if (htmlContent.length > 50000) {
+        htmlContent = htmlContent.substring(0, 50000) + '... [truncated]';
+      }
+    } catch (fetchError) {
+      console.error('Error fetching URL:', fetchError);
+      return response.status(400).json({ 
+        error: 'Failed to fetch the property listing page',
+        details: fetchError instanceof Error ? fetchError.message : 'Unknown error'
+      });
+    }
+
+    // Step 2: Use OpenAI to extract structured data from the HTML
+    const prompt = `You are a real estate data extraction assistant. I've fetched the HTML content from this property listing: ${url}
+
+Here is the HTML content:
+${htmlContent}
+
 Extract and return ONLY a JSON object with this exact structure:
 {
   "address": "full address",
@@ -53,9 +91,17 @@ Extract and return ONLY a JSON object with this exact structure:
   "propertyTax": null
 }
 
-If HOA is mentioned in the listing, include the monthly amount.
-If annual property tax is shown, include it (convert to monthly by dividing by 12).
-Be precise with numbers. Return ONLY valid JSON, no markdown, no code blocks, no explanations.`;
+IMPORTANT INSTRUCTIONS:
+- Look for the actual property data in the HTML (price, beds, baths, sqft, year built, etc.)
+- The address should match the URL if visible in the page
+- Price is usually displayed prominently - look for dollar amounts
+- Beds/baths are often shown as "3 bed, 2 bath" or similar
+- Square footage may be abbreviated as "sqft" or "sq ft"
+- Year built might be in a "Built" or "Year Built" field
+- HOA: If mentioned, include the monthly amount. If not found, use 0.
+- Property tax: If annual property tax is shown, include it (we'll convert to monthly later). If not found, use null.
+- Be precise with numbers - extract the actual values from the HTML, don't guess.
+- Return ONLY valid JSON, no markdown, no code blocks, no explanations.`;
 
     // Retry logic for rate limits (429 errors)
     let openaiResponse;
