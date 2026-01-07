@@ -566,11 +566,11 @@ export default async function handler(
   }
 
   try {
-    const { url, mlsNumber, address } = request.body;
+    const { url, address } = request.body;
 
-    // Must have at least one: URL, MLS number, or address
-    if (!url && !mlsNumber && !address) {
-      return response.status(400).json({ error: 'URL, MLS number, or address is required' });
+    // Must have at least one: URL or address
+    if (!url && !address) {
+      return response.status(400).json({ error: 'URL or address is required' });
     }
 
     // If URL provided, validate format
@@ -582,36 +582,26 @@ export default async function handler(
       }
     }
 
-    // For MLS or address, we'll need to search for the listing
-    // For now, if we have MLS or address but no URL, we'll use OpenAI web search
+    // For address, we'll need to search for the listing
+    // If we have address but no URL, we'll use OpenAI web search
     let propertyUrl = url;
-    if (!url && (mlsNumber || address)) {
-      // Construct a search query for OpenAI web search
-      const searchQuery = mlsNumber 
-        ? `MLS ${mlsNumber} property listing`
-        : `${address} property listing`;
-      
-      // We'll handle this in the getListingDataFromUrl function
-      // For now, create a placeholder URL that will trigger web search
-      propertyUrl = mlsNumber 
-        ? `https://search.property.com/mls/${mlsNumber}`
-        : `https://search.property.com/address/${encodeURIComponent(address || '')}`;
+    if (!url && address) {
+      // Create a placeholder URL that will trigger web search
+      propertyUrl = `https://search.property.com/address/${encodeURIComponent(address || '')}`;
     }
 
     // Get listing data
-    // If we have MLS or address but no URL, use OpenAI web search directly
+    // If we have address but no URL, use OpenAI web search directly
     let listing: ListingData;
     let ingestion: IngestResult;
     
-    if (!url && (mlsNumber || address)) {
-      // Use OpenAI web search to find property by MLS or address
-      listing = await getListingDataFromUrlOpenAI(propertyUrl, mlsNumber, address);
+    if (!url && address) {
+      // Use OpenAI to find property by address
+      listing = await getListingDataFromUrlOpenAI(propertyUrl, undefined, address);
       ingestion = {
         raw_text: '',
         source: 'openai_web_search_fallback',
-        notes: mlsNumber 
-          ? `Searched for MLS #${mlsNumber} using OpenAI web search`
-          : `Searched for address "${address}" using OpenAI web search`
+        notes: `Searched for address "${address}" using OpenAI web search`
       };
     } else {
       // Normal URL processing

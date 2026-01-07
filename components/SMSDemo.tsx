@@ -396,32 +396,95 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       let propertyUrl = url;
       
       if (pendingConfirmation && isConfirmation) {
-        // User confirmed - process the MLS/address
-        if (pendingConfirmation.type === 'mls') {
-          mlsToProcess = pendingConfirmation.value;
-        } else {
-          addressToProcess = pendingConfirmation.value;
-        }
+        // User confirmed - process the address (MLS numbers are converted to addresses first)
+        addressToProcess = pendingConfirmation.value;
         setPendingConfirmation(null);
         
-        // Construct placeholder URL for confirmed MLS/address
-        propertyUrl = mlsToProcess 
-          ? `https://search.mlsnumber.com/${mlsToProcess}`
-          : `https://search.property.com/${encodeURIComponent(addressToProcess || '')}`;
-      } else if ((mlsNumber || address) && !url && !pendingConfirmation) {
-        // First time detecting MLS/address - ask for confirmation
-        const detectedValue = mlsNumber ? `MLS #${mlsNumber}` : address;
+        // Construct placeholder URL for confirmed address
+        propertyUrl = `https://search.property.com/${encodeURIComponent(addressToProcess || '')}`;
+      } else if (mlsNumber && !url && !pendingConfirmation) {
+        // First time detecting MLS - find the address first
+        updateStep(step1Id, { 
+          status: 'processing', 
+          icon: <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />,
+          details: `Finding address for MLS #${mlsNumber}...`
+        });
+        
+        try {
+          const mlsResponse = await fetch('/api/find-address-from-mls', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ mlsNumber })
+          });
+
+          if (!mlsResponse.ok) {
+            const errorData = await mlsResponse.json();
+            updateStep(step1Id, { 
+              status: 'error', 
+              icon: <XCircle className="w-4 h-4 text-red-500" />,
+              details: errorData.error || 'Could not find address for this MLS number'
+            });
+            setMessages(prev => [...prev, {
+              id: crypto.randomUUID(),
+              text: `I couldn't find a property address for MLS #${mlsNumber}. Please try providing the full property address or a listing URL instead.`,
+              sender: 'system',
+              timestamp: new Date()
+            }]);
+            setIsProcessing(false);
+            return;
+          }
+
+          const mlsData = await mlsResponse.json();
+          const foundAddress = mlsData.address;
+
+          updateStep(step1Id, { 
+            status: 'success', 
+            icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+            details: `Found address: ${foundAddress}`
+          });
+          
+          // Store both MLS and address for processing
+          setPendingConfirmation({ type: 'address', value: foundAddress });
+          
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            text: `I found MLS #${mlsNumber} at ${foundAddress}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
+            sender: 'system',
+            timestamp: new Date()
+          }]);
+          setIsProcessing(false);
+          return;
+        } catch (error) {
+          console.error('Error finding address from MLS:', error);
+          updateStep(step1Id, { 
+            status: 'error', 
+            icon: <XCircle className="w-4 h-4 text-red-500" />,
+            details: 'Error searching for MLS address'
+          });
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            text: `Sorry, I encountered an error while searching for MLS #${mlsNumber}. Please try again or provide the property address directly.`,
+            sender: 'system',
+            timestamp: new Date()
+          }]);
+          setIsProcessing(false);
+          return;
+        }
+      } else if (address && !url && !pendingConfirmation) {
+        // First time detecting address - ask for confirmation
         updateStep(step1Id, { 
           status: 'success', 
           icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-          details: `Detected: ${detectedValue}`
+          details: `Detected: ${address}`
         });
         
-        setPendingConfirmation(mlsNumber ? { type: 'mls', value: mlsNumber } : { type: 'address', value: address! });
+        setPendingConfirmation({ type: 'address', value: address });
         
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(),
-          text: `I found ${detectedValue}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
+          text: `I found ${address}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
           sender: 'system',
           timestamp: new Date()
         }]);
@@ -444,11 +507,9 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         return;
       }
       
-      // If we have MLS/address but no URL, construct placeholder URL
-      if (!url && (mlsToProcess || addressToProcess)) {
-        propertyUrl = mlsToProcess 
-          ? `https://search.mlsnumber.com/${mlsToProcess}`
-          : `https://search.property.com/${encodeURIComponent(addressToProcess || '')}`;
+      // If we have address but no URL, construct placeholder URL
+      if (!url && addressToProcess) {
+        propertyUrl = `https://search.property.com/${encodeURIComponent(addressToProcess)}`;
       }
 
       updateStep(step1Id, { 
@@ -472,7 +533,6 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         },
         body: JSON.stringify({ 
           url: propertyUrl || undefined,
-          mlsNumber: mlsToProcess || undefined,
           address: addressToProcess || undefined
         })
       });
