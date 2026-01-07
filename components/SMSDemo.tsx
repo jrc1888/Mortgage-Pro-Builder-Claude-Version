@@ -223,10 +223,47 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
   };
 
   const detectAddress = (text: string): string | null => {
-    // Simple address detection - look for street numbers and common address patterns
-    const addressPattern = /(\d+\s+[A-Za-z0-9\s,.-]+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Boulevard|Blvd|Court|Ct|Way|Circle|Cir|Place|Pl)[\s,]*[A-Za-z\s,]+(?:[A-Z]{2})?[\s,]*\d{5}(?:-\d{4})?)/i;
-    const match = text.match(addressPattern);
-    return match ? match[0].trim() : null;
+    // More lenient address detection - look for patterns that might be addresses
+    // Pattern 1: Full address with street suffix and zip
+    const fullPattern = /(\d+\s+[A-Za-z0-9\s,.-]+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Boulevard|Blvd|Court|Ct|Way|Circle|Cir|Place|Pl)[\s,]*[A-Za-z\s,]+(?:[A-Z]{2})?[\s,]*\d{5}(?:-\d{4})?)/i;
+    let match = text.match(fullPattern);
+    if (match) return match[0].trim();
+    
+    // Pattern 2: Street number + street name + city/state (more lenient)
+    // Matches: "626 w cottle farmington utah" or "123 Main St Salt Lake City UT"
+    const lenientPattern = /(\d+\s+[A-Za-z0-9\s,.-]{3,}(?:\s+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Boulevard|Blvd|Court|Ct|Way|Circle|Cir|Place|Pl))?\s+[A-Za-z\s,]{2,}(?:[A-Z]{2})?)/i;
+    match = text.match(lenientPattern);
+    if (match) {
+      const potentialAddress = match[0].trim();
+      // Only return if it looks like an address (has number, has city/state-like words)
+      if (potentialAddress.length > 10 && /\d/.test(potentialAddress)) {
+        return potentialAddress;
+      }
+    }
+    
+    return null;
+  };
+
+  const normalizeAddressWithOpenAI = async (addressText: string): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/normalize-address', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ address: addressText })
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      return data.normalizedAddress || null;
+    } catch (error) {
+      console.error('Error normalizing address:', error);
+      return null;
+    }
   };
 
   const formatCurrency = (amount: number): string => {
@@ -325,10 +362,33 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       
       const url = detectURL(messageText);
       const mlsNumber = detectMLS(messageText);
-      const address = detectAddress(messageText);
+      let address = detectAddress(messageText);
       
       // Check if user is confirming a pending MLS/address
       const isConfirmation = /^(yes|y|confirm|correct|that's it|that's the one)$/i.test(messageText);
+      
+      // If no URL or MLS, but message looks like it might be an address, try to normalize it
+      if (!url && !mlsNumber && !address && !pendingConfirmation && !isConfirmation) {
+        // Check if message looks address-like (has numbers and multiple words)
+        const looksLikeAddress = /\d/.test(messageText) && messageText.split(/\s+/).length >= 3;
+        if (looksLikeAddress) {
+          updateStep(step1Id, { 
+            status: 'processing', 
+            icon: <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />,
+            details: 'Normalizing address...'
+          });
+          
+          const normalizedAddress = await normalizeAddressWithOpenAI(messageText);
+          if (normalizedAddress) {
+            address = normalizedAddress;
+            updateStep(step1Id, { 
+              status: 'success', 
+              icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+              details: `Normalized: ${normalizedAddress}`
+            });
+          }
+        }
+      }
       
       // Determine what to process
       let mlsToProcess = mlsNumber;
