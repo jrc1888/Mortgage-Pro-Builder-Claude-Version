@@ -1768,17 +1768,24 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 const calcSectionTotal = (group: typeof sectionA) => {
                                     if (!group) return 0;
                                     return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
-                                        if (cost.id === 'title-insurance') {
-                                            return sum + (cost.amount || calculateLendersTitleInsurance(results.totalLoanAmount));
-                                        }
-                                        if (cost.id === 'discount-points' || cost.id === 'origination-fee') {
-                                            if (cost.isFixed) {
-                                                return sum + safeNum(cost.amount);
-                                            } else {
-                                                return sum + (results.totalLoanAmount * (safeNum(cost.amount) / 100));
+                                        const itemCost = calculateItemCost(
+                                            cost,
+                                            {
+                                                settlementDate: scenario.settlementDate,
+                                                purchasePrice: scenario.purchasePrice,
+                                                homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                                propertyTaxYearly: scenario.propertyTaxYearly,
+                                                hoaMonthly: scenario.hoaMonthly,
+                                                interestRate: scenario.interestRate
+                                            },
+                                            {
+                                                totalLoanAmount: results.totalLoanAmount,
+                                                prepaidInterest: results.prepaidInterest,
+                                                prepaidInterestDays: results.prepaidInterestDays,
+                                                financedMIP: results.financedMIP
                                             }
-                                        }
-                                        return sum + safeNum(cost.amount);
+                                        );
+                                        return sum + itemCost;
                                     }, 0);
                                 };
                                 
@@ -1908,9 +1915,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     }, 0);
                                 };
                                 
-                                // Use results.totalClosingCosts as the source of truth for Section J
-                                // This ensures consistency with the calculated results and includes buydown costs
-                                const totalJ = results.totalClosingCosts;
+                                // Calculate Section D (A + B + C)
+                                const totalA = calcLoanCostsTotal(sectionA);
+                                const totalB = calcLoanCostsTotal(sectionB);
+                                const totalC = calcLoanCostsTotal(sectionC);
+                                const totalD = totalA + totalB + totalC;
+                                
+                                // Calculate Section I (E + F + G + H)
+                                const totalE = calcOtherCostsTotal(sectionE);
+                                const totalF = calcOtherCostsTotal(sectionF);
+                                const totalG = calcOtherCostsTotal(sectionG);
+                                const totalH = calcOtherCostsTotal(sectionH);
+                                const totalI = totalE + totalF + totalG + totalH;
+                                
+                                // Calculate Section J (D + I)
+                                const totalJ = totalD + totalI;
                                 
                                 return (
                                     <div className="bg-slate-100 rounded-lg p-4 border-2 border-slate-400 space-y-3">
