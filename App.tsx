@@ -6,6 +6,7 @@ import { Home } from './components/Home';
 import { Updates } from './components/Updates';
 import { Auth } from './components/Auth';
 import { Modal } from './components/Modal';
+import { SMSDemo } from './components/SMSDemo';
 import { Scenario, ScenarioDefaults } from './types';
 import { DEFAULT_SCENARIO } from './constants';
 import { scenarioTypeToTransactionType, migrateScenarioType } from './utils/scenarioTypeHelpers';
@@ -19,7 +20,7 @@ import { Session } from '@supabase/supabase-js';
 import { ToastProvider } from './hooks/useToast';
 import { ToastContainer } from './components/Toast';
 
-type ViewType = 'home' | 'scenario-builder' | 'builder' | 'updates';
+type ViewType = 'home' | 'scenario-builder' | 'builder' | 'updates' | 'sms-demo';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
@@ -33,6 +34,8 @@ const App: React.FC = () => {
         return 'scenario-builder';
       } else if (starredApp === 'updates') {
         return 'updates';
+      } else if (starredApp === 'sms-demo') {
+        return 'sms-demo';
       }
     }
     return 'home';
@@ -104,6 +107,8 @@ const App: React.FC = () => {
         setView('scenario-builder');
       } else if (starredApp === 'updates') {
         setView('updates');
+      } else if (starredApp === 'sms-demo') {
+        setView('sms-demo');
       }
     }
   }, [loadingSession, session, view]);
@@ -227,6 +232,8 @@ const App: React.FC = () => {
       setView('scenario-builder');
     } else if (appId === 'updates') {
       setView('updates');
+    } else if (appId === 'sms-demo') {
+      setView('sms-demo');
     }
   };
 
@@ -382,6 +389,11 @@ const App: React.FC = () => {
           />
         ) : view === 'updates' ? (
           <Updates 
+            onNavigateHome={handleNavigateHome}
+            userEmail={session?.user?.email}
+          />
+        ) : view === 'sms-demo' ? (
+          <SMSDemo 
             onNavigateHome={handleNavigateHome}
             userEmail={session?.user?.email}
           />

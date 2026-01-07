@@ -51,6 +51,14 @@ export const Home: React.FC<Props> = ({ onNavigate, onLogout, userEmail }) => {
       available: true
     },
     {
+      id: 'sms-demo',
+      name: 'SMS Demo Interface',
+      description: 'Demo SMS interface for property analysis via text messages',
+      icon: <MessageSquare className="w-12 h-12" />,
+      route: 'sms-demo',
+      available: true
+    },
+    {
       id: 'document-manager',
       name: 'Document Manager',
       description: 'Organize and manage loan documents and files',
