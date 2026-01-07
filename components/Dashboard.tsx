@@ -423,7 +423,6 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
             title={selectedClient || undefined}
             userEmail={userEmail}
             variant="dark"
-            leftContent={isSyncing ? <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div> : undefined}
             rightActions={
               <>
                 {selectedForComparison.length > 0 && (
@@ -458,7 +457,6 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
             title="Scenario Builder"
             userEmail={userEmail}
             variant="dark"
-            leftContent={isSyncing ? <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div> : undefined}
           />
         )}
         
