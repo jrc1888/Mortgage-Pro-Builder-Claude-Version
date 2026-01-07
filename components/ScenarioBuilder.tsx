@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Calculator, Building, DollarSign, Percent, Clock, MapPin, History, CheckCircle, FileText, Briefcase, RefreshCw, Hash, AlertTriangle, AlertCircle, Check, Printer, FileBadge, User, Download, X, Power, TrendingUp, Wallet, CreditCard, ChevronDown, Info, ChevronUp, ArrowLeftRight, ChevronRight, Mail, Loader2, Sparkles, Home as HomeIcon } from 'lucide-react';
 import { Scenario, LoanType, CalculatedResults, HistoryEntry, ClosingCostItem } from '../types';
 import { calculateScenario, calculateLendersTitleInsurance } from '../services/loanMath';
 import { calculateItemCost } from '../utils/closingCosts';
@@ -17,12 +17,14 @@ import { extractZipCode } from '../services/amiService';
 import { AMISection } from './AMISection';
 import { getScenarioType } from '../utils/scenarioTypeHelpers';
 import { RefiAnalysisTab } from './RefiAnalysisTab';
+import { SharedHeader } from './SharedHeader';
 
 interface Props {
   initialScenario: Scenario;
   onSave: (scenario: Scenario) => void;
   onBack: () => void;
   validationThresholds?: ValidationThresholds;
+  onNavigateHome?: () => void;
 }
 
 // --- Aesthetics ---
@@ -70,7 +72,7 @@ const CompactTypeToggleInput: React.FC<{
     );
 };
 
-const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, validationThresholds = DEFAULT_VALIDATION_THRESHOLDS }) => {
+const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, validationThresholds = DEFAULT_VALIDATION_THRESHOLDS, onNavigateHome }) => {
   // Backward compatibility: ensure transactionType exists
   const scenarioWithDefaults = (() => {
     const scenario = {
@@ -816,9 +818,22 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   return (
     <div className="flex flex-col h-full bg-slate-50">
       
-      {/* Header - Dark Theme - Desktop Only on Mobile */}
+      {/* Header - Dark Theme - Consistent across all applications */}
       <header className="desktop-only scenario-header-desktop bg-slate-950 border-b border-slate-800 px-6 py-3 flex items-center justify-between shrink-0 z-30 shadow-md relative print:hidden h-[6.4rem]">
           <div className="flex items-center gap-5 flex-1 min-w-0">
+          {/* MortgagePro Home Button */}
+          {onNavigateHome && (
+            <button onClick={onNavigateHome} className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group shrink-0 hover:bg-slate-900">
+              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
+                <HomeIcon className="w-5 h-5 text-white" />
+              </div>
+              <span className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">
+                MortgagePro
+              </span>
+            </button>
+          )}
+          
+          {/* Back Button */}
           <button onClick={handleExit} className="p-2 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-800 shrink-0">
             <ArrowLeft size={18} />
           </button>
@@ -920,9 +935,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     </div>
                </div>
           </div>
-        </div>
 
-        <div className="flex gap-2 pl-5 border-l border-slate-800 ml-5">
+        <div className="flex gap-2 pl-5 border-l border-slate-800 ml-5 shrink-0">
              <button 
                 onClick={() => setShowPreApprovalOptionsModal(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-slate-300 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-slate-700"
@@ -966,6 +980,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
             >
                 <CheckCircle size={14} /> Log Update
             </button>
+        </div>
         </div>
       </header>
 

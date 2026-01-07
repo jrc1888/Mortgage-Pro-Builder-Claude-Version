@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import ScenarioBuilder from './components/ScenarioBuilder';
+import { Home } from './components/Home';
+import { Updates } from './components/Updates';
 import { Auth } from './components/Auth';
 import { Modal } from './components/Modal';
 import { Scenario, ScenarioDefaults } from './types';
@@ -17,11 +19,24 @@ import { Session } from '@supabase/supabase-js';
 import { ToastProvider } from './hooks/useToast';
 import { ToastContainer } from './components/Toast';
 
+type ViewType = 'home' | 'scenario-builder' | 'builder' | 'updates';
+
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
 
-  const [view, setView] = useState<'dashboard' | 'builder'>('dashboard');
+  // Initialize view - check for starred app on first load
+  const [view, setView] = useState<ViewType>(() => {
+    if (typeof window !== 'undefined') {
+      const starredApp = localStorage.getItem('mortgagepro_starred_app');
+      if (starredApp === 'scenario-builder') {
+        return 'scenario-builder';
+      } else if (starredApp === 'updates') {
+        return 'updates';
+      }
+    }
+    return 'home';
+  });
   const [activeScenario, setActiveScenario] = useState<Scenario>(DEFAULT_SCENARIO);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -74,12 +89,24 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Fetch Data when Session is ready
+  // 2. Fetch Data when Session is ready (only for scenario builder)
   useEffect(() => {
-    if (!loadingSession) {
+    if (!loadingSession && session && (view === 'scenario-builder' || view === 'builder')) {
         fetchData();
     }
-  }, [session, loadingSession]);
+  }, [session, loadingSession, view]);
+
+  // 3. Check for starred app on login and navigate accordingly (only if currently on home)
+  useEffect(() => {
+    if (!loadingSession && session && view === 'home') {
+      const starredApp = localStorage.getItem('mortgagepro_starred_app');
+      if (starredApp === 'scenario-builder') {
+        setView('scenario-builder');
+      } else if (starredApp === 'updates') {
+        setView('updates');
+      }
+    }
+  }, [loadingSession, session, view]);
 
   const fetchData = async () => {
       setIsLoadingData(true);
@@ -193,6 +220,18 @@ const App: React.FC = () => {
 
     setView('builder');
     setIsModalOpen(false);
+  };
+
+  const handleNavigate = (appId: string) => {
+    if (appId === 'scenario-builder') {
+      setView('scenario-builder');
+    } else if (appId === 'updates') {
+      setView('updates');
+    }
+  };
+
+  const handleNavigateHome = () => {
+    setView('home');
   };
 
   const handleSelect = (scenario: Scenario) => {
@@ -316,7 +355,13 @@ const App: React.FC = () => {
     // WRAP EVERYTHING IN TOAST PROVIDER
     <ToastProvider>
       <div className="font-sans text-slate-900 relative bg-slate-50 h-screen w-screen overflow-hidden">
-        {view === 'dashboard' ? (
+        {view === 'home' ? (
+          <Home 
+            onNavigate={handleNavigate}
+            onLogout={handleLogout}
+            userEmail={session?.user?.email}
+          />
+        ) : view === 'scenario-builder' ? (
           <Dashboard 
               scenarios={scenarios} 
               onCreateNew={handleOpenNewWithType} 
@@ -333,13 +378,20 @@ const App: React.FC = () => {
               onSync={() => fetchData()}
               isSyncing={isLoadingData}
               userEmail={session?.user?.email}
+              onNavigateHome={handleNavigateHome}
+          />
+        ) : view === 'updates' ? (
+          <Updates 
+            onNavigateHome={handleNavigateHome}
+            userEmail={session?.user?.email}
           />
         ) : (
           <ScenarioBuilder 
               initialScenario={activeScenario} 
               onSave={handleSave}
-              onBack={() => setView('dashboard')}
+              onBack={() => setView('scenario-builder')}
               validationThresholds={userDefaults.validationThresholds}
+              onNavigateHome={handleNavigateHome}
           />
         )}
 
