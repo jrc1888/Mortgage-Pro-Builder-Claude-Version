@@ -21,8 +21,9 @@ interface ListingData {
 
 interface IngestResult {
   raw_text: string;
-  source: 'direct_fetch' | 'search_snippet_fallback';
+  source: 'direct_fetch' | 'openai_web_search_fallback';
   notes: string;
+  needsFallback?: boolean;
 }
 
 /**
@@ -93,66 +94,251 @@ async function ingestListingText(url: string): Promise<IngestResult> {
         source: 'direct_fetch',
         notes: `Successfully fetched ${htmlContent.length} chars, converted to ${truncatedText.length} chars of plain text`
       };
-    } else if (fetchResponse.status === 403 || fetchResponse.status === 401) {
-      // Blocked - will try fallback
+    } else if (fetchResponse.status === 403 || fetchResponse.status === 401 || fetchResponse.status === 429) {
+      // Blocked - will try OpenAI web search fallback
       throw new Error(`Blocked: ${fetchResponse.status} ${fetchResponse.statusText}`);
     } else {
       throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
     }
   } catch (fetchError) {
-    console.log('Direct fetch failed, trying search snippet fallback:', fetchError);
-    
-    // Fallback: Try to extract address from URL and use search snippets
-    try {
-      // Extract potential address from URL (for Zillow, Redfin, etc.)
-      const urlMatch = url.match(/homedetails\/([^\/]+)\//);
-      const addressFromUrl = urlMatch ? decodeURIComponent(urlMatch[1].replace(/-/g, ' ')) : null;
-      
-      // Try Bing Search API if available
-      const bingApiKey = process.env.BING_SEARCH_API_KEY;
-      const bingEndpoint = process.env.BING_SEARCH_ENDPOINT || 'https://api.bing.microsoft.com/v7.0/search';
-      
-      if (bingApiKey && addressFromUrl) {
-        const searchQuery = `${addressFromUrl} property listing`;
-        const searchResponse = await fetch(
-          `${bingEndpoint}?q=${encodeURIComponent(searchQuery)}&count=5`,
-          {
-            headers: {
-              'Ocp-Apim-Subscription-Key': bingApiKey,
-            },
-          }
-        );
+    // Mark that we need fallback - will be handled by OpenAI web search
+    console.log('Direct fetch failed, will use OpenAI web search fallback:', fetchError);
+    throw fetchError;
+  }
+}
 
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          const snippets = searchData.webPages?.value?.map((page: any) => 
-            `${page.name}: ${page.snippet}`
-          ).join('\n\n') || '';
-          
-          if (snippets) {
-            return {
-              raw_text: snippets,
-              source: 'search_snippet_fallback',
-              notes: `Used Bing search snippets for: ${addressFromUrl}`
-            };
+/**
+ * Extract address from URL for search query
+ */
+function extractAddressFromUrl(url: string): string | null {
+  try {
+    // Try to extract address from common real estate URL patterns
+    // Zillow: /homedetails/442-W-Randys-Ct-Farmington-UT-84025/458391817_zpid/
+    const zillowMatch = url.match(/homedetails\/([^\/]+)\//);
+    if (zillowMatch) {
+      return decodeURIComponent(zillowMatch[1].replace(/-/g, ' '));
+    }
+    
+    // Redfin: /home/...
+    const redfinMatch = url.match(/redfin\.com\/[^\/]+\/([^\/]+)/);
+    if (redfinMatch) {
+      return decodeURIComponent(redfinMatch[1].replace(/-/g, ' '));
+    }
+    
+    // Generic: try to find address-like patterns in URL
+    const addressPattern = /([A-Z0-9\s]+-[A-Z0-9\s]+-[A-Z]{2}-[0-9]{5})/i;
+    const match = url.match(addressPattern);
+    if (match) {
+      return match[1].replace(/-/g, ' ');
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if listing data has critical missing fields
+ */
+function hasCriticalMissingFields(listing: ListingData): boolean {
+  return !listing.price || !listing.sqft || !listing.beds || !listing.baths;
+}
+
+/**
+ * Get listing data using OpenAI Responses API with web_search tool
+ * This is used as fallback when direct fetch is blocked or critical fields are missing
+ */
+async function getListingDataFromUrlOpenAI(url: string, mlsNumber?: string, address?: string): Promise<ListingData> {
+  const apiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  // Build search query from MLS, address, or URL
+  let searchQuery: string;
+  if (mlsNumber) {
+    searchQuery = `MLS #${mlsNumber} property listing`;
+  } else if (address) {
+    searchQuery = `"${address}" property listing`;
+  } else {
+    // Extract address from URL for better search query
+    const addressFromUrl = extractAddressFromUrl(url);
+    searchQuery = addressFromUrl 
+      ? `"${addressFromUrl}" OR "${url}" property listing`
+      : `"${url}" property listing`;
+  }
+
+  const systemPrompt = `You are a real estate data extraction assistant. Use web search to find property listing information. Extract ONLY verifiable facts from search results. Never guess or invent values. If a field cannot be verified, return null and include it in missingFields.`;
+
+  const userPrompt = `Find and extract property listing data for this URL: ${url}
+
+Search query: ${searchQuery}
+
+Use web search to find information about this property listing. Extract only verifiable facts from the search results.
+
+Return a JSON object with this EXACT structure:
+{
+  "address": "full street address with city, state, zip",
+  "price": 425000,
+  "beds": 3,
+  "baths": 2,
+  "sqft": 1850,
+  "yearBuilt": 2015,
+  "propertyType": "Single Family",
+  "hoa": 0,
+  "propertyTax": null,
+  "lotSqft": null,
+  "status": "For Sale",
+  "keyFeatures": ["feature1", "feature2"],
+  "missingFields": ["field1", "field2"],
+  "confidence": {
+    "address": 0.95,
+    "price": 0.90,
+    "beds": 0.85
+  },
+  "extractionNotes": "Brief notes about extraction quality and sources"
+}
+
+RULES:
+- Use web search results to find verifiable listing facts
+- address: Full address if found, otherwise null
+- price: List price as number (no commas, no $) or null if not found
+- beds: Number of bedrooms (integer) or null if not found
+- baths: Number of bathrooms (can be decimal like 2.5) or null if not found
+- sqft: Square footage (integer) or null if not found
+- yearBuilt: Year built (integer) or null if not found
+- propertyType: "Single Family", "Condo", "Townhouse", etc. or null
+- hoa: Monthly HOA amount (number) or null if not found (use 0 only if explicitly stated as $0)
+- propertyTax: Annual property tax (number) or null if not found
+- lotSqft: Lot size in square feet (number) or null
+- status: "For Sale", "Sold", "Pending", etc. or null
+- keyFeatures: Array of up to 8 key features (strings) or empty array
+- missingFields: Array of field names that were not found in search results
+- confidence: Object mapping each extracted field to a confidence score (0.0 to 1.0)
+- extractionNotes: Brief explanation of what was found, sources used, and any issues
+
+IMPORTANT:
+- Do NOT default unknown numeric fields to 0 - use null instead
+- Only extract values that are explicitly stated in search results
+- Include all fields in missingFields that were not found
+- Set confidence scores based on how clearly the data appears in search results
+- Return ONLY valid JSON, no markdown, no code blocks, no explanations`;
+
+  // Retry logic for rate limits
+  let openaiResponse;
+  let lastError;
+  const maxRetries = 3;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (attempt > 0) {
+      const waitTime = Math.pow(2, attempt - 1) * 1000;
+      console.log(`Rate limited, retrying in ${waitTime}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
+    const model = attempt === 0 ? 'gpt-4o' : 'gpt-4o-mini';
+
+    // Use OpenAI Chat Completions API with web_search tool
+    openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        tools: [
+          {
+            type: 'web_search'
           }
-        }
-      }
-      
-      // If Bing not available or failed, create a minimal text from URL
-      const minimalText = addressFromUrl 
-        ? `Property listing for ${addressFromUrl}. URL: ${url}`
-        : `Property listing URL: ${url}`;
-      
-      return {
-        raw_text: minimalText,
-        source: 'search_snippet_fallback',
-        notes: 'Direct fetch blocked, using minimal text from URL (limited data available)'
-      };
-    } catch (fallbackError) {
-      throw new Error(`Both direct fetch and fallback failed: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`);
+        ],
+        // Note: web_search tool may require specific model versions or API access
+        // If this fails, we'll catch the error and provide a helpful message
+        temperature: 0.1,
+        max_tokens: 2048,
+        response_format: { type: 'json_object' }
+      })
+    });
+
+    if (openaiResponse.ok || openaiResponse.status !== 429) {
+      break;
+    }
+
+    if (openaiResponse.status === 429 && attempt < maxRetries - 1) {
+      const errorText = await openaiResponse.text();
+      lastError = errorText;
+      continue;
     }
   }
+
+  if (!openaiResponse.ok) {
+    const errorText = await openaiResponse.text() || lastError || 'Unknown error';
+    let errorMessage = 'OpenAI API error';
+    try {
+      const errorData = JSON.parse(errorText);
+      errorMessage = errorData.error?.message || errorText.substring(0, 200);
+      if (openaiResponse.status === 429) {
+        errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
+      }
+    } catch {
+      errorMessage = errorText.substring(0, 200);
+    }
+    throw new Error(errorMessage);
+  }
+
+  const data = await openaiResponse.json();
+  const text = data.choices?.[0]?.message?.content;
+
+  if (!text) {
+    throw new Error('No response from OpenAI API');
+  }
+
+  // Clean JSON from response
+  let cleanText = text.trim();
+  cleanText = cleanText.replace(/```json\n?/gi, '');
+  cleanText = cleanText.replace(/```\n?/g, '');
+  
+  const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleanText = jsonMatch[0];
+  }
+
+  let listingData: ListingData;
+  try {
+    listingData = JSON.parse(cleanText);
+  } catch (parseError) {
+    console.error('JSON Parse Error:', parseError);
+    console.error('Raw response:', cleanText);
+    throw new Error('Failed to parse property data from OpenAI response');
+  }
+
+  // Validate and normalize the data
+  // Note: We allow missing address/price if using fallback - it's better than nothing
+  if (!listingData.address && !listingData.price) {
+    throw new Error('Incomplete property data: missing both address and price');
+  }
+
+  // Ensure numeric fields are numbers or null (NOT 0 for missing)
+  listingData.price = listingData.price !== null && listingData.price !== undefined ? Number(listingData.price) : null;
+  listingData.beds = listingData.beds !== null && listingData.beds !== undefined ? Number(listingData.beds) : null;
+  listingData.baths = listingData.baths !== null && listingData.baths !== undefined ? Number(listingData.baths) : null;
+  listingData.sqft = listingData.sqft !== null && listingData.sqft !== undefined ? Number(listingData.sqft) : null;
+  listingData.yearBuilt = listingData.yearBuilt !== null && listingData.yearBuilt !== undefined ? Number(listingData.yearBuilt) : null;
+  listingData.hoa = listingData.hoa !== null && listingData.hoa !== undefined ? Number(listingData.hoa) : null;
+  listingData.lotSqft = listingData.lotSqft !== null && listingData.lotSqft !== undefined ? Number(listingData.lotSqft) : null;
+  
+  // Property tax: keep as provided (annual)
+  if (listingData.propertyTax !== null && listingData.propertyTax !== undefined) {
+    listingData.propertyTax = Number(listingData.propertyTax);
+  }
+
+  return listingData;
 }
 
 /**
@@ -308,25 +494,23 @@ IMPORTANT:
   }
 
   // Validate and normalize the data
+  // Note: We allow missing address/price if using fallback - it's better than nothing
   if (!listingData.address && !listingData.price) {
     throw new Error('Incomplete property data: missing both address and price');
   }
 
-  // Ensure numeric fields are numbers
-  listingData.price = Number(listingData.price) || 0;
-  listingData.beds = Number(listingData.beds) || 0;
-  listingData.baths = Number(listingData.baths) || 0;
-  listingData.sqft = Number(listingData.sqft) || 0;
-  listingData.yearBuilt = listingData.yearBuilt ? Number(listingData.yearBuilt) : null;
-  listingData.hoa = listingData.hoa !== null && listingData.hoa !== undefined 
-    ? Number(listingData.hoa) 
-    : 0;
-  listingData.lotSqft = listingData.lotSqft ? Number(listingData.lotSqft) : null;
+  // Ensure numeric fields are numbers or null (NOT 0 for missing)
+  listingData.price = listingData.price !== null && listingData.price !== undefined ? Number(listingData.price) : null;
+  listingData.beds = listingData.beds !== null && listingData.beds !== undefined ? Number(listingData.beds) : null;
+  listingData.baths = listingData.baths !== null && listingData.baths !== undefined ? Number(listingData.baths) : null;
+  listingData.sqft = listingData.sqft !== null && listingData.sqft !== undefined ? Number(listingData.sqft) : null;
+  listingData.yearBuilt = listingData.yearBuilt !== null && listingData.yearBuilt !== undefined ? Number(listingData.yearBuilt) : null;
+  listingData.hoa = listingData.hoa !== null && listingData.hoa !== undefined ? Number(listingData.hoa) : null;
+  listingData.lotSqft = listingData.lotSqft !== null && listingData.lotSqft !== undefined ? Number(listingData.lotSqft) : null;
   
-  // Property tax: if provided as annual, keep as annual (we'll convert later if needed)
+  // Property tax: keep as provided (annual)
   if (listingData.propertyTax !== null && listingData.propertyTax !== undefined) {
-    const taxValue = Number(listingData.propertyTax);
-    listingData.propertyTax = taxValue;
+    listingData.propertyTax = Number(listingData.propertyTax);
   }
 
   return listingData;
@@ -336,11 +520,36 @@ IMPORTANT:
  * Main function: Get listing data from URL
  */
 async function getListingDataFromUrl(url: string): Promise<{ listing: ListingData; ingestion: IngestResult }> {
-  // Step 1: Ingest raw text
-  const ingestion = await ingestListingText(url);
+  let ingestion: IngestResult;
+  let listing: ListingData;
   
-  // Step 2: Extract with OpenAI
-  const listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source);
+  try {
+    // Step 1: Try to ingest raw text via direct fetch
+    ingestion = await ingestListingText(url);
+    
+    // Step 2: Extract with OpenAI from fetched text
+    listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source);
+    
+    // Step 3: Check if critical fields are missing - if so, use OpenAI web search fallback
+    if (hasCriticalMissingFields(listing)) {
+      console.log('Critical fields missing, using OpenAI web search fallback');
+      listing = await getListingDataFromUrlOpenAI(url, undefined, undefined);
+      ingestion = {
+        raw_text: '',
+        source: 'openai_web_search_fallback',
+        notes: 'Direct fetch succeeded but critical fields missing, used OpenAI web search to supplement'
+      };
+    }
+  } catch (fetchError) {
+    // Direct fetch failed (403/429/etc) - use OpenAI web search fallback
+    console.log('Direct fetch failed, using OpenAI web search fallback:', fetchError);
+    listing = await getListingDataFromUrlOpenAI(url, undefined, undefined);
+    ingestion = {
+      raw_text: '',
+      source: 'openai_web_search_fallback',
+      notes: `Direct fetch blocked/failed (${fetchError instanceof Error ? fetchError.message : 'unknown error'}), used OpenAI web search`
+    };
+  }
   
   return { listing, ingestion };
 }
@@ -364,32 +573,71 @@ export default async function handler(
   }
 
   try {
-    const { url } = request.body;
+    const { url, mlsNumber, address } = request.body;
 
-    if (!url || typeof url !== 'string') {
-      return response.status(400).json({ error: 'URL is required' });
+    // Must have at least one: URL, MLS number, or address
+    if (!url && !mlsNumber && !address) {
+      return response.status(400).json({ error: 'URL, MLS number, or address is required' });
     }
 
-    // Validate URL format
-    try {
-      new URL(url);
-    } catch {
-      return response.status(400).json({ error: 'Invalid URL format' });
+    // If URL provided, validate format
+    if (url) {
+      try {
+        new URL(url);
+      } catch {
+        return response.status(400).json({ error: 'Invalid URL format' });
+      }
+    }
+
+    // For MLS or address, we'll need to search for the listing
+    // For now, if we have MLS or address but no URL, we'll use OpenAI web search
+    let propertyUrl = url;
+    if (!url && (mlsNumber || address)) {
+      // Construct a search query for OpenAI web search
+      const searchQuery = mlsNumber 
+        ? `MLS ${mlsNumber} property listing`
+        : `${address} property listing`;
+      
+      // We'll handle this in the getListingDataFromUrl function
+      // For now, create a placeholder URL that will trigger web search
+      propertyUrl = mlsNumber 
+        ? `https://search.property.com/mls/${mlsNumber}`
+        : `https://search.property.com/address/${encodeURIComponent(address || '')}`;
     }
 
     // Get listing data
-    const { listing, ingestion } = await getListingDataFromUrl(url);
+    // If we have MLS or address but no URL, use OpenAI web search directly
+    let listing: ListingData;
+    let ingestion: IngestResult;
+    
+    if (!url && (mlsNumber || address)) {
+      // Use OpenAI web search to find property by MLS or address
+      listing = await getListingDataFromUrlOpenAI(propertyUrl, mlsNumber, address);
+      ingestion = {
+        raw_text: '',
+        source: 'openai_web_search_fallback',
+        notes: mlsNumber 
+          ? `Searched for MLS #${mlsNumber} using OpenAI web search`
+          : `Searched for address "${address}" using OpenAI web search`
+      };
+    } else {
+      // Normal URL processing
+      const result = await getListingDataFromUrl(propertyUrl);
+      listing = result.listing;
+      ingestion = result.ingestion;
+    }
 
     // Convert to format expected by frontend (maintain backward compatibility)
+    // Note: Keep null values as null (don't convert to 0) so frontend can show "Unknown"
     const propertyData = {
-      address: listing.address || '',
-      price: listing.price,
-      beds: listing.beds,
-      baths: listing.baths,
-      sqft: listing.sqft,
+      address: listing.address || null,
+      price: listing.price, // Can be null
+      beds: listing.beds, // Can be null
+      baths: listing.baths, // Can be null
+      sqft: listing.sqft, // Can be null
       yearBuilt: listing.yearBuilt,
-      propertyType: listing.propertyType || 'Single Family',
-      hoa: listing.hoa,
+      propertyType: listing.propertyType || null,
+      hoa: listing.hoa, // Can be null (use 0 only if explicitly $0)
       propertyTax: listing.propertyTax ? (listing.propertyTax > 1000 ? listing.propertyTax / 12 : listing.propertyTax) : null,
       // Include additional metadata
       _metadata: {

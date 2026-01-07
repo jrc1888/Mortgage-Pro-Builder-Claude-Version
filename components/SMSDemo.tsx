@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Edit2 } from 'lucide-react';
 import { SharedHeader } from './SharedHeader';
+import { LiveDecimalInput, FormattedNumberInput } from './CommonInputs';
 
 interface Message {
   id: string;
@@ -19,16 +20,129 @@ interface ProcessingStep {
   expanded?: boolean;
 }
 
+interface BorrowerQualification {
+  borrowerName: string;
+  creditScore: number;
+  totalIncome: number;
+  monthlyDebts: number;
+  downPaymentPercent: number;
+  interestRate: number;
+  loanType: 'Conventional' | 'FHA' | 'VA';
+  loanTermMonths: number;
+  maxFrontEndDTI: number;
+  maxBackEndDTI: number;
+  maxMonthlyPayment: number;
+  maxLoanAmount: number;
+  maxPurchasePrice: number;
+}
+
 interface Props {
   onNavigateHome: () => void;
   userEmail?: string | null;
 }
 
 export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
+  // Borrower qualification data (editable)
+  const [borrowerQualification, setBorrowerQualification] = useState<BorrowerQualification>({
+    borrowerName: 'John & Sarah Smith',
+    creditScore: 740,
+    totalIncome: 8500, // Monthly
+    monthlyDebts: 450,
+    downPaymentPercent: 10,
+    interestRate: 6.875,
+    loanType: 'Conventional',
+    loanTermMonths: 360,
+    maxFrontEndDTI: 46.99,
+    maxBackEndDTI: 49.99,
+    maxMonthlyPayment: 3100, // Will be calculated
+    maxLoanAmount: 450000, // Will be calculated
+    maxPurchasePrice: 500000 // Will be calculated
+  });
+
+  // Calculate max payment from DTI ratios
+  const calculateMaxPayment = (income: number, debts: number, frontEndDTI: number, backEndDTI: number): number => {
+    const frontEndMax = income * (frontEndDTI / 100);
+    const backEndMax = (income * (backEndDTI / 100)) - debts;
+    return Math.min(frontEndMax, backEndMax);
+  };
+
+  // Calculate max loan and price from max payment
+  const calculateMaxLoanAndPrice = (
+    maxPayment: number,
+    downPaymentPercent: number,
+    interestRate: number,
+    loanTermMonths: number,
+    estimatedTaxRate: number = 0.0058, // Utah average
+    estimatedInsuranceRate: number = 0.003,
+    estimatedPMIRate: number = 0.005 // Average PMI for 10% down
+  ): { maxLoan: number; maxPrice: number } => {
+    if (maxPayment <= 0) return { maxLoan: 0, maxPrice: 0 };
+
+    // Estimate monthly costs per $1000 of loan
+    const monthlyRate = (interestRate / 100) / 12;
+    const pmiRate = downPaymentPercent < 20 ? estimatedPMIRate : 0;
+    
+    // P&I per $1000
+    const piPer1000 = 1000 * (monthlyRate * Math.pow(1 + monthlyRate, loanTermMonths)) / 
+                      (Math.pow(1 + monthlyRate, loanTermMonths) - 1);
+    
+    // Tax per $1000 (annual / 12)
+    const taxPer1000 = (1000 * estimatedTaxRate) / 12;
+    
+    // Insurance per $1000 (annual / 12)
+    const insurancePer1000 = (1000 * estimatedInsuranceRate) / 12;
+    
+    // PMI per $1000 (if applicable)
+    const pmiPer1000 = pmiRate > 0 ? (1000 * pmiRate) / 12 : 0;
+    
+    // Total payment per $1000
+    const totalPer1000 = piPer1000 + taxPer1000 + insurancePer1000 + pmiPer1000;
+    
+    // Max loan amount
+    const maxLoan = (maxPayment / totalPer1000) * 1000;
+    
+    // Max price = max loan / (1 - downPaymentPercent/100)
+    const maxPrice = maxLoan / (1 - downPaymentPercent / 100);
+    
+    return { maxLoan: Math.round(maxLoan), maxPrice: Math.round(maxPrice) };
+  };
+
+  // Update calculated fields when inputs change
+  useEffect(() => {
+    const maxPayment = calculateMaxPayment(
+      borrowerQualification.totalIncome,
+      borrowerQualification.monthlyDebts,
+      borrowerQualification.maxFrontEndDTI,
+      borrowerQualification.maxBackEndDTI
+    );
+
+    const { maxLoan, maxPrice } = calculateMaxLoanAndPrice(
+      maxPayment,
+      borrowerQualification.downPaymentPercent,
+      borrowerQualification.interestRate,
+      borrowerQualification.loanTermMonths
+    );
+
+    setBorrowerQualification(prev => ({
+      ...prev,
+      maxMonthlyPayment: Math.round(maxPayment),
+      maxLoanAmount: maxLoan,
+      maxPurchasePrice: maxPrice
+    }));
+  }, [
+    borrowerQualification.totalIncome,
+    borrowerQualification.monthlyDebts,
+    borrowerQualification.maxFrontEndDTI,
+    borrowerQualification.maxBackEndDTI,
+    borrowerQualification.downPaymentPercent,
+    borrowerQualification.interestRate,
+    borrowerQualification.loanTermMonths
+  ]);
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: 'Welcome! Send me a property listing URL (Zillow, Redfin, UtahRealEstate.com) and I\'ll analyze it for you! 🏡',
+      text: 'Welcome! Send me:\n• A property listing URL (Zillow, Redfin, etc.)\n• An MLS number (e.g., "MLS #123456")\n• A property address\n\nI\'ll analyze it against your qualification! 🏡',
       sender: 'system',
       timestamp: new Date()
     }
@@ -36,6 +150,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([]);
+  const [pendingConfirmation, setPendingConfirmation] = useState<{ type: 'mls' | 'address'; value: string } | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stepsEndRef = useRef<HTMLDivElement>(null);
@@ -184,36 +299,88 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const messageText = inputText.trim();
     setInputText('');
     setIsProcessing(true);
     setProcessingSteps([]);
 
     try {
-      // Step 1: Detect URL
+      // Step 1: Detect URL, MLS, or Address
       const step1Id = addStep('Analyzing message', 'processing');
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      const url = detectURL(inputText);
-      if (!url) {
+      const url = detectURL(messageText);
+      const mlsNumber = detectMLS(messageText);
+      const address = detectAddress(messageText);
+      
+      // Check if user is confirming a pending MLS/address
+      const isConfirmation = /^(yes|y|confirm|correct|that's it|that's the one)$/i.test(messageText);
+      
+      // Determine what to process
+      let mlsToProcess = mlsNumber;
+      let addressToProcess = address;
+      let propertyUrl = url;
+      
+      if (pendingConfirmation && isConfirmation) {
+        // User confirmed - process the MLS/address
+        if (pendingConfirmation.type === 'mls') {
+          mlsToProcess = pendingConfirmation.value;
+        } else {
+          addressToProcess = pendingConfirmation.value;
+        }
+        setPendingConfirmation(null);
+        
+        // Construct placeholder URL for confirmed MLS/address
+        propertyUrl = mlsToProcess 
+          ? `https://search.mlsnumber.com/${mlsToProcess}`
+          : `https://search.property.com/${encodeURIComponent(addressToProcess || '')}`;
+      } else if ((mlsNumber || address) && !url && !pendingConfirmation) {
+        // First time detecting MLS/address - ask for confirmation
+        const detectedValue = mlsNumber ? `MLS #${mlsNumber}` : address;
+        updateStep(step1Id, { 
+          status: 'success', 
+          icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+          details: `Detected: ${detectedValue}`
+        });
+        
+        setPendingConfirmation(mlsNumber ? { type: 'mls', value: mlsNumber } : { type: 'address', value: address! });
+        
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          text: `I found ${detectedValue}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
+          sender: 'system',
+          timestamp: new Date()
+        }]);
+        setIsProcessing(false);
+        return;
+      } else if (!url && !mlsNumber && !address && !pendingConfirmation) {
+        // No detection and no pending confirmation
         updateStep(step1Id, { 
           status: 'error', 
           icon: <XCircle className="w-4 h-4 text-red-500" />,
-          details: 'No URL detected in message'
+          details: 'No URL, MLS number, or address detected'
         });
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(),
-          text: 'I couldn\'t find a property listing URL in your message. Please send me a link from Zillow, Redfin, or UtahRealEstate.com!',
+          text: 'I couldn\'t find a property listing URL, MLS number, or address in your message. Please send me:\n• A link from Zillow, Redfin, or UtahRealEstate.com\n• An MLS number (e.g., "MLS #123456")\n• A property address',
           sender: 'system',
           timestamp: new Date()
         }]);
         setIsProcessing(false);
         return;
       }
+      
+      // If we have MLS/address but no URL, construct placeholder URL
+      if (!url && (mlsToProcess || addressToProcess)) {
+        propertyUrl = mlsToProcess 
+          ? `https://search.mlsnumber.com/${mlsToProcess}`
+          : `https://search.property.com/${encodeURIComponent(addressToProcess || '')}`;
+      }
 
       updateStep(step1Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-        details: `Found URL: ${url}`
+        details: propertyUrl ? `Found URL: ${propertyUrl}` : (mlsToProcess ? `Found MLS: #${mlsToProcess}` : `Found Address: ${addressToProcess}`)
       });
 
       // Step 2: Fetch page content
@@ -229,7 +396,11 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ 
+          url: propertyUrl || undefined,
+          mlsNumber: mlsToProcess || undefined,
+          address: addressToProcess || undefined
+        })
       });
 
       const data = await response.json();
@@ -240,12 +411,12 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         const errorDetails = data.details || data.suggestion || '';
         
         updateStep(step2Id, { 
-          status: data.ingestion?.source === 'search_snippet_fallback' ? 'error' : 'success', 
-          icon: data.ingestion?.source === 'search_snippet_fallback' 
+          status: data.ingestion?.source === 'openai_web_search_fallback' ? 'error' : 'success', 
+          icon: data.ingestion?.source === 'openai_web_search_fallback' 
             ? <AlertCircle className="w-4 h-4 text-amber-500" />
             : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-          details: data.ingestion?.source === 'search_snippet_fallback' 
-            ? 'Direct fetch blocked, using fallback method'
+          details: data.ingestion?.source === 'openai_web_search_fallback' 
+            ? 'Direct fetch blocked, using OpenAI web search'
             : 'Page content fetched successfully',
           rawData: data.ingestion
         });
@@ -270,14 +441,14 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       }
 
       // Update step 2 with ingestion info
-      updateStep(step2Id, { 
-        status: data.ingestion?.source === 'search_snippet_fallback' ? 'error' : 'success', 
-        icon: data.ingestion?.source === 'search_snippet_fallback' 
-          ? <AlertCircle className="w-4 h-4 text-amber-500" />
-          : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-        details: data.ingestion?.source === 'search_snippet_fallback' 
-          ? 'Direct fetch blocked, using fallback method'
-          : 'Page content fetched successfully',
+        updateStep(step2Id, { 
+          status: data.ingestion?.source === 'openai_web_search_fallback' ? 'error' : 'success', 
+          icon: data.ingestion?.source === 'openai_web_search_fallback' 
+            ? <AlertCircle className="w-4 h-4 text-amber-500" />
+            : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+          details: data.ingestion?.source === 'openai_web_search_fallback' 
+            ? 'Direct fetch blocked, using OpenAI web search'
+            : 'Page content fetched successfully',
         rawData: data.ingestion
       });
 
@@ -317,19 +488,33 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       const enrichedData = { ...propertyData };
       const estimates: string[] = [];
 
-      if (propertyData.propertyTax === null || propertyData.propertyTax === undefined) {
-        enrichedData.propertyTax = propertyData.price * 0.0058 / 12; // Utah avg monthly
-        estimates.push('Property Tax');
+      // Handle null values - use estimates only if we have a price
+      if (propertyData.price === null || propertyData.price === undefined) {
+        // Can't estimate without price
+        enrichedData.price = null;
       }
 
-      // Estimate insurance with age adjustment
-      const age = new Date().getFullYear() - (propertyData.yearBuilt || 2020);
-      let insuranceRate = 0.003; // Base 0.3% annually
-      if (age > 20) insuranceRate = 0.0035; // Older homes cost more to insure
-      if (age < 5) insuranceRate = 0.0025; // Newer homes cost less
+      if (propertyData.propertyTax === null || propertyData.propertyTax === undefined) {
+        if (enrichedData.price) {
+          enrichedData.propertyTax = enrichedData.price * 0.0058 / 12; // Utah avg monthly
+          estimates.push('Property Tax');
+        } else {
+          enrichedData.propertyTax = null;
+        }
+      }
 
-      enrichedData.insurance = propertyData.price * insuranceRate / 12;
-      estimates.push('Insurance');
+      // Estimate insurance with age adjustment (only if we have price)
+      if (enrichedData.price) {
+        const age = new Date().getFullYear() - (propertyData.yearBuilt || 2020);
+        let insuranceRate = 0.003; // Base 0.3% annually
+        if (age > 20) insuranceRate = 0.0035; // Older homes cost more to insure
+        if (age < 5) insuranceRate = 0.0025; // Newer homes cost less
+
+        enrichedData.insurance = enrichedData.price * insuranceRate / 12;
+        estimates.push('Insurance');
+      } else {
+        enrichedData.insurance = null;
+      }
 
       updateStep(step5Id, { 
         status: 'success', 
@@ -338,36 +523,49 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         rawData: enrichedData
       });
 
-      // Step 6: Load mock client pre-qualification
-      const step6Id = addStep('Loading client pre-qualification', 'processing');
+      // Step 6: Load borrower qualification data
+      const step6Id = addStep('Loading borrower qualification', 'processing');
       await new Promise(resolve => setTimeout(resolve, 300));
-
-      const clientData = {
-        downPaymentPercent: 10,
-        maxMonthlyPayment: 3100,
-        interestRate: 6.875
-      };
 
       updateStep(step6Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-        details: `10% down, $${clientData.maxMonthlyPayment}/mo max, ${clientData.interestRate}% rate`,
-        rawData: clientData
+        details: `${borrowerQualification.downPaymentPercent}% down, $${borrowerQualification.maxMonthlyPayment}/mo max, ${borrowerQualification.interestRate}% rate`,
+        rawData: borrowerQualification
       });
 
       // Step 7: Calculate mortgage payment
       const step7Id = addStep('Calculating payment', 'processing');
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Can't calculate payment without price
+      if (!enrichedData.price) {
+        updateStep(step7Id, { 
+          status: 'error', 
+          icon: <XCircle className="w-4 h-4 text-red-500" />,
+          details: 'Cannot calculate payment: property price is missing',
+          rawData: { error: 'Missing price data' }
+        });
+        
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          text: 'Sorry, I couldn\'t find the property price in the listing. Without the price, I can\'t calculate the mortgage payment. Please try a different listing URL or check if the listing is publicly available.',
+          sender: 'system',
+          timestamp: new Date()
+        }]);
+        setIsProcessing(false);
+        return;
+      }
+
       const payment = calculateMortgagePayment(
         enrichedData.price,
-        clientData.downPaymentPercent,
-        clientData.interestRate,
-        360, // 30 years
-        enrichedData.propertyTax * 12, // Convert monthly to yearly
-        enrichedData.insurance * 12, // Convert monthly to yearly
+        borrowerQualification.downPaymentPercent,
+        borrowerQualification.interestRate,
+        borrowerQualification.loanTermMonths,
+        (enrichedData.propertyTax || 0) * 12, // Convert monthly to yearly (use 0 if null)
+        (enrichedData.insurance || 0) * 12, // Convert monthly to yearly (use 0 if null)
         enrichedData.hoa || 0,
-        740 // Credit score
+        borrowerQualification.creditScore
       );
 
       updateStep(step7Id, { 
@@ -377,37 +575,65 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         rawData: payment
       });
 
-      // Step 8: Check affordability
-      const step8Id = addStep('Checking affordability', 'processing');
+      // Step 8: Compare to qualification limits
+      const step8Id = addStep('Comparing to qualification limits', 'processing');
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      const overage = payment.total - clientData.maxMonthlyPayment;
-      const isAffordable = payment.total <= clientData.maxMonthlyPayment;
+      const overage = payment.total - borrowerQualification.maxMonthlyPayment;
+      const isAffordable = payment.total <= borrowerQualification.maxMonthlyPayment;
+      const priceWithinLimit = enrichedData.price ? enrichedData.price <= borrowerQualification.maxPurchasePrice : true;
+      const loanAmount = enrichedData.price ? enrichedData.price * (1 - borrowerQualification.downPaymentPercent / 100) : 0;
+      const loanWithinLimit = loanAmount <= borrowerQualification.maxLoanAmount;
+
+      const comparisonDetails = [
+        `Payment: ${formatCurrency(payment.total)} vs Max: ${formatCurrency(borrowerQualification.maxMonthlyPayment)}`,
+        `Price: ${enrichedData.price ? formatCurrency(enrichedData.price) : 'Unknown'} vs Max: ${formatCurrency(borrowerQualification.maxPurchasePrice)}`,
+        `Loan: ${formatCurrency(loanAmount)} vs Max: ${formatCurrency(borrowerQualification.maxLoanAmount)}`
+      ].join('\n');
 
       updateStep(step8Id, { 
-        status: isAffordable ? 'success' : 'error', 
-        icon: isAffordable 
+        status: isAffordable && priceWithinLimit && loanWithinLimit ? 'success' : 'error', 
+        icon: isAffordable && priceWithinLimit && loanWithinLimit
           ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           : <AlertCircle className="w-4 h-4 text-amber-500" />,
         details: isAffordable 
           ? `Under budget by ${formatCurrency(Math.abs(overage))}`
           : `Over budget by ${formatCurrency(overage)}`,
-        rawData: { isAffordable, overage, maxPayment: clientData.maxMonthlyPayment, actualPayment: payment.total }
+        rawData: { 
+          isAffordable, 
+          overage, 
+          maxPayment: borrowerQualification.maxMonthlyPayment, 
+          actualPayment: payment.total,
+          priceWithinLimit,
+          loanWithinLimit,
+          comparisonDetails
+        }
       });
 
       // Step 9: Generate formatted SMS response
       const step9Id = addStep('Generating response', 'processing');
       await new Promise(resolve => setTimeout(resolve, 400));
 
-      let responseText = `🏡 Found it! ${enrichedData.address}\n\n`;
+      // Helper function to format nullable values
+      const formatNullable = (value: any, formatter: (v: any) => string, fallback: string = 'Unknown'): string => {
+        return value !== null && value !== undefined ? formatter(value) : fallback;
+      };
+
+      let responseText = `🏡 Found it! ${formatNullable(enrichedData.address, (v) => v, 'Address not found')}\n\n`;
       responseText += `📋 Property Details:\n`;
-      responseText += `- Price: ${formatCurrency(enrichedData.price)}\n`;
-      responseText += `- ${enrichedData.beds} bed, ${enrichedData.baths} bath\n`;
-      responseText += `- ${enrichedData.sqft?.toLocaleString()} sq ft\n`;
-      responseText += `- Built: ${enrichedData.yearBuilt}\n`;
-      responseText += `- HOA: ${enrichedData.hoa ? formatCurrency(enrichedData.hoa) + '/mo' : 'None detected ✓'}\n\n`;
+      responseText += `- Price: ${formatNullable(enrichedData.price, formatCurrency)}\n`;
+      responseText += `- ${formatNullable(enrichedData.beds, (v) => `${v}`, '?')} bed, ${formatNullable(enrichedData.baths, (v) => `${v}`, '?')} bath\n`;
+      responseText += `- ${formatNullable(enrichedData.sqft, (v) => v.toLocaleString() + ' sq ft')}\n`;
+      responseText += `- Built: ${formatNullable(enrichedData.yearBuilt, (v) => v.toString())}\n`;
       
-      responseText += `💰 Your Payment (10% down):\n`;
+      if (enrichedData.hoa !== null && enrichedData.hoa !== undefined) {
+        responseText += `- HOA: ${enrichedData.hoa > 0 ? formatCurrency(enrichedData.hoa) + '/mo' : 'None detected ✓'}\n`;
+      } else {
+        responseText += `- HOA: Unknown\n`;
+      }
+      responseText += `\n`;
+      
+      responseText += `💰 Your Payment (${borrowerQualification.downPaymentPercent}% down):\n`;
       responseText += `- P&I: ${formatCurrency(payment.principalAndInterest)}\n`;
       responseText += `- Property Tax: ${formatCurrency(payment.propertyTax)}/mo ${estimates.includes('Property Tax') ? '(est)*' : ''}\n`;
       responseText += `- Insurance: ${formatCurrency(payment.insurance)}/mo (est)*\n`;
@@ -425,10 +651,10 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       }
 
       if (isAffordable) {
-        responseText += `✅ This fits your budget of ${formatCurrency(clientData.maxMonthlyPayment)}/mo!\n`;
+        responseText += `✅ This fits your budget of ${formatCurrency(borrowerQualification.maxMonthlyPayment)}/mo!\n`;
         responseText += `You have ${formatCurrency(Math.abs(overage))}/mo cushion.`;
       } else {
-        responseText += `⚠️ This is ${formatCurrency(overage)} OVER your budget of ${formatCurrency(clientData.maxMonthlyPayment)}/mo\n\n`;
+        responseText += `⚠️ This is ${formatCurrency(overage)} OVER your budget of ${formatCurrency(borrowerQualification.maxMonthlyPayment)}/mo\n\n`;
         responseText += `But I found ways to make it work!\n`;
         responseText += `Reply OPTIONS to see solutions`;
       }
@@ -470,13 +696,202 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         variant="dark"
       />
 
-      {/* Split Screen Layout */}
+      {/* Three Column Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Side: Backend Processing Log */}
-        <div className="w-1/2 border-r border-slate-200 bg-white flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-            <h2 className="text-lg font-bold text-slate-900">Backend Processing Log</h2>
-            <p className="text-sm text-slate-600 mt-1">Real-time processing steps</p>
+        {/* Left Side: Borrower Qualification */}
+        <div className="w-1/3 border-r-2 border-indigo-200 bg-gradient-to-b from-white to-slate-50 flex flex-col shadow-lg">
+          <div className="px-6 py-5 border-b-2 border-indigo-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+                <Edit2 className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900">Borrower Qualification</h2>
+            </div>
+            <p className="text-sm text-slate-600 ml-10">Pre-approval details (editable)</p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Borrower Info - Compact */}
+            <div className="bg-white rounded-lg p-3 border border-slate-200 shadow-sm">
+              <h3 className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-wider">Borrower</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Name</label>
+                  <input
+                    type="text"
+                    value={borrowerQualification.borrowerName}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, borrowerName: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Credit Score</label>
+                  <input
+                    type="number"
+                    value={borrowerQualification.creditScore}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, creditScore: Number(e.target.value) || 0 }))}
+                    min="300"
+                    max="850"
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Income & Debt - Compact */}
+            <div className="bg-white rounded-lg p-3 border border-slate-200 shadow-sm">
+              <h3 className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-wider">Income & Debt</h3>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Monthly Income</label>
+                  <FormattedNumberInput
+                    value={borrowerQualification.totalIncome}
+                    onChangeValue={(val) => setBorrowerQualification(prev => ({ ...prev, totalIncome: val }))}
+                    isCurrency={true}
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Monthly Debts</label>
+                  <FormattedNumberInput
+                    value={borrowerQualification.monthlyDebts}
+                    onChangeValue={(val) => setBorrowerQualification(prev => ({ ...prev, monthlyDebts: val }))}
+                    isCurrency={true}
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Front-End DTI %</label>
+                  <input
+                    type="number"
+                    value={borrowerQualification.maxFrontEndDTI}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, maxFrontEndDTI: Number(e.target.value) || 0 }))}
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Back-End DTI %</label>
+                  <input
+                    type="number"
+                    value={borrowerQualification.maxBackEndDTI}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, maxBackEndDTI: Number(e.target.value) || 0 }))}
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 mt-2">
+                <div className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-0.5">Current Front-End</div>
+                  <div className="text-sm font-bold text-indigo-600">
+                    {borrowerQualification.totalIncome > 0 
+                      ? ((borrowerQualification.maxMonthlyPayment / borrowerQualification.totalIncome) * 100).toFixed(1)
+                      : '0.0'}%
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[9px] text-slate-500 mb-0.5">Current Back-End</div>
+                  <div className="text-sm font-bold text-indigo-600">
+                    {borrowerQualification.totalIncome > 0
+                      ? (((borrowerQualification.maxMonthlyPayment + borrowerQualification.monthlyDebts) / borrowerQualification.totalIncome) * 100).toFixed(1)
+                      : '0.0'}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Qualification Limits - Compact */}
+            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg p-3 border-2 border-indigo-200 shadow-sm">
+              <h3 className="text-[10px] font-bold text-indigo-700 mb-2 uppercase tracking-wider">Qualification Limits</h3>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-semibold text-slate-600">Max Payment:</span>
+                  <span className="text-sm font-bold text-indigo-600">{formatCurrency(borrowerQualification.maxMonthlyPayment)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-semibold text-slate-600">Max Loan:</span>
+                  <span className="text-sm font-bold text-indigo-600">{formatCurrency(borrowerQualification.maxLoanAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-semibold text-slate-600">Max Price:</span>
+                  <span className="text-sm font-bold text-indigo-600">{formatCurrency(borrowerQualification.maxPurchasePrice)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Loan Structure - Compact */}
+            <div className="bg-white rounded-lg p-3 border border-slate-200 shadow-sm">
+              <h3 className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-wider">Loan Structure</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Loan Type</label>
+                  <select
+                    value={borrowerQualification.loanType}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, loanType: e.target.value as 'Conventional' | 'FHA' | 'VA' }))}
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="Conventional">Conventional</option>
+                    <option value="FHA">FHA</option>
+                    <option value="VA">VA</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Down Payment %</label>
+                  <input
+                    type="number"
+                    value={borrowerQualification.downPaymentPercent}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, downPaymentPercent: Number(e.target.value) || 0 }))}
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Interest Rate %</label>
+                  <input
+                    type="number"
+                    value={borrowerQualification.interestRate}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, interestRate: Number(e.target.value) || 0 }))}
+                    min="0"
+                    max="20"
+                    step="0.125"
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Term (years)</label>
+                  <select
+                    value={borrowerQualification.loanTermMonths / 12}
+                    onChange={(e) => setBorrowerQualification(prev => ({ ...prev, loanTermMonths: Number(e.target.value) * 12 }))}
+                    className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Middle: Backend Processing Log */}
+        <div className="w-1/3 border-r-2 border-emerald-200 bg-gradient-to-b from-white to-slate-50 flex flex-col shadow-lg">
+          <div className="px-6 py-5 border-b-2 border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                <Loader2 className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900">Backend Processing Log</h2>
+            </div>
+            <p className="text-sm text-slate-600 ml-10">Real-time processing steps</p>
           </div>
           <div className="flex-1 overflow-y-auto p-6 space-y-3">
             {processingSteps.length === 0 ? (
@@ -528,10 +943,15 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         </div>
 
         {/* Right Side: SMS Chat Interface */}
-        <div className="w-1/2 bg-slate-50 flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-200 bg-white">
-            <h2 className="text-lg font-bold text-slate-900">SMS Chat Interface</h2>
-            <p className="text-sm text-slate-600 mt-1">Send property listing URLs to analyze</p>
+        <div className="w-1/3 bg-gradient-to-b from-slate-50 to-white flex flex-col shadow-lg">
+          <div className="px-6 py-5 border-b-2 border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
+                <Send className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900">SMS Chat Interface</h2>
+            </div>
+            <p className="text-sm text-slate-600 ml-10">Send URL, MLS #, or address to analyze</p>
           </div>
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.map((message) => (
@@ -578,7 +998,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
                     handleSend();
                   }
                 }}
-                placeholder="Type a message or paste a property URL..."
+                placeholder="Paste URL, MLS #, or type address..."
                 className="flex-1 px-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
                 disabled={isProcessing}
               />
