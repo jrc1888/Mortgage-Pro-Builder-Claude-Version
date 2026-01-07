@@ -232,23 +232,36 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         body: JSON.stringify({ url })
       });
 
-      updateStep(step2Id, { 
-        status: 'success', 
-        icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-        details: 'Page content fetched successfully'
-      });
+      const data = await response.json();
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      // Handle API errors (even if response is 200, check for success flag)
+      if (!response.ok || !data.success) {
+        const errorMessage = data.error || 'Failed to process property listing';
+        const errorDetails = data.details || data.suggestion || '';
+        
+        updateStep(step2Id, { 
+          status: data.ingestion?.source === 'search_snippet_fallback' ? 'error' : 'success', 
+          icon: data.ingestion?.source === 'search_snippet_fallback' 
+            ? <AlertCircle className="w-4 h-4 text-amber-500" />
+            : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+          details: data.ingestion?.source === 'search_snippet_fallback' 
+            ? 'Direct fetch blocked, using fallback method'
+            : 'Page content fetched successfully',
+          rawData: data.ingestion
+        });
+
         updateStep(step3Id, { 
           status: 'error', 
           icon: <XCircle className="w-4 h-4 text-red-500" />,
-          details: errorData.error || 'Failed to call OpenAI API',
-          rawData: errorData
+          details: errorMessage,
+          rawData: { error: errorMessage, details: errorDetails, ...data }
         });
+
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(),
-          text: 'Sorry, I encountered an error processing the property listing. Please try again.',
+          text: errorDetails 
+            ? `${errorMessage}\n\n${errorDetails}`
+            : errorMessage,
           sender: 'system',
           timestamp: new Date()
         }]);
@@ -256,7 +269,18 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         return;
       }
 
-      const data = await response.json();
+      // Update step 2 with ingestion info
+      updateStep(step2Id, { 
+        status: data.ingestion?.source === 'search_snippet_fallback' ? 'error' : 'success', 
+        icon: data.ingestion?.source === 'search_snippet_fallback' 
+          ? <AlertCircle className="w-4 h-4 text-amber-500" />
+          : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+        details: data.ingestion?.source === 'search_snippet_fallback' 
+          ? 'Direct fetch blocked, using fallback method'
+          : 'Page content fetched successfully',
+        rawData: data.ingestion
+      });
+
       updateStep(step3Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
