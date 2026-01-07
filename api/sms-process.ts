@@ -170,13 +170,13 @@ async function getListingDataFromUrlOpenAI(url: string, mlsNumber?: string, addr
       : `"${url}" property listing`;
   }
 
-  const systemPrompt = `You are a real estate data extraction assistant. Use web search to find property listing information. Extract ONLY verifiable facts from search results. Never guess or invent values. If a field cannot be verified, return null and include it in missingFields.`;
+  const systemPrompt = `You are a real estate data extraction assistant. Extract property listing information from the provided URL or search query. Extract ONLY verifiable facts. Never guess or invent values. If a field cannot be verified, return null and include it in missingFields.`;
 
-  const userPrompt = `Find and extract property listing data for this URL: ${url}
+  const userPrompt = `Extract property listing data for: ${url}
 
 Search query: ${searchQuery}
 
-Use web search to find information about this property listing. Extract only verifiable facts from the search results.
+Based on the URL and search query provided, extract property listing information. If you have access to current information about this property, use it. Otherwise, extract what you can and mark missing fields appropriately.
 
 Return a JSON object with this EXACT structure:
 {
@@ -253,13 +253,6 @@ IMPORTANT:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        tools: [
-          {
-            type: 'web_search'
-          }
-        ],
-        // Note: web_search tool may require specific model versions or API access
-        // If this fails, we'll catch the error and provide a helpful message
         temperature: 0.1,
         max_tokens: 2048,
         response_format: { type: 'json_object' }
