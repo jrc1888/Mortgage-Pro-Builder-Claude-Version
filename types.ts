@@ -277,7 +277,7 @@ export interface CalculatedResults {
     total: number;
   };
   netClosingCosts: number;
-  unusedCredits: number; // New field: Amount of credit wasted if > costs
+  unusedSellerConcessions: number; // Amount of unused seller concessions (when concessions exceed non-financed closing costs)
   totalFundsRequired: number;
   
   // Investment Property Metrics

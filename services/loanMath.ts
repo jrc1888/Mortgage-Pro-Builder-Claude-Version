@@ -673,13 +673,17 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
 
   // Warnings (only for purchases - refinances don't have seller concessions)
   const totalCredits = lenderCreditsAmount + sellerConcessionsInput;
-  const isConcessionsExcessive = (!isRefinance && totalCredits > totalClosingCosts);
-
-  // 9. Net Closing Costs (Costs - Credits - Financed Closing Costs)
-  // Financed closing costs (UFMIP/VA Funding Fee) are deducted because they're financed into the loan
-  const rawNetClosingCosts = totalClosingCosts - totalCredits - financedMIP;
+  
+  // Seller concessions can be used for everything EXCEPT UFMIP/VA Funding Fee
+  // Net Closing Costs = Total Closing Costs - Seller Concessions - Financed Closing Costs
+  // If negative, round up to zero (can't get credit back from closing costs)
+  // Negative value indicates unused seller concessions
+  const rawNetClosingCosts = totalClosingCosts - sellerConcessionsInput - financedMIP;
   const netClosingCosts = Math.max(0, rawNetClosingCosts);
-  const unusedCredits = rawNetClosingCosts < 0 ? Math.abs(rawNetClosingCosts) : 0;
+  const unusedSellerConcessions = rawNetClosingCosts < 0 ? Math.abs(rawNetClosingCosts) : 0;
+  
+  // Check if concessions are excessive (including lender credits)
+  const isConcessionsExcessive = (!isRefinance && totalCredits > (totalClosingCosts - financedMIP));
 
   // 10. Cash / Funds Required
   const dpaAmount = scenario.dpa.active ? safeNum(scenario.dpa.amount) : 0;
@@ -855,7 +859,7 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
         total: totalIncome
     },
     netClosingCosts,
-    unusedCredits,
+    unusedSellerConcessions,
     totalFundsRequired,
     
     // DSCR Calculation for Investment Properties

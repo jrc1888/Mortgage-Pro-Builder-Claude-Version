@@ -1553,9 +1553,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                             <div>
                                 <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Excess Concessions Warning</p>
-                                {results.unusedCredits > 0 && (
+                                {results.unusedSellerConcessions > 0 && (
                                     <p className="text-xs text-amber-700 mt-1">
-                                        You have {formatMoney(results.unusedCredits)} in unused credits that exceeds total closing costs.
+                                        You have {formatMoney(results.unusedSellerConcessions)} in unused seller concessions that exceeds non-financed closing costs.
                                     </p>
                                 )}
                             </div>
@@ -1931,6 +1931,17 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 // Calculate Section J (D + I)
                                 const totalJ = totalD + totalI;
                                 
+                                // Calculate Net Total Closing Costs
+                                // Net = Total Closing Costs - Seller Concessions - Financed Closing Costs
+                                // Seller concessions can be used for everything EXCEPT UFMIP/VA Funding Fee
+                                const sellerConcessionsAmount = (scenario.transactionType === 'Refinance' || !scenario.showSellerConcessions) 
+                                    ? 0 
+                                    : results.sellerConcessionsAmount;
+                                const financedClosingCosts = results.financedMIP || 0;
+                                
+                                const rawNetClosingCosts = totalJ - sellerConcessionsAmount - financedClosingCosts;
+                                const netClosingCosts = Math.max(0, rawNetClosingCosts);
+                                
                                 return (
                                     <div className="bg-slate-100 rounded-lg p-4 border-2 border-slate-400 space-y-3">
                                         <div className="flex justify-between items-center">
@@ -1939,33 +1950,25 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         </div>
                                         
                                         {/* Seller Concessions - Separate Line */}
-                                        {scenario.showSellerConcessions && results.sellerConcessionsAmount > 0 && (
+                                        {sellerConcessionsAmount > 0 && (
                                             <div className="flex justify-between items-center pt-2 border-t border-slate-300">
                                                 <span className="text-sm font-medium text-emerald-600">Seller Concessions</span>
-                                                <span className="text-base font-bold text-emerald-600">-{formatMoney(results.sellerConcessionsAmount)}</span>
-                                            </div>
-                                        )}
-                                        
-                                        {/* Lender Credit - Separate Line */}
-                                        {scenario.showLenderCredits && results.lenderCreditsAmount > 0 && (
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-medium text-emerald-600">L.C.</span>
-                                                <span className="text-base font-bold text-emerald-600">-{formatMoney(results.lenderCreditsAmount)}</span>
+                                                <span className="text-base font-bold text-emerald-600">-{formatMoney(sellerConcessionsAmount)}</span>
                                             </div>
                                         )}
                                         
                                         {/* Financed Closing Costs (UFMIP/VA Funding Fee) - Separate Line */}
-                                        {results.financedMIP > 0 && (
+                                        {financedClosingCosts > 0 && (
                                             <div className="flex justify-between items-center">
                                                 <span className="text-sm font-medium text-slate-600">Financed Closing Costs</span>
-                                                <span className="text-base font-bold text-slate-600">-{formatMoney(results.financedMIP)}</span>
+                                                <span className="text-base font-bold text-slate-600">-{formatMoney(financedClosingCosts)}</span>
                                             </div>
                                         )}
                                         
                                         {/* Net Total Closing Costs */}
                                         <div className="flex justify-between items-center pt-2 border-t-2 border-slate-400">
                                             <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">Net Total Closing Costs</span>
-                                            <span className="text-xl font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
+                                            <span className="text-xl font-bold text-slate-900">{formatMoney(netClosingCosts)}</span>
                                         </div>
                                     </div>
                                 );
