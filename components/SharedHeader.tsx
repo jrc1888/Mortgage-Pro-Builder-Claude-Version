@@ -7,6 +7,7 @@ interface Props {
   userEmail?: string | null;
   variant?: 'light' | 'dark';
   rightActions?: React.ReactNode; // For buttons like "New Scenario"
+  leftContent?: React.ReactNode; // For additional content on the left (e.g., sync indicator)
 }
 
 export const SharedHeader: React.FC<Props> = ({ onNavigateHome, title, userEmail, variant = 'dark', rightActions, leftContent }) => {
