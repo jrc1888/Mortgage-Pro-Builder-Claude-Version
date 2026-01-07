@@ -12,6 +12,8 @@ export const DEFAULT_CLOSING_COSTS = [
   { id: 'appraisal', category: 'B. Services You Cannot Shop For', name: 'Appraisal Fee', amount: 800, isFixed: true },
   { id: 'credit-report', category: 'B. Services You Cannot Shop For', name: 'Credit Report Fee', amount: 250, isFixed: true },
   { id: 'flood-cert', category: 'B. Services You Cannot Shop For', name: 'Flood Certificate Fee', amount: 9, isFixed: true },
+  { id: 'ufmip', category: 'B. Services You Cannot Shop For', name: 'UFMIP', amount: 0, isFixed: true },
+  { id: 'va-funding-fee', category: 'B. Services You Cannot Shop For', name: 'VA Funding Fee', amount: 0, isFixed: true },
   
   // C. Services You Can Shop For
   { id: 'closing-protection-letter', category: 'C. Services You Can Shop For', name: 'Title - Closing Protection Ltr Fee', amount: 25, isFixed: true },
@@ -26,10 +28,11 @@ export const DEFAULT_CLOSING_COSTS = [
   // F. Prepaids
   { id: 'prepaid-insurance', category: 'F. Prepaids', name: 'Homeowner\'s Insurance Premium', amount: 0, isFixed: true, months: 12 },
   { id: 'prepaid-interest', category: 'F. Prepaids', name: 'Prepaid Interest', amount: 0, isFixed: true, days: 15 },
-  { id: 'tax-reserves', category: 'F. Prepaids', name: 'Property Taxes', amount: 0, isFixed: true, months: 3 },
+  { id: 'tax-reserves', category: 'F. Prepaids', name: 'Property Tax Reserves', amount: 0, isFixed: true, months: 2 },
 
   // G. Initial Escrow Payment at Closing
-  { id: 'insurance-reserves', category: 'G. Initial Escrow Payment at Closing', name: 'Homeowner\'s Insurance', amount: 0, isFixed: true, months: 2 },
+  { id: 'insurance-reserves', category: 'G. Initial Escrow Payment at Closing', name: 'Homeowner\'s Insurance Reserves', amount: 0, isFixed: true, months: 2 },
+  { id: 'tax-reserves-escrow', category: 'G. Initial Escrow Payment at Closing', name: 'Property Tax Reserves', amount: 0, isFixed: true, months: 2 },
 
   // H. Other
   { id: 'realtor-admin', category: 'H. Other', name: 'Realtor Administration Fee', amount: 495, isFixed: true },

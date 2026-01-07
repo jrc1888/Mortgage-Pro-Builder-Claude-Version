@@ -178,6 +178,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     const hasMisc2 = updatedCosts.some(c => c && c.id === 'misc-2');
     const hasMisc3 = updatedCosts.some(c => c && c.id === 'misc-3');
     const hasMisc4 = updatedCosts.some(c => c && c.id === 'misc-4');
+    const hasUFMIP = updatedCosts.some(c => c && c.id === 'ufmip');
+    const hasVAFundingFee = updatedCosts.some(c => c && c.id === 'va-funding-fee');
+    const hasTaxReservesEscrow = updatedCosts.some(c => c && c.id === 'tax-reserves-escrow');
     
     // Remove misc-5 if it exists (deprecated)
     const hasMisc5 = updatedCosts.some(c => c && c.id === 'misc-5');
@@ -256,6 +259,39 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         if (def) { updatedCosts.push(def); changed = true; }
     }
     
+    // Add UFMIP for all scenarios (will be filtered by loan type in display)
+    if (!hasUFMIP) {
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'ufmip');
+        if (def) { updatedCosts.push(def); changed = true; }
+    }
+    
+    // Add VA Funding Fee for all scenarios (will be filtered by loan type in display)
+    if (!hasVAFundingFee) {
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'va-funding-fee');
+        if (def) { updatedCosts.push(def); changed = true; }
+    }
+    
+    // Add Tax Reserves in Section G (Initial Escrow Payment at Closing)
+    if (!hasTaxReservesEscrow) {
+        const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'tax-reserves-escrow');
+        if (def) { updatedCosts.push(def); changed = true; }
+    }
+    
+    // Update Tax Reserves in Section F to 2 months if it's still 3 months (migration)
+    const taxReservesIndex = updatedCosts.findIndex(c => c && c.id === 'tax-reserves');
+    if (taxReservesIndex >= 0) {
+        const taxReserves = updatedCosts[taxReservesIndex];
+        if (taxReserves.months && taxReserves.months !== 2) {
+            updatedCosts[taxReservesIndex] = { ...taxReserves, months: 2 };
+            changed = true;
+        }
+        // Also ensure it's named "Property Tax Reserves"
+        if (taxReserves.name !== 'Property Tax Reserves') {
+            updatedCosts[taxReservesIndex] = { ...updatedCosts[taxReservesIndex], name: 'Property Tax Reserves' };
+            changed = true;
+        }
+    }
+    
     // Add/Remove Origination Fee based on DPA status
     const hasOriginationFee = updatedCosts.some(c => c && c.id === 'origination-fee');
     if (scenario.dpa.active) {
@@ -322,7 +358,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     if (changed) {
         setScenario(prev => ({ ...prev, closingCosts: updatedCosts }));
     }
-  }, [scenario.closingCosts.length, scenario.income, scenario.debts, scenario.dpa.active, results?.totalLoanAmount]);
+  }, [scenario.closingCosts.length, scenario.income, scenario.debts, scenario.dpa.active, scenario.loanType, results?.totalLoanAmount]);
 
   // Auto-disable DPA and buydown when DSCR is enabled
   useEffect(() => {
@@ -468,6 +504,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
               }
           }
           
+          // Filter UFMIP/VA Funding Fee based on loan type
+          if (item.id === 'ufmip' && scenario.loanType !== LoanType.FHA) return false;
+          if (item.id === 'va-funding-fee' && scenario.loanType !== LoanType.VA) return false;
+          
           // Filter out HOA items if monthly HOA is 0
           if (item.id === 'hoa-transfer' || item.id === 'hoa-prepay') {
               return scenario.hoaMonthly > 0;
@@ -495,7 +535,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           'H. Other'
       ];
       return orderedKeys.filter(k => groups[k]).map(k => ({ category: k, items: groups[k] }));
-  }, [scenario.closingCosts, scenario.hoaMonthly, scenario.transactionType]);
+  }, [scenario.closingCosts, scenario.hoaMonthly, scenario.transactionType, scenario.loanType]);
 
   // Helper to prevent number inputs from changing on scroll
   const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
@@ -1525,7 +1565,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     {
                                         totalLoanAmount: results.totalLoanAmount,
                                         prepaidInterest: results.prepaidInterest,
-                                        prepaidInterestDays: results.prepaidInterestDays
+                                        prepaidInterestDays: results.prepaidInterestDays,
+                                        financedMIP: results.financedMIP
                                     }
                                 );
                                 return sum + itemCost;
@@ -1596,7 +1637,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                         {formatMoney(scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)))}
                                                     </div>
                                                 </>
-                                            ) : (cost.id === 'prepaid-insurance' || cost.id === 'tax-reserves' || cost.id === 'insurance-reserves' || cost.id === 'hoa-prepay') ? (
+                                            ) : (cost.id === 'prepaid-insurance' || cost.id === 'tax-reserves' || cost.id === 'tax-reserves-escrow' || cost.id === 'insurance-reserves' || cost.id === 'hoa-prepay') ? (
                                                 <div className="flex items-center gap-3">
                                                      <div className="flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500">
                                                         <input type="number" value={cost.months ?? 0} onChange={(e) => updateCostMonths(cost.id, e.target.value)} onWheel={handleWheel} className="w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium" />
@@ -1604,7 +1645,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                      </div>
                                                      <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
                                                           {cost.id === 'prepaid-insurance' && formatMoney((scenario.homeInsuranceYearly/12) * (cost.months || 0))}
-                                                          {cost.id === 'tax-reserves' && formatMoney((scenario.propertyTaxYearly/12) * (cost.months || 0))}
+                                                          {(cost.id === 'tax-reserves' || cost.id === 'tax-reserves-escrow') && formatMoney((scenario.propertyTaxYearly/12) * (cost.months || 0))}
                                                           {cost.id === 'insurance-reserves' && formatMoney((scenario.homeInsuranceYearly/12) * (cost.months || 0))}
                                                           {cost.id === 'hoa-prepay' && formatMoney(scenario.hoaMonthly * (cost.months || 0))}
                                                      </div>
@@ -1622,6 +1663,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                             onChangeValue={(val) => updateCost(cost.id, val)} 
                                                             className="w-full px-3 pr-5 text-right text-sm text-slate-900 font-medium" 
                                                         />
+                                                    </div>
+                                                </div>
+                                            ) : (cost.id === 'ufmip' || cost.id === 'va-funding-fee') ? (
+                                                // UFMIP/VA Funding Fee - calculated, read-only (styled like other inputs but grayed out)
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center w-48 h-10 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden opacity-75 cursor-not-allowed">
+                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-100 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
+                                                        <div className="w-full px-3 pr-5 text-right text-sm text-slate-600 font-medium font-mono">
+                                                            {formatMoney(results.financedMIP)}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ) : (
@@ -1757,7 +1808,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             {
                                                 totalLoanAmount: results.totalLoanAmount,
                                                 prepaidInterest: results.prepaidInterest,
-                                                prepaidInterestDays: results.prepaidInterestDays
+                                                prepaidInterestDays: results.prepaidInterestDays,
+                                                financedMIP: results.financedMIP
                                             }
                                         );
                                         return sum + itemCost;
@@ -1809,7 +1861,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             {
                                                 totalLoanAmount: results.totalLoanAmount,
                                                 prepaidInterest: results.prepaidInterest,
-                                                prepaidInterestDays: results.prepaidInterestDays
+                                                prepaidInterestDays: results.prepaidInterestDays,
+                                                financedMIP: results.financedMIP
                                             }
                                         );
                                         return sum + itemCost;
@@ -1832,7 +1885,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             {
                                                 totalLoanAmount: results.totalLoanAmount,
                                                 prepaidInterest: results.prepaidInterest,
-                                                prepaidInterestDays: results.prepaidInterestDays
+                                                prepaidInterestDays: results.prepaidInterestDays,
+                                                financedMIP: results.financedMIP
                                             }
                                         );
                                         return sum + itemCost;
@@ -1863,6 +1917,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             <div className="flex justify-between items-center">
                                                 <span className="text-sm font-medium text-emerald-600">L.C.</span>
                                                 <span className="text-base font-bold text-emerald-600">-{formatMoney(results.lenderCreditsAmount)}</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Financed Closing Costs (UFMIP/VA Funding Fee) - Separate Line */}
+                                        {results.financedMIP > 0 && (
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm font-medium text-slate-600">Financed Closing Costs</span>
+                                                <span className="text-base font-bold text-slate-600">-{formatMoney(results.financedMIP)}</span>
                                             </div>
                                         )}
                                         

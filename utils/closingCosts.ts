@@ -37,9 +37,15 @@ export const calculateItemCost = (
     totalLoanAmount: number;
     prepaidInterest: number;
     prepaidInterestDays: number;
+    financedMIP?: number; // UFMIP or VA Funding Fee
   }
 ): number => {
   if (!item || !item.id) return 0;
+
+  // UFMIP (FHA) or VA Funding Fee - special handling
+  if (item.id === 'ufmip' || item.id === 'va-funding-fee') {
+    return results.financedMIP || 0;
+  }
 
   // Prepaid Interest - special handling
   if (item.id === 'prepaid-interest') {
@@ -71,8 +77,8 @@ export const calculateItemCost = (
     return monthlyCost * months;
   }
 
-  // Tax Reserves
-  if (item.id === 'tax-reserves') {
+  // Tax Reserves (both F. Prepaids and G. Initial Escrow Payment at Closing)
+  if (item.id === 'tax-reserves' || item.id === 'tax-reserves-escrow') {
     const months = item.months || 0;
     const monthlyCost = scenario.propertyTaxYearly / 12;
     return monthlyCost * months;

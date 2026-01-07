@@ -410,7 +410,8 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
       {
         totalLoanAmount,
         prepaidInterest,
-        prepaidInterestDays
+        prepaidInterestDays,
+        financedMIP
       }
     );
     return sum + itemCost;
@@ -674,8 +675,9 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   const totalCredits = lenderCreditsAmount + sellerConcessionsInput;
   const isConcessionsExcessive = (!isRefinance && totalCredits > totalClosingCosts);
 
-  // 9. Net Closing Costs (Costs - Credits)
-  const rawNetClosingCosts = totalClosingCosts - totalCredits;
+  // 9. Net Closing Costs (Costs - Credits - Financed Closing Costs)
+  // Financed closing costs (UFMIP/VA Funding Fee) are deducted because they're financed into the loan
+  const rawNetClosingCosts = totalClosingCosts - totalCredits - financedMIP;
   const netClosingCosts = Math.max(0, rawNetClosingCosts);
   const unusedCredits = rawNetClosingCosts < 0 ? Math.abs(rawNetClosingCosts) : 0;
 
