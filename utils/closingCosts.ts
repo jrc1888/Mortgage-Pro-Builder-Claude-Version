@@ -38,6 +38,7 @@ export const calculateItemCost = (
     prepaidInterest: number;
     prepaidInterestDays: number;
     financedMIP?: number; // UFMIP or VA Funding Fee
+    buydownCost?: number; // Temporary buydown cost
   }
 ): number => {
   if (!item || !item.id) return 0;
