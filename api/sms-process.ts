@@ -150,81 +150,73 @@ function hasCriticalMissingFields(listing: ListingData): boolean {
  * This is used as fallback when direct fetch is blocked or critical fields are missing
  */
 async function getListingDataFromUrlOpenAI(url: string, mlsNumber?: string, address?: string): Promise<ListingData> {
-  const apiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   
   if (!apiKey) {
     throw new Error('OpenAI API key not configured');
   }
 
   // Build search query from MLS, address, or URL
+  // Priority: address (most specific) > mlsNumber > addressFromUrl > url
   let searchQuery: string;
-  if (mlsNumber) {
-    searchQuery = `MLS #${mlsNumber} property listing`;
-  } else if (address) {
+  if (address) {
     searchQuery = `"${address}" property listing`;
+  } else if (mlsNumber) {
+    searchQuery = `MLS #${mlsNumber} property listing`;
   } else {
     // Extract address from URL for better search query
     const addressFromUrl = extractAddressFromUrl(url);
     searchQuery = addressFromUrl 
-      ? `"${addressFromUrl}" OR "${url}" property listing`
-      : `"${url}" property listing`;
+      ? `"${addressFromUrl}" property listing`
+      : `property listing ${url}`;
   }
 
-  const systemPrompt = `You are a real estate data extraction assistant. Extract property listing information from the provided URL or search query. Extract ONLY verifiable facts. Never guess or invent values. If a field cannot be verified, return null and include it in missingFields.`;
+  const instructions = `You are a real estate data extraction assistant. Use web_search results to find property listing information. Extract ONLY verifiable facts from web search results. Never guess or invent values. If a field cannot be verified in the search results, return null and include it in missingFields.`;
 
-  const userPrompt = `Extract property listing data for: ${url}
+  const input = `Find and extract property listing data using web search.
 
 Search query: ${searchQuery}
+${address ? `Property address: ${address}` : ''}
+${mlsNumber ? `MLS number: ${mlsNumber}` : ''}
+${url ? `Original URL: ${url}` : ''}
 
-Based on the URL and search query provided, extract property listing information. If you have access to current information about this property, use it. Otherwise, extract what you can and mark missing fields appropriately.
+Use web_search to find current listing information. Only return values you can verify in the search results. Otherwise return null. Never guess.`;
 
-Return a JSON object with this EXACT structure:
-{
-  "address": "full street address with city, state, zip",
-  "price": 425000,
-  "beds": 3,
-  "baths": 2,
-  "sqft": 1850,
-  "yearBuilt": 2015,
-  "propertyType": "Single Family",
-  "hoa": 0,
-  "propertyTax": null,
-  "lotSqft": null,
-  "status": "For Sale",
-  "keyFeatures": ["feature1", "feature2"],
-  "missingFields": ["field1", "field2"],
-  "confidence": {
-    "address": 0.95,
-    "price": 0.90,
-    "beds": 0.85
-  },
-  "extractionNotes": "Brief notes about extraction quality and sources"
-}
-
-RULES:
-- Use web search results to find verifiable listing facts
-- address: Full address if found, otherwise null
-- price: List price as number (no commas, no $) or null if not found
-- beds: Number of bedrooms (integer) or null if not found
-- baths: Number of bathrooms (can be decimal like 2.5) or null if not found
-- sqft: Square footage (integer) or null if not found
-- yearBuilt: Year built (integer) or null if not found
-- propertyType: "Single Family", "Condo", "Townhouse", etc. or null
-- hoa: Monthly HOA amount (number) or null if not found (use 0 only if explicitly stated as $0)
-- propertyTax: Annual property tax (number) or null if not found
-- lotSqft: Lot size in square feet (number) or null
-- status: "For Sale", "Sold", "Pending", etc. or null
-- keyFeatures: Array of up to 8 key features (strings) or empty array
-- missingFields: Array of field names that were not found in search results
-- confidence: Object mapping each extracted field to a confidence score (0.0 to 1.0)
-- extractionNotes: Brief explanation of what was found, sources used, and any issues
-
-IMPORTANT:
-- Do NOT default unknown numeric fields to 0 - use null instead
-- Only extract values that are explicitly stated in search results
-- Include all fields in missingFields that were not found
-- Set confidence scores based on how clearly the data appears in search results
-- Return ONLY valid JSON, no markdown, no code blocks, no explanations`;
+  // JSON Schema for ListingData
+  const listingDataSchema = {
+    type: 'object',
+    properties: {
+      address: { type: ['string', 'null'], description: 'Full street address with city, state, zip' },
+      price: { type: ['number', 'null'], description: 'List price as number (no commas, no $)' },
+      beds: { type: ['integer', 'null'], description: 'Number of bedrooms' },
+      baths: { type: ['number', 'null'], description: 'Number of bathrooms (can be decimal like 2.5)' },
+      sqft: { type: ['integer', 'null'], description: 'Square footage' },
+      yearBuilt: { type: ['integer', 'null'], description: 'Year built' },
+      propertyType: { type: ['string', 'null'], description: 'Property type: "Single Family", "Condo", "Townhouse", etc.' },
+      hoa: { type: ['number', 'null'], description: 'Monthly HOA amount (use 0 only if explicitly stated as $0)' },
+      propertyTax: { type: ['number', 'null'], description: 'Annual property tax' },
+      lotSqft: { type: ['integer', 'null'], description: 'Lot size in square feet' },
+      status: { type: ['string', 'null'], description: 'Status: "For Sale", "Sold", "Pending", etc.' },
+      keyFeatures: { 
+        type: 'array', 
+        items: { type: 'string' },
+        maxItems: 8,
+        description: 'Array of up to 8 key features'
+      },
+      missingFields: { 
+        type: 'array', 
+        items: { type: 'string' },
+        description: 'Array of field names that were not found in search results'
+      },
+      confidence: { 
+        type: 'object',
+        additionalProperties: { type: 'number', minimum: 0, maximum: 1 },
+        description: 'Object mapping each extracted field to a confidence score (0.0 to 1.0)'
+      },
+      extractionNotes: { type: 'string', description: 'Brief explanation of what was found, sources used, and any issues' }
+    },
+    required: ['address', 'price', 'beds', 'baths', 'sqft', 'yearBuilt', 'propertyType', 'hoa', 'propertyTax', 'lotSqft', 'status', 'keyFeatures', 'missingFields', 'confidence', 'extractionNotes']
+  };
 
   // Retry logic for rate limits
   let openaiResponse;
@@ -238,24 +230,25 @@ IMPORTANT:
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
 
-    const model = attempt === 0 ? 'gpt-4o' : 'gpt-4o-mini';
-
-    // Use OpenAI Chat Completions API with web_search tool
-    openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Use OpenAI Responses API with web_search tool
+    openaiResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 2048,
-        response_format: { type: 'json_object' }
+        model: 'gpt-5',
+        instructions: instructions,
+        input: input,
+        tools: [{ type: 'web_search' }],
+        text: {
+          format: {
+            type: 'json_schema',
+            json_schema: listingDataSchema
+          }
+        },
+        include: ['web_search_call.action.sources']
       })
     });
 
@@ -286,29 +279,53 @@ IMPORTANT:
   }
 
   const data = await openaiResponse.json();
-  const text = data.choices?.[0]?.message?.content;
+  
+  // Extract output_text from Responses API
+  // The response structure may vary, but output_text should contain the final JSON
+  let outputText: string;
+  if (data.output_text) {
+    outputText = data.output_text;
+  } else if (data.output?.text) {
+    outputText = data.output.text;
+  } else if (data.text) {
+    outputText = data.text;
+  } else {
+    // Fallback: look for text in the response structure
+    const responseText = JSON.stringify(data);
+    const jsonMatch = responseText.match(/"output_text"\s*:\s*"([^"]+)"/);
+    if (jsonMatch) {
+      outputText = JSON.parse(`"${jsonMatch[1]}"`);
+    } else {
+      throw new Error('No output_text found in OpenAI Responses API response');
+    }
+  }
 
-  if (!text) {
+  if (!outputText) {
     throw new Error('No response from OpenAI API');
   }
 
-  // Clean JSON from response
-  let cleanText = text.trim();
-  cleanText = cleanText.replace(/```json\n?/gi, '');
-  cleanText = cleanText.replace(/```\n?/g, '');
-  
-  const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    cleanText = jsonMatch[0];
-  }
-
+  // Parse JSON from output_text
   let listingData: ListingData;
   try {
-    listingData = JSON.parse(cleanText);
+    listingData = JSON.parse(outputText);
   } catch (parseError) {
     console.error('JSON Parse Error:', parseError);
-    console.error('Raw response:', cleanText);
+    console.error('Raw output_text:', outputText);
     throw new Error('Failed to parse property data from OpenAI response');
+  }
+
+  // Extract sources for debugging (if available)
+  let sources: any[] = [];
+  if (data.web_search_call?.action?.sources) {
+    sources = data.web_search_call.action.sources;
+  } else if (data.include?.web_search_call?.action?.sources) {
+    sources = data.include.web_search_call.action.sources;
+  }
+
+  // Store sources in extractionNotes if available
+  if (sources.length > 0 && listingData.extractionNotes) {
+    const sourceUrls = sources.slice(0, 3).map((s: any) => s.url || s).join(', ');
+    listingData.extractionNotes += ` | Sources: ${sourceUrls}`;
   }
 
   // Validate and normalize the data
@@ -331,6 +348,11 @@ IMPORTANT:
     listingData.propertyTax = Number(listingData.propertyTax);
   }
 
+  // Ensure arrays exist
+  listingData.keyFeatures = listingData.keyFeatures || [];
+  listingData.missingFields = listingData.missingFields || [];
+  listingData.confidence = listingData.confidence || {};
+
   return listingData;
 }
 
@@ -342,7 +364,7 @@ async function extractListingWithOpenAI(
   rawText: string,
   source: string
 ): Promise<ListingData> {
-  const apiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   
   if (!apiKey) {
     throw new Error('OpenAI API key not configured');

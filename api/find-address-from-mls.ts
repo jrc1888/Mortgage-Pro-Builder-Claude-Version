@@ -24,37 +24,58 @@ export default async function handler(
       return response.status(400).json({ error: 'MLS number is required' });
     }
 
-    const apiKey = process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return response.status(500).json({ error: 'OpenAI API key not configured' });
     }
 
-    // Use OpenAI to find the property address from MLS number
-    const systemPrompt = `You are a real estate assistant. Your job is to find the property address associated with an MLS number. Search for the MLS listing and return ONLY the complete property address.`;
+    // Use OpenAI Responses API with web_search to find the property address from MLS number
+    const instructions = `You are a real estate assistant. Your job is to find the property address associated with an MLS number. Use web_search to find the MLS listing and return the complete property address.`;
 
-    const userPrompt = `Find the property address for MLS number: ${mlsNumber}
+    const input = `Find the property address for MLS number: ${mlsNumber}
 
-Search for this MLS listing and return the complete property address in this format:
+Use web_search to find this MLS listing. Return the complete property address in the format:
 [Street Number] [Street Name], [City], [State] [Zip Code]
 
 Example: "626 W Cottle Ln, Farmington, UT 84025"
 
-If you cannot find the address, return null. Return ONLY the address, no explanations, no markdown, no code blocks, no JSON.`;
+If you cannot find the address in web search results, return null.`;
 
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // JSON Schema for address response
+    const addressSchema = {
+      type: 'object',
+      properties: {
+        address: { 
+          type: ['string', 'null'], 
+          description: 'Complete property address in format: [Street Number] [Street Name], [City], [State] [Zip Code]'
+        },
+        sources: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of source URLs used to find the address (optional)'
+        }
+      },
+      required: ['address']
+    };
+
+    const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 200
+        model: 'gpt-5',
+        instructions: instructions,
+        input: input,
+        tools: [{ type: 'web_search' }],
+        text: {
+          format: {
+            type: 'json_schema',
+            json_schema: addressSchema
+          }
+        },
+        include: ['web_search_call.action.sources']
       })
     });
 
@@ -71,7 +92,29 @@ If you cannot find the address, return null. Return ONLY the address, no explana
     }
 
     const data = await openaiResponse.json();
-    const address = data.choices?.[0]?.message?.content?.trim() || null;
+    
+    // Extract output_text from Responses API
+    let outputText: string;
+    if (data.output_text) {
+      outputText = data.output_text;
+    } else if (data.output?.text) {
+      outputText = data.output.text;
+    } else if (data.text) {
+      outputText = data.text;
+    } else {
+      throw new Error('No output_text found in OpenAI Responses API response');
+    }
+
+    let result: { address: string | null; sources?: string[] };
+    try {
+      result = JSON.parse(outputText);
+    } catch (parseError) {
+      console.error('JSON Parse Error:', parseError);
+      console.error('Raw output_text:', outputText);
+      return response.status(500).json({ error: 'Failed to parse address from OpenAI response' });
+    }
+
+    const address = result.address?.trim() || null;
 
     if (!address || address.toLowerCase() === 'null') {
       return response.status(404).json({ error: 'Could not find address for this MLS number' });
