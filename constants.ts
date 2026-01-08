@@ -111,10 +111,10 @@ export const DEFAULT_SCENARIO: Scenario = {
   },
   dpa: {
     active: false,
-    amount: 10000,
-    percent: 0,
+    amount: 0,
+    percent: 3.5,
     rate: 7.5,
-    termMonths: 120, // 10 year
+    termMonths: 360, // 30 year
     payment: 0,
     isDeferred: false
   }

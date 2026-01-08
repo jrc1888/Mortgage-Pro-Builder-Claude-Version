@@ -395,8 +395,9 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
     }
   }
   
-  // Use utility function to calculate closing costs (single source of truth)
-  const totalClosingCosts = (scenario.closingCosts || []).reduce((sum, item) => {
+  // Calculate closing costs - will recalculate after refinance logic if needed
+  // (because financedMIP might change for refinances)
+  let totalClosingCosts = (scenario.closingCosts || []).reduce((sum, item) => {
     const itemCost = calculateItemCost(
       item,
       {
@@ -675,15 +676,49 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   const totalCredits = lenderCreditsAmount + sellerConcessionsInput;
   
   // Seller concessions can be used for everything EXCEPT UFMIP/VA Funding Fee
-  // Net Closing Costs = Total Closing Costs - Seller Concessions - Financed Closing Costs
-  // If negative, round up to zero (can't get credit back from closing costs)
-  // Negative value indicates unused seller concessions
-  const rawNetClosingCosts = totalClosingCosts - sellerConcessionsInput - financedMIP;
-  const netClosingCosts = Math.max(0, rawNetClosingCosts);
-  const unusedSellerConcessions = rawNetClosingCosts < 0 ? Math.abs(rawNetClosingCosts) : 0;
+  // Section J (D + I) = totalClosingCosts - buydownCost (buydown is not in Section J)
+  // Note: totalClosingCosts already includes UFMIP/VA Funding Fee (it's in Section B)
+  const sectionJTotal = totalClosingCosts - buydownCost;
   
-  // Check if concessions are excessive (including lender credits)
-  const isConcessionsExcessive = (!isRefinance && totalCredits > (totalClosingCosts - financedMIP));
+  // Closing Costs to be Paid = Section J - Financed Closing Costs (UFMIP/VA Funding Fee)
+  // This is what seller concessions can pay (everything except UFMIP/VA Funding Fee)
+  // This MUST match the "Closing Costs to be Paid" line in Section J display
+  const closingCostsToBePaid = sectionJTotal - financedMIP;
+  
+  // Net Closing Costs = Closing Costs to be Paid - Seller Concessions (capped at closingCostsToBePaid)
+  // IMPORTANT: Only apply seller concessions up to closingCostsToBePaid
+  // Unused seller concessions (excess) should NOT reduce cash to close
+  // This matches Section J: Net = Closing Costs to be Paid - Seller Concessions Applied
+  const sellerConcessionsApplied = Math.min(sellerConcessionsInput, closingCostsToBePaid);
+  const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied;
+  
+  // Unused seller concessions = seller concessions that exceed "Closing Costs to be Paid"
+  // IMPORTANT: Compare seller concessions to "Closing Costs to be Paid" (Section J - UFMIP/VA Funding Fee)
+  // NOT to total closing costs or Section J total
+  // This matches the Section J display exactly: closingCostsToBePaid = totalJ - financedClosingCosts
+  const unusedSellerConcessions = (!isRefinance && sellerConcessionsInput > closingCostsToBePaid) 
+    ? sellerConcessionsInput - closingCostsToBePaid 
+    : 0;
+  
+  // For backward compatibility, keep nonFinancedClosingCosts (same as closingCostsToBePaid)
+  const nonFinancedClosingCosts = closingCostsToBePaid;
+  
+  // Check if concessions are excessive - show warning if seller concessions exceed "Closing Costs to be Paid"
+  // IMPORTANT: This must compare to closingCostsToBePaid, NOT sectionJTotal or totalClosingCosts
+  // For FHA/VA loans: closingCostsToBePaid = Section J - UFMIP/VA Funding Fee (what seller concessions can pay)
+  const isConcessionsExcessive = (!isRefinance && unusedSellerConcessions > 0);
+  
+  // Debug log for FHA/VA loans to verify calculation
+  if (!isRefinance && (scenario.loanType === LoanType.FHA || scenario.loanType === LoanType.VA) && sellerConcessionsInput > 0) {
+    console.log('FHA/VA Seller Concessions Check:', {
+      'Section J Total (D+I)': sectionJTotal.toFixed(2),
+      'Financed MIP/Fee': financedMIP.toFixed(2),
+      'Closing Costs to be Paid (J - MIP)': closingCostsToBePaid.toFixed(2),
+      'Seller Concessions': sellerConcessionsInput.toFixed(2),
+      'Unused Concessions': unusedSellerConcessions.toFixed(2),
+      'Should Show Warning': unusedSellerConcessions > 0
+    });
+  }
 
   // 10. Cash / Funds Required
   const dpaAmount = scenario.dpa.active ? safeNum(scenario.dpa.amount) : 0;
@@ -851,7 +886,7 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
         fhaPass
     },
     warnings: {
-        excessConcessions: isConcessionsExcessive,
+        excessConcessions: isConcessionsExcessive || unusedSellerConcessions > 0, // Ensure warning shows if unused concessions exist
         excessDPA: isDPAExcessive
     },
     income: {

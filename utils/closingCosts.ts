@@ -47,6 +47,11 @@ export const calculateItemCost = (
     return results.financedMIP || 0;
   }
 
+  // Buydown Cost - special handling
+  if (item.id === 'buydown-cost') {
+    return results.buydownCost || 0;
+  }
+
   // Prepaid Interest - special handling
   if (item.id === 'prepaid-interest') {
     if (scenario.settlementDate) {

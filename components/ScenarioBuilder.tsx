@@ -183,6 +183,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     const hasUFMIP = updatedCosts.some(c => c && c.id === 'ufmip');
     const hasVAFundingFee = updatedCosts.some(c => c && c.id === 'va-funding-fee');
     const hasTaxReservesEscrow = updatedCosts.some(c => c && c.id === 'tax-reserves-escrow');
+    const hasBuydownCost = updatedCosts.some(c => c && c.id === 'buydown-cost');
     
     // Remove misc-5 if it exists (deprecated)
     const hasMisc5 = updatedCosts.some(c => c && c.id === 'misc-5');
@@ -206,8 +207,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         if (def) {
             // Only set default to 1 if discount points don't exist at all (new scenario)
             updatedCosts.push({ ...def, amount: 1 });
-            changed = true;
-        }
+        changed = true;
+    }
     }
     // Note: We no longer reset existing discount points to 1 - user-entered values are preserved
     // Only add buyers agent commission for Purchase transactions (not refinances)
@@ -277,6 +278,28 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     if (!hasTaxReservesEscrow) {
         const def = DEFAULT_CLOSING_COSTS.find(c => c.id === 'tax-reserves-escrow');
         if (def) { updatedCosts.push(def); changed = true; }
+    }
+    
+    // Add/Remove Buydown Cost based on buydown status
+    if (scenario.buydown.active) {
+        // Buydown is active - add buydown cost if it doesn't exist
+        if (!hasBuydownCost) {
+            const buydownCostItem = {
+                id: 'buydown-cost',
+                category: 'H. Other',
+                name: 'Temporary Buydown Cost',
+                amount: 0, // Will be populated from results.buydownCost
+                isFixed: true // Locked/uneditable
+            };
+            updatedCosts.push(buydownCostItem);
+            changed = true;
+        }
+    } else {
+        // Buydown is not active - remove buydown cost if it exists
+        if (hasBuydownCost) {
+            updatedCosts = updatedCosts.filter(c => !c || c.id !== 'buydown-cost');
+            changed = true;
+        }
     }
     
     // Update Tax Reserves in Section F to 2 months if it's still 3 months (migration)
@@ -360,7 +383,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
     if (changed) {
         setScenario(prev => ({ ...prev, closingCosts: updatedCosts }));
     }
-  }, [scenario.closingCosts.length, scenario.income, scenario.debts, scenario.dpa.active, scenario.loanType, results?.totalLoanAmount]);
+  }, [scenario.closingCosts.length, scenario.income, scenario.debts, scenario.dpa.active, scenario.buydown.active, scenario.loanType, results?.totalLoanAmount]);
 
   // Auto-disable DPA and buydown when DSCR is enabled
   useEffect(() => {
@@ -559,12 +582,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                 purchasePrice: price,
                 downPaymentAmount: Number((price * (roundedPercent / 100)).toFixed(2))
             };
-            // Recalculate DPA percent if purchase price changes
-            if (updated.dpa && updated.dpa.amount > 0 && price > 0) {
-                updated.dpa.percent = (updated.dpa.amount / price) * 100;
+            // Keep DPA percentage the same and recalculate amount when purchase price changes
+            if (updated.dpa && updated.dpa.active && updated.dpa.percent > 0 && price > 0) {
+                updated.dpa.amount = Number((price * (updated.dpa.percent / 100)).toFixed(2));
             }
-            if (updated.dpa2 && updated.dpa2.amount > 0 && price > 0) {
-                updated.dpa2.percent = (updated.dpa2.amount / price) * 100;
+            if (updated.dpa2 && updated.dpa2.active && updated.dpa2.percent > 0 && price > 0) {
+                updated.dpa2.amount = Number((price * (updated.dpa2.percent / 100)).toFixed(2));
             }
             return updated;
         }
@@ -639,7 +662,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   const handleDPAChange = (type: 'amount' | 'percent', value: number, isDPA2: boolean = false) => {
      setScenario(prev => {
          const dpaKey = isDPA2 ? 'dpa2' : 'dpa';
-         const currentDPA = isDPA2 ? (prev.dpa2 || { active: false, amount: 0, percent: 0, rate: 7.5, termMonths: 120, payment: 0, isDeferred: false }) : prev.dpa;
+         const currentDPA = isDPA2 ? (prev.dpa2 || { active: false, amount: 0, percent: 3.5, rate: 7.5, termMonths: 360, payment: 0, isDeferred: false }) : prev.dpa;
          
          if (type === 'amount') {
              const percent = prev.purchasePrice > 0 ? (value / prev.purchasePrice) * 100 : 0;
@@ -830,7 +853,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
               <span className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">
                 MortgagePro
               </span>
-            </button>
+          </button>
           )}
           
           {/* Back Button */}
@@ -932,9 +955,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     </div>
                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
                         Updated {formatTime(scenario.lastUpdated)}
-                    </div>
                </div>
           </div>
+        </div>
 
         <div className="flex gap-2 pl-5 border-l border-slate-800 ml-5 shrink-0">
              <button 
@@ -1053,36 +1076,36 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 // For purchases: Only show dates if it's a full address (not just a zip code)
                                 // For refinances: Always show Expected Closing Date regardless of address
                                 if (!isRefinance) {
-                                    const zipCode = extractZipCode(scenario.propertyAddress);
-                                    const isFullAddress = scenario.propertyAddress && 
-                                        scenario.propertyAddress.trim().length > 5 && 
-                                        scenario.propertyAddress.trim() !== zipCode;
-                                    
-                                    if (!isFullAddress) return null;
+                                const zipCode = extractZipCode(scenario.propertyAddress);
+                                const isFullAddress = scenario.propertyAddress && 
+                                    scenario.propertyAddress.trim().length > 5 && 
+                                    scenario.propertyAddress.trim() !== zipCode;
+                                
+                                if (!isFullAddress) return null;
                                 }
                                 
                                 return (
                                     <div className={`grid gap-4 ${isRefinance ? 'grid-cols-1' : 'grid-cols-2'}`}>
                                         {/* F&A Date - Only show for Purchase transactions */}
                                         {!isRefinance && (
-                                            <div>
-                                                <label className={labelClass}>F&A Date</label>
-                                                <div className={inputGroupClass}>
-                                                    <input 
-                                                        type="date" 
-                                                        value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
-                                                        onChange={(e) => {
-                                                            if (e.target.value) {
-                                                                const date = new Date(e.target.value + 'T00:00:00');
-                                                                handleInputChange('faDate', date.toISOString());
-                                                            } else {
-                                                                handleInputChange('faDate', undefined);
-                                                            }
-                                                        }} 
-                                                        className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
-                                                    />
-                                                </div>
+                                        <div>
+                                            <label className={labelClass}>F&A Date</label>
+                                            <div className={inputGroupClass}>
+                                                <input 
+                                                    type="date" 
+                                                    value={scenario.faDate ? scenario.faDate.split('T')[0] : ''} 
+                                                    onChange={(e) => {
+                                                        if (e.target.value) {
+                                                            const date = new Date(e.target.value + 'T00:00:00');
+                                                            handleInputChange('faDate', date.toISOString());
+                                                        } else {
+                                                            handleInputChange('faDate', undefined);
+                                                        }
+                                                    }} 
+                                                    className="w-full px-4 py-2 text-sm outline-none bg-transparent font-medium text-slate-900" 
+                                                />
                                             </div>
+                                        </div>
                                         )}
                                         <div>
                                             <label className={labelClass}>{isRefinance ? 'Expected Closing Date' : 'Settlement Date'}</label>
@@ -1107,11 +1130,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             })()}
                             
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
-                                    <div className={inputGroupClass}>
-                                        <div className={symbolClass}>$</div>
-                                        <FormattedNumberInput value={scenario.purchasePrice || 0} onChangeValue={(val) => handleInputChange('purchasePrice', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                            <div>
+                                <label className={labelClass}>{scenario.transactionType === 'Purchase' ? 'Purchase Price' : 'Property Value'}</label>
+                                <div className={inputGroupClass}>
+                                    <div className={symbolClass}>$</div>
+                                    <FormattedNumberInput value={scenario.purchasePrice || 0} onChangeValue={(val) => handleInputChange('purchasePrice', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
                                     </div>
                                 </div>
                                 <div>
@@ -1165,30 +1188,30 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             {/* Refinance-specific inputs: Payoffs */}
                             {scenario.transactionType === 'Refinance' && (
                                 <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
                                             <label className={labelClass}>1st Loan Payoff</label>
-                                            <div className={inputGroupClass}>
-                                                <div className={symbolClass}>$</div>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
                                                 <FormattedNumberInput 
                                                     value={scenario.existingLoanPayoff || 0} 
                                                     onChangeValue={(val) => handleInputChange('existingLoanPayoff', val)} 
                                                     className="h-full px-4 text-sm text-slate-900 font-medium" 
                                                 />
-                                            </div>
                                         </div>
-                                        <div>
+                                    </div>
+                                    <div>
                                             <label className={labelClass}>2nd Loan Payoff</label>
-                                            <div className={inputGroupClass}>
-                                                <div className={symbolClass}>$</div>
+                                        <div className={inputGroupClass}>
+                                            <div className={symbolClass}>$</div>
                                                 <FormattedNumberInput 
                                                     value={scenario.secondMortgagePayoff || 0} 
                                                     onChangeValue={(val) => handleInputChange('secondMortgagePayoff', val)} 
                                                     className="h-full px-4 text-sm text-slate-900 font-medium" 
                                                 />
-                                            </div>
                                         </div>
                                     </div>
+                                </div>
                                     
                                     {/* Property Taxes and Insurance on same line - under payoffs for refinances */}
                                     <div className="grid grid-cols-2 gap-4">
@@ -1227,31 +1250,31 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 <>
                                     {/* Property Taxes and Insurance on same line */}
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div>
+                            <div>
                                             <label className={labelClass}>Taxes (Yrly)</label>
-                                            <div className={inputGroupClass}>
-                                                <div className={symbolClass}>$</div>
-                                                <FormattedNumberInput value={scenario.propertyTaxYearly || 0} onChangeValue={(val) => handleInputChange('propertyTaxYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                            </div>
-                                        </div>
-                                        <div>
+                                <div className={inputGroupClass}>
+                                    <div className={symbolClass}>$</div>
+                                    <FormattedNumberInput value={scenario.propertyTaxYearly || 0} onChangeValue={(val) => handleInputChange('propertyTaxYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                </div>
+                            </div>
+                             <div>
                                             <label className={labelClass}>Ins (Yrly)</label>
-                                            <div className={inputGroupClass}>
-                                                <div className={symbolClass}>$</div>
-                                                <FormattedNumberInput value={scenario.homeInsuranceYearly || 0} onChangeValue={(val) => handleInputChange('homeInsuranceYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                            </div>
-                                        </div>
+                                <div className={inputGroupClass}>
+                                    <div className={symbolClass}>$</div>
+                                    <FormattedNumberInput value={scenario.homeInsuranceYearly || 0} onChangeValue={(val) => handleInputChange('homeInsuranceYearly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                </div>
+                            </div>
                                     </div>
                                     
                                     {/* HOA - same width as taxes/insurance */}
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div>
+                            <div>
                                             <label className={labelClass}>HOA (Mthly)</label>
-                                            <div className={inputGroupClass}>
-                                                <div className={symbolClass}>$</div>
-                                                <FormattedNumberInput value={scenario.hoaMonthly || 0} onChangeValue={(val) => handleInputChange('hoaMonthly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
-                                            </div>
-                                        </div>
+                                <div className={inputGroupClass}>
+                                    <div className={symbolClass}>$</div>
+                                    <FormattedNumberInput value={scenario.hoaMonthly || 0} onChangeValue={(val) => handleInputChange('hoaMonthly', val)} className="h-full px-4 text-sm text-slate-900 font-medium" />
+                                </div>
+                            </div>
                                         <div></div>
                                     </div>
                                 </>
@@ -1471,6 +1494,108 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         <DollarSign size={16} className="text-slate-400" /> Closing Costs & Credits
                     </h3>
                     
+                    {/* Unused Seller Concessions Warning at Top */}
+                    {scenario.transactionType === 'Purchase' && scenario.showSellerConcessions && results.sellerConcessionsAmount > 0 && (() => {
+                        // Calculate Section J (D + I) to match the calculation logic
+                        const sectionA = costGroups.find(g => g.category === 'A. Origination Charges');
+                        const sectionB = costGroups.find(g => g.category === 'B. Services You Cannot Shop For');
+                        const sectionC = costGroups.find(g => g.category === 'C. Services You Can Shop For');
+                        const sectionE = costGroups.find(g => g.category === 'E. Taxes and Other Government Fees');
+                        const sectionF = costGroups.find(g => g.category === 'F. Prepaids');
+                        const sectionG = costGroups.find(g => g.category === 'G. Initial Escrow Payment at Closing');
+                        const sectionH = costGroups.find(g => g.category === 'H. Other');
+                        
+                        const calcLoanCostsTotal = (group: typeof sectionA) => {
+                            if (!group) return 0;
+                            return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                const itemCost = calculateItemCost(
+                                    cost,
+                                    {
+                                        settlementDate: scenario.settlementDate,
+                                        purchasePrice: scenario.purchasePrice,
+                                        homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                        propertyTaxYearly: scenario.propertyTaxYearly,
+                                        hoaMonthly: scenario.hoaMonthly,
+                                        interestRate: scenario.interestRate
+                                    },
+                                    {
+                                        totalLoanAmount: results.totalLoanAmount,
+                                        prepaidInterest: results.prepaidInterest,
+                                        prepaidInterestDays: results.prepaidInterestDays,
+                                        financedMIP: results.financedMIP,
+                                        buydownCost: results.buydownCost
+                                    }
+                                );
+                                return sum + itemCost;
+                            }, 0);
+                        };
+                        
+                        const calcOtherCostsTotal = (group: typeof sectionE) => {
+                            if (!group) return 0;
+                            return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                const itemCost = calculateItemCost(
+                                    cost,
+                                    {
+                                        settlementDate: scenario.settlementDate,
+                                        purchasePrice: scenario.purchasePrice,
+                                        homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                        propertyTaxYearly: scenario.propertyTaxYearly,
+                                        hoaMonthly: scenario.hoaMonthly,
+                                        interestRate: scenario.interestRate
+                                    },
+                                    {
+                                        totalLoanAmount: results.totalLoanAmount,
+                                        prepaidInterest: results.prepaidInterest,
+                                        prepaidInterestDays: results.prepaidInterestDays,
+                                        financedMIP: results.financedMIP,
+                                        buydownCost: results.buydownCost
+                                    }
+                                );
+                                return sum + itemCost;
+                            }, 0);
+                        };
+                        
+                        const totalA = calcLoanCostsTotal(sectionA);
+                        const totalB = calcLoanCostsTotal(sectionB);
+                        const totalC = calcLoanCostsTotal(sectionC);
+                        const totalD = totalA + totalB + totalC;
+                        
+                        const totalE = calcOtherCostsTotal(sectionE);
+                        const totalF = calcOtherCostsTotal(sectionF);
+                        const totalG = calcOtherCostsTotal(sectionG);
+                        const totalH = calcOtherCostsTotal(sectionH);
+                        const totalI = totalE + totalF + totalG + totalH;
+                        
+                        const sectionJTotal = totalD + totalI;
+                        const financedClosingCosts = results.financedMIP || 0;
+                        const sellerConcessionsAmount = results.sellerConcessionsAmount;
+                        
+                        // Closing Costs to be Paid = Section J - Financed Closing Costs
+                        const closingCostsToBePaid = sectionJTotal - financedClosingCosts;
+                        
+                        // Unused seller concessions = seller concessions that exceed "Closing Costs to be Paid"
+                        const unusedSellerConcessions = sellerConcessionsAmount > closingCostsToBePaid 
+                            ? sellerConcessionsAmount - closingCostsToBePaid 
+                            : 0;
+                        
+                        if (unusedSellerConcessions > 0) {
+                            return (
+                                <div className="mb-6 bg-amber-50 border-2 border-amber-300 rounded-lg p-4">
+                                    <div className="flex items-start gap-3">
+                                        <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                                        <div className="flex-1">
+                                            <div className="text-sm font-bold text-amber-900 mb-1">Unused Seller Concessions</div>
+                                            <div className="text-xs text-amber-800">
+                                                You have {formatMoney(unusedSellerConcessions)} in unused seller concessions that exceeds closing costs to be paid (seller concessions cannot be used to pay UFMIP/VA Funding Fee).
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        }
+                        return null;
+                    })()}
+                    
                     {/* Header Grid */}
                     <div className={`mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 ${scenario.transactionType === 'Refinance' ? 'md:grid-cols-2' : ''}`}>
                         {/* Earnest Money - Only show for Purchase */}
@@ -1581,7 +1706,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         totalLoanAmount: results.totalLoanAmount,
                                         prepaidInterest: results.prepaidInterest,
                                         prepaidInterestDays: results.prepaidInterestDays,
-                                        financedMIP: results.financedMIP
+                                        financedMIP: results.financedMIP,
+                                        buydownCost: results.buydownCost
                                     }
                                 );
                                 return sum + itemCost;
@@ -1597,21 +1723,21 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                         <div key={cost.id} className="flex items-center gap-4 py-3 px-4 hover:bg-slate-50 transition-colors group">
                                             {/* Editable name for misc fees (misc-1 through misc-4) */}
                                             <div className="flex items-center gap-4 flex-1">
-                                                {(cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') ? (
-                                                    <input
-                                                        type="text"
-                                                        value={cost.name}
-                                                        onChange={(e) => {
-                                                            setScenario(prev => ({
-                                                                ...prev,
-                                                                closingCosts: prev.closingCosts.map(item =>
-                                                                    item.id === cost.id ? { ...item, name: e.target.value } : item
-                                                                )
-                                                            }));
-                                                        }}
-                                                        className="flex-1 text-sm font-medium text-slate-700 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 transition-colors"
-                                                        placeholder={`Other Fee ${cost.id.slice(-1)}`}
-                                                    />
+                                            {(cost.id === 'misc-1' || cost.id === 'misc-2' || cost.id === 'misc-3' || cost.id === 'misc-4') ? (
+                                                <input
+                                                    type="text"
+                                                    value={cost.name}
+                                                    onChange={(e) => {
+                                                        setScenario(prev => ({
+                                                            ...prev,
+                                                            closingCosts: prev.closingCosts.map(item =>
+                                                                item.id === cost.id ? { ...item, name: e.target.value } : item
+                                                            )
+                                                        }));
+                                                    }}
+                                                    className="flex-1 text-sm font-medium text-slate-700 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 transition-colors"
+                                                    placeholder={`Other Fee ${cost.id.slice(-1)}`}
+                                                />
                                                 ) : cost.id === 'prepaid-interest' ? (
                                                     <div className="flex items-center gap-2 flex-1">
                                                         <label className="text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
@@ -1625,15 +1751,15 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                             />
                                                         </div>
                                                     </div>
-                                                ) : (
-                                                    <label className="flex-1 text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
-                                                )}
+                                            ) : (
+                                                <label className="flex-1 text-sm font-medium text-slate-700 group-hover:text-slate-900">{cost.name}</label>
+                                            )}
                                             </div>
                                             
                                             {/* Cost Render Logic */}
                                             {cost.id === 'prepaid-interest' ? (
                                                 <>
-                                                    <div className={`flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden ${scenario.settlementDate ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'focus-within:ring-1 focus-within:ring-indigo-500'}`}>
+                                                     <div className={`flex items-center w-24 h-10 bg-white border border-slate-200 rounded-lg overflow-hidden ${scenario.settlementDate ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'focus-within:ring-1 focus-within:ring-indigo-500'}`}>
                                                         <input 
                                                             type="number" 
                                                             value={scenario.settlementDate ? results.prepaidInterestDays : (cost.days ?? 0)} 
@@ -1647,10 +1773,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                             className={`w-full pl-3 pr-5 text-right text-sm outline-none bg-transparent font-medium ${scenario.settlementDate ? 'cursor-not-allowed text-slate-500' : ''}`} 
                                                         />
                                                         <span className="px-3 text-slate-400 text-xs font-bold bg-slate-50 h-full flex items-center border-l border-slate-200">d</span>
-                                                    </div>
-                                                    <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
-                                                        {formatMoney(scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)))}
-                                                    </div>
+                                                     </div>
+                                                     <div className="min-w-[5rem] text-right font-mono text-sm text-slate-600 font-medium">
+                                                         {formatMoney(scenario.settlementDate ? results.prepaidInterest : ((results.totalLoanAmount * (scenario.interestRate / 100) / 365) * (cost.days || 0)))}
+                                                     </div>
                                                 </>
                                             ) : (cost.id === 'prepaid-insurance' || cost.id === 'tax-reserves' || cost.id === 'tax-reserves-escrow' || cost.id === 'insurance-reserves' || cost.id === 'hoa-prepay') ? (
                                                 <div className="flex items-center gap-3">
@@ -1687,6 +1813,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                         <div className="flex items-center justify-center h-full px-3 bg-slate-100 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
                                                         <div className="w-full px-3 pr-5 text-right text-sm text-slate-600 font-medium font-mono">
                                                             {formatMoney(results.financedMIP)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : cost.id === 'buydown-cost' ? (
+                                                // Buydown Cost - calculated, read-only (styled like other inputs but grayed out)
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center w-48 h-10 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden opacity-75 cursor-not-allowed">
+                                                        <div className="flex items-center justify-center h-full px-3 bg-slate-100 border-r border-slate-200 text-slate-400 text-xs font-bold min-w-[2.5rem]">$</div>
+                                                        <div className="w-full px-3 pr-5 text-right text-sm text-slate-600 font-medium font-mono">
+                                                            {formatMoney(results.buydownCost || 0)}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1831,7 +1967,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 totalLoanAmount: results.totalLoanAmount,
                                                 prepaidInterest: results.prepaidInterest,
                                                 prepaidInterestDays: results.prepaidInterestDays,
-                                                financedMIP: results.financedMIP
+                                                financedMIP: results.financedMIP,
+                                                buydownCost: results.buydownCost
                                             }
                                         );
                                         return sum + itemCost;
@@ -1908,7 +2045,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 totalLoanAmount: results.totalLoanAmount,
                                                 prepaidInterest: results.prepaidInterest,
                                                 prepaidInterestDays: results.prepaidInterestDays,
-                                                financedMIP: results.financedMIP
+                                                financedMIP: results.financedMIP,
+                                                buydownCost: results.buydownCost
                                             }
                                         );
                                         return sum + itemCost;
@@ -1929,39 +2067,50 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 const totalI = totalE + totalF + totalG + totalH;
                                 
                                 // Calculate Section J (D + I)
+                                // Simple math: J = D + I
                                 const totalJ = totalD + totalI;
                                 
-                                // Calculate Net Total Closing Costs
-                                // Net = Total Closing Costs - Seller Concessions - Financed Closing Costs
-                                // Seller concessions can be used for everything EXCEPT UFMIP/VA Funding Fee
+                                // Seller concessions and financed closing costs
                                 const sellerConcessionsAmount = (scenario.transactionType === 'Refinance' || !scenario.showSellerConcessions) 
                                     ? 0 
                                     : results.sellerConcessionsAmount;
                                 const financedClosingCosts = results.financedMIP || 0;
                                 
-                                const rawNetClosingCosts = totalJ - sellerConcessionsAmount - financedClosingCosts;
+                                // Closing Costs to be Paid = Total Closing Costs - Financed Closing Costs
+                                // (Seller concessions cannot pay for UFMIP/VA Funding Fee)
+                                const closingCostsToBePaid = totalJ - financedClosingCosts;
+                                
+                                // Net Total Closing Costs = Closing Costs to be Paid - Seller Concessions
+                                const rawNetClosingCosts = closingCostsToBePaid - sellerConcessionsAmount;
                                 const netClosingCosts = Math.max(0, rawNetClosingCosts);
                                 
                                 return (
                                     <div className="bg-slate-100 rounded-lg p-4 border-2 border-slate-400 space-y-3">
+                                        {/* Total Closing Costs (Section J) */}
                                         <div className="flex justify-between items-center">
                                             <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">J. TOTAL CLOSING COSTS (D + I)</span>
                                             <span className="text-xl font-bold text-slate-900">{formatMoney(totalJ)}</span>
                                         </div>
                                         
-                                        {/* Seller Concessions - Separate Line */}
+                                        {/* Financed Closing Costs (UFMIP/VA Funding Fee) - Deducted */}
+                                        {financedClosingCosts > 0 && (
+                                            <div className="flex justify-between items-center pt-2 border-t border-slate-300">
+                                                <span className="text-sm font-medium text-slate-600">Financed Closing Costs</span>
+                                                <span className="text-base font-bold text-slate-600">-{formatMoney(financedClosingCosts)}</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Closing Costs to be Paid */}
+                                        <div className="flex justify-between items-center pt-2 border-t border-slate-300">
+                                            <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">Closing Costs to be Paid</span>
+                                            <span className="text-lg font-bold text-slate-900">{formatMoney(closingCostsToBePaid)}</span>
+                                        </div>
+                                        
+                                        {/* Seller Concessions - Deducted if applicable */}
                                         {sellerConcessionsAmount > 0 && (
                                             <div className="flex justify-between items-center pt-2 border-t border-slate-300">
                                                 <span className="text-sm font-medium text-emerald-600">Seller Concessions</span>
                                                 <span className="text-base font-bold text-emerald-600">-{formatMoney(sellerConcessionsAmount)}</span>
-                                            </div>
-                                        )}
-                                        
-                                        {/* Financed Closing Costs (UFMIP/VA Funding Fee) - Separate Line */}
-                                        {financedClosingCosts > 0 && (
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm font-medium text-slate-600">Financed Closing Costs</span>
-                                                <span className="text-base font-bold text-slate-600">-{formatMoney(financedClosingCosts)}</span>
                                             </div>
                                         )}
                                         
@@ -1974,6 +2123,128 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 );
                             }
                             return null;
+                        })()}
+                        
+                        {/* Seller Concessions Math Calculator - Debug Tool */}
+                        {scenario.transactionType === 'Purchase' && scenario.showSellerConcessions && results.sellerConcessionsAmount > 0 && (() => {
+                            const sellerConcessionsAmount = results.sellerConcessionsAmount;
+                            const financedClosingCosts = results.financedMIP || 0;
+                            
+                            // Recalculate Section J to show the exact math
+                            const sectionA = costGroups.find(g => g.category === 'A. Origination Charges');
+                            const sectionB = costGroups.find(g => g.category === 'B. Services You Cannot Shop For');
+                            const sectionC = costGroups.find(g => g.category === 'C. Services You Can Shop For');
+                            const sectionE = costGroups.find(g => g.category === 'E. Taxes and Other Government Fees');
+                            const sectionF = costGroups.find(g => g.category === 'F. Prepaids');
+                            const sectionG = costGroups.find(g => g.category === 'G. Initial Escrow Payment at Closing');
+                            const sectionH = costGroups.find(g => g.category === 'H. Other');
+                            
+                            const calcLoanCostsTotal = (group: typeof sectionA) => {
+                                if (!group) return 0;
+                                return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                    const itemCost = calculateItemCost(
+                                        cost,
+                                        {
+                                            settlementDate: scenario.settlementDate,
+                                            purchasePrice: scenario.purchasePrice,
+                                            homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                            propertyTaxYearly: scenario.propertyTaxYearly,
+                                            hoaMonthly: scenario.hoaMonthly,
+                                            interestRate: scenario.interestRate
+                                        },
+                                        {
+                                            totalLoanAmount: results.totalLoanAmount,
+                                            prepaidInterest: results.prepaidInterest,
+                                            prepaidInterestDays: results.prepaidInterestDays,
+                                            financedMIP: results.financedMIP
+                                        }
+                                    );
+                                    return sum + itemCost;
+                                }, 0);
+                            };
+                            
+                            const calcOtherCostsTotal = (group: typeof sectionE) => {
+                                if (!group) return 0;
+                                return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                    const itemCost = calculateItemCost(
+                                        cost,
+                                        {
+                                            settlementDate: scenario.settlementDate,
+                                            purchasePrice: scenario.purchasePrice,
+                                            homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                            propertyTaxYearly: scenario.propertyTaxYearly,
+                                            hoaMonthly: scenario.hoaMonthly,
+                                            interestRate: scenario.interestRate
+                                        },
+                                        {
+                                            totalLoanAmount: results.totalLoanAmount,
+                                            prepaidInterest: results.prepaidInterest,
+                                            prepaidInterestDays: results.prepaidInterestDays,
+                                            financedMIP: results.financedMIP,
+                                            buydownCost: results.buydownCost
+                                        }
+                                    );
+                                    return sum + itemCost;
+                                }, 0);
+                            };
+                            
+                            const totalA = calcLoanCostsTotal(sectionA);
+                            const totalB = calcLoanCostsTotal(sectionB);
+                            const totalC = calcLoanCostsTotal(sectionC);
+                            const totalD = totalA + totalB + totalC;
+                            
+                            const totalE = calcOtherCostsTotal(sectionE);
+                            const totalF = calcOtherCostsTotal(sectionF);
+                            const totalG = calcOtherCostsTotal(sectionG);
+                            const totalH = calcOtherCostsTotal(sectionH);
+                            const totalI = totalE + totalF + totalG + totalH;
+                            
+                            const sectionJTotal = totalD + totalI;
+                            const closingCostsToBePaid = sectionJTotal - financedClosingCosts;
+                            const unusedSellerConcessions = sellerConcessionsAmount > closingCostsToBePaid 
+                                ? sellerConcessionsAmount - closingCostsToBePaid 
+                                : 0;
+                            
+                            return (
+                                <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4 mt-4">
+                                    <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wide mb-3">Seller Concessions Math Calculator</h4>
+                                    <div className="space-y-2 text-xs font-mono">
+                                        <div className="flex justify-between">
+                                            <span className="text-amber-800">Section J Total (D + I):</span>
+                                            <span className="text-amber-900 font-bold">{formatMoney(sectionJTotal)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-amber-800">Less Financed Costs (UFMIP/VA Fee):</span>
+                                            <span className="text-amber-900">-{formatMoney(financedClosingCosts)}</span>
+                                        </div>
+                                        <div className="border-t border-amber-300 pt-1 flex justify-between">
+                                            <span className="text-amber-900 font-bold">Closing Costs to be Paid:</span>
+                                            <span className="text-amber-900 font-bold">{formatMoney(closingCostsToBePaid)}</span>
+                                        </div>
+                                        <div className="pt-2 flex justify-between">
+                                            <span className="text-amber-800">Seller Concessions:</span>
+                                            <span className="text-amber-900 font-bold">{formatMoney(sellerConcessionsAmount)}</span>
+                                        </div>
+                                        {unusedSellerConcessions > 0 ? (
+                                            <>
+                                                <div className="flex justify-between">
+                                                    <span className="text-red-700 font-bold">Less Closing Costs to be Paid:</span>
+                                                    <span className="text-red-700">-{formatMoney(closingCostsToBePaid)}</span>
+                                                </div>
+                                                <div className="border-t border-amber-300 pt-1 flex justify-between">
+                                                    <span className="text-red-700 font-bold">Unused Seller Concessions:</span>
+                                                    <span className="text-red-700 font-bold">{formatMoney(unusedSellerConcessions)}</span>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="flex justify-between text-emerald-700">
+                                                <span>✓ All concessions used</span>
+                                                <span>Remaining: {formatMoney(closingCostsToBePaid - sellerConcessionsAmount)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
                         })()}
                     </div>
                 </div>
@@ -2060,14 +2331,19 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     }
                                     setScenario(prev => {
                                         // If disabling first DPA, also disable second DPA
-                                        const updated = { ...prev, dpa: { ...prev.dpa, active: c } };
+                                        let updatedDPA = { ...prev.dpa, active: c };
+                                        // If enabling DPA and amount is 0 but percent is set, calculate amount from purchase price
+                                        if (c && updatedDPA.amount === 0 && updatedDPA.percent > 0 && prev.purchasePrice > 0) {
+                                            updatedDPA.amount = Number((prev.purchasePrice * (updatedDPA.percent / 100)).toFixed(2));
+                                        }
+                                        const updated = { ...prev, dpa: updatedDPA };
                                         if (!c && prev.dpa2?.active) {
                                             updated.dpa2 = undefined;
                                         }
                                         return updated;
                                     });
                                 }} 
-                                label="Enable DPA"
+                                label="Enable DPA" 
                                 disabled={scenario.isDSCRLoan}
                             />
                         </div>
@@ -2137,9 +2413,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 dpa2: c ? {
                                                     active: true,
                                                     amount: 0,
-                                                    percent: 0,
+                                                    percent: 3.5,
                                                     rate: 7.5,
-                                                    termMonths: 120,
+                                                    termMonths: 360,
                                                     payment: 0,
                                                     isDeferred: false
                                                 } : undefined
@@ -2431,16 +2707,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         addToHistory();
                     }}
                 />
-            )}
+             )}
 
           </div>
         </div>
         
         {/* Middle Panel: Results & Breakdown */}
         <div className="w-full lg:w-[380px] bg-white border-l border-slate-200 overflow-y-auto print:w-full print:border-none">
-            <div className="p-4 space-y-4">
+            <div className="p-3 space-y-3">
                 {/* Transaction Type Header */}
-                <div className={`py-2 px-3 rounded-lg border-2 font-bold text-sm uppercase tracking-wide text-center ${
+                <div className={`py-1.5 px-3 rounded-lg border-2 font-bold text-sm uppercase tracking-wide text-center ${
                     scenario.transactionType === 'Purchase' 
                         ? 'bg-blue-100 border-blue-300 text-blue-800' 
                         : 'bg-purple-100 border-purple-300 text-purple-800'
@@ -2450,13 +2726,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                 
                 {/* Total Payment Hero */}
                 <div>
-                    <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Monthly Payment</h2>
+                    <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Monthly Payment</h2>
                     <div className="flex justify-between items-end">
                         <div className="flex items-baseline gap-2">
-                            <div className="text-5xl font-black text-emerald-600 tracking-tight leading-none">
-                                {formatMoney(scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 
-                                    ? results.totalMonthlyPayment - (scenario.income?.rental || 0)
-                                    : results.totalMonthlyPayment)}
+                        <div className="text-5xl font-black text-emerald-600 tracking-tight leading-none">
+                            {formatMoney(scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0 
+                                ? results.totalMonthlyPayment - (scenario.income?.rental || 0)
+                                : results.totalMonthlyPayment)}
                             </div>
                             {(scenario.buydown.active || (scenario.occupancyType === 'Primary Residence' && (scenario.income?.rental || 0) > 0)) && (
                                 <div className="text-xl font-medium text-slate-400 line-through decoration-slate-300">
@@ -2466,7 +2742,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 </div>
                             )}
                         </div>
-                        <div className="flex flex-col items-end gap-1.5 mb-1.5">
+                        <div className="flex flex-col items-end gap-1 mb-1">
                              {scenario.isDSCRLoan && results.dscr ? (
                                  <div className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg bg-slate-50 border-2 ${results.dscr.passes ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
                                      <span className={`text-xl font-black ${results.dscr.passes ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -2513,25 +2789,25 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     ? results.dti.frontEnd >= frontEndMax
                                     : results.dti.frontEnd > frontEndMax;
                                 const backEndExceeds = results.dti.backEnd > backEndMax;
-                                
-                                return (
-                                    <>
+                                 
+                                 return (
+                                     <>
                                         <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${frontEndExceeds ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                            <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
-                                            <span>{formatPercent(results.dti.frontEnd, 1)}</span>
-                                        </div>
+                                             <span className="text-slate-400 uppercase text-[9px] font-semibold">FE</span>
+                                             <span>{formatPercent(results.dti.frontEnd, 1)}</span>
+                                         </div>
                                         <div className={`flex items-center gap-2 text-xs font-bold px-2 py-1 rounded bg-slate-50 border ${backEndExceeds ? 'text-red-600 border-red-100' : 'text-emerald-600 border-emerald-100'}`}>
-                                            <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
-                                            <span>{formatPercent(results.dti.backEnd, 1)}</span>
-                                        </div>
-                                    </>
-                                );
+                                             <span className="text-slate-400 uppercase text-[9px] font-semibold">BE</span>
+                                             <span>{formatPercent(results.dti.backEnd, 1)}</span>
+                                         </div>
+                                     </>
+                                 );
                              })() : null}
                         </div>
                     </div>
 
                      {/* Total Loan Amount & LTV Display */}
-                    <div className="mt-3 pt-3 border-t border-slate-100/50 space-y-2">
+                    <div className="mt-2 pt-2 border-t border-slate-100/50 space-y-1.5">
                         <div className="flex justify-between items-center">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Loan Amount</span>
                             <span className="text-sm font-bold text-slate-600 font-mono">{formatMoney(Math.round(results.totalLoanAmount * 100) / 100)}</span>
@@ -2539,7 +2815,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         {/* Prominent LTV and Rate/APR display */}
                         <div className="flex gap-2">
                             {/* LTV - Slightly Narrower */}
-                            <div className="w-[40%] bg-indigo-50 rounded-lg px-2 py-1 border border-indigo-100">
+                            <div className="w-[40%] bg-indigo-50 rounded-lg px-2 py-0.5 border border-indigo-100">
                                 <div className="flex justify-between items-center gap-2">
                                     <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">LTV</span>
                                     <span className="text-lg font-black text-indigo-600">
@@ -2548,7 +2824,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 </div>
                             </div>
                             {/* Rate/APR - Slightly Wider */}
-                            <div className="flex-1 bg-indigo-50 rounded-lg px-2 py-1 border border-indigo-100">
+                            <div className="flex-1 bg-indigo-50 rounded-lg px-2 py-0.5 border border-indigo-100">
                                 <div className="flex justify-between items-center gap-2">
                                     <div className="flex flex-col">
                                         <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider leading-tight">RATE</span>
@@ -2570,8 +2846,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                 
                 {/* Monthly Breakdown List */}
                 <div className="border-t border-slate-100 pt-2">
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Monthly Breakdown</h3>
-                    <div className="space-y-2 text-base">
+                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Monthly Breakdown</h3>
+                    <div className="space-y-1.5 text-base">
                         <div className="flex justify-between items-center text-slate-600">
                             <span>{scenario.interestOnly ? 'Interest Only' : 'Principal and Interest'}</span>
                             <span className="font-bold text-slate-900">{formatMoney(results.monthlyPrincipalAndInterest)}</span>
@@ -2619,167 +2895,433 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     </div>
                 </div>
 
-                {/* Cash To Close Card */}
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 shadow-sm mt-4">
-                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">{scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}</h3>
-                     <div className="space-y-2 mb-3 text-sm">
-                         {scenario.transactionType === 'Purchase' ? (
-                             <>
+                {/* Cash To Close Card - Calculator Format */}
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 shadow-sm mt-3">
+                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{scenario.transactionType === 'Purchase' ? 'Cash to Close Statement' : 'Cash Required Statement'}</h3>
+                     {scenario.transactionType === 'Purchase' ? (() => {
+                         // Calculate Section J (D + I) to match the Costs tab EXACTLY
+                         const sectionA = costGroups.find(g => g.category === 'A. Origination Charges');
+                         const sectionB = costGroups.find(g => g.category === 'B. Services You Cannot Shop For');
+                         const sectionC = costGroups.find(g => g.category === 'C. Services You Can Shop For');
+                         const sectionE = costGroups.find(g => g.category === 'E. Taxes and Other Government Fees');
+                         const sectionF = costGroups.find(g => g.category === 'F. Prepaids');
+                         const sectionG = costGroups.find(g => g.category === 'G. Initial Escrow Payment at Closing');
+                         const sectionH = costGroups.find(g => g.category === 'H. Other');
+                         
+                            const calcLoanCostsTotal = (group: typeof sectionA) => {
+                                if (!group) return 0;
+                                return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                    const itemCost = calculateItemCost(
+                                        cost,
+                                        {
+                                            settlementDate: scenario.settlementDate,
+                                            purchasePrice: scenario.purchasePrice,
+                                            homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                            propertyTaxYearly: scenario.propertyTaxYearly,
+                                            hoaMonthly: scenario.hoaMonthly,
+                                            interestRate: scenario.interestRate
+                                        },
+                                        {
+                                            totalLoanAmount: results.totalLoanAmount,
+                                            prepaidInterest: results.prepaidInterest,
+                                            prepaidInterestDays: results.prepaidInterestDays,
+                                            financedMIP: results.financedMIP,
+                                            buydownCost: results.buydownCost
+                                        }
+                                    );
+                                    return sum + itemCost;
+                                }, 0);
+                            };
+                            
+                            const calcOtherCostsTotal = (group: typeof sectionE) => {
+                                if (!group) return 0;
+                                return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                    const itemCost = calculateItemCost(
+                                        cost,
+                                        {
+                                            settlementDate: scenario.settlementDate,
+                                            purchasePrice: scenario.purchasePrice,
+                                            homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                            propertyTaxYearly: scenario.propertyTaxYearly,
+                                            hoaMonthly: scenario.hoaMonthly,
+                                            interestRate: scenario.interestRate
+                                        },
+                                        {
+                                            totalLoanAmount: results.totalLoanAmount,
+                                            prepaidInterest: results.prepaidInterest,
+                                            prepaidInterestDays: results.prepaidInterestDays,
+                                            financedMIP: results.financedMIP,
+                                            buydownCost: results.buydownCost
+                                        }
+                                    );
+                                    return sum + itemCost;
+                                }, 0);
+                            };
+                            
+                            const totalA = calcLoanCostsTotal(sectionA);
+                            const totalB = calcLoanCostsTotal(sectionB);
+                            const totalC = calcLoanCostsTotal(sectionC);
+                            const totalD = totalA + totalB + totalC;
+                            
+                            const totalE = calcOtherCostsTotal(sectionE);
+                            const totalF = calcOtherCostsTotal(sectionF);
+                            const totalG = calcOtherCostsTotal(sectionG);
+                            const totalH = calcOtherCostsTotal(sectionH);
+                            const totalI = totalE + totalF + totalG + totalH;
+                            
+                            const sectionJTotal = totalD + totalI;
+                         const financedClosingCosts = results.financedMIP || 0;
+                         const sellerConcessionsAmount = (!scenario.showSellerConcessions) 
+                             ? 0 
+                             : results.sellerConcessionsAmount;
+                         
+                         // Calculate exactly as Section J shows
+                         const closingCostsToBePaid = sectionJTotal - financedClosingCosts;
+                         const sellerConcessionsApplied = Math.min(sellerConcessionsAmount, closingCostsToBePaid);
+                         const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied;
+                         
+                         const downPayment = results.downPaymentRequired;
+                         const dpa1Amount = scenario.dpa.active ? scenario.dpa.amount : 0;
+                         const dpa2Amount = scenario.dpa2?.active ? scenario.dpa2.amount : 0;
+                         const earnestMoney = results.earnestMoney || 0;
+                         
+                         const subtotal = downPayment + netClosingCosts - dpa1Amount - dpa2Amount;
+                         const cashRequired = subtotal - earnestMoney;
+                         
+                         const netDownPayment = downPayment - dpa1Amount - dpa2Amount;
+                         const totalCashRequired = netDownPayment + netClosingCosts - earnestMoney;
+                         
+                         return (
+                             <div className="space-y-2 text-sm">
                                  <div className="flex justify-between text-slate-600">
                                      <span>Down Payment</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.downPaymentRequired)}</span>
+                                     <span className="font-bold text-slate-900">{formatMoney(downPayment)}</span>
                                  </div>
-                                  <div className="flex justify-between text-slate-600">
-                                     <span>Closing Costs (Net)</span>
-                                     <span className="font-bold text-slate-900">{formatMoney(results.netClosingCosts)}</span>
-                                 </div>
-                                 {scenario.dpa.active && (
+                                 
+                                 {dpa1Amount > 0 && (
                                      <div className="flex justify-between text-emerald-600">
-                                         <span>DPA Funding (1st)</span>
-                                         <span className="font-bold">-{formatMoney(scenario.dpa.amount)}</span>
+                                         <span>Less DPA (1st)</span>
+                                         <span className="font-bold">-{formatMoney(dpa1Amount)}</span>
                                      </div>
                                  )}
-                                 {scenario.dpa2?.active && (
+                                 {dpa2Amount > 0 && (
                                      <div className="flex justify-between text-emerald-600">
-                                         <span>DPA Funding (2nd)</span>
-                                         <span className="font-bold">-{formatMoney(scenario.dpa2.amount)}</span>
+                                         <span>Less DPA (2nd)</span>
+                                         <span className="font-bold">-{formatMoney(dpa2Amount)}</span>
                                      </div>
                                  )}
                                  
-                                 {/* Subtotal before Earnest Money */}
-                                 <div className="border-t border-slate-300 pt-2 mt-2 flex justify-between items-center">
-                                     <span className="text-xs font-bold text-slate-600 uppercase">Subtotal</span>
-                                     <span className="text-lg font-bold text-slate-900">
-                                         {formatMoney(results.downPaymentRequired + results.netClosingCosts - (scenario.dpa.active ? scenario.dpa.amount : 0) - (scenario.dpa2?.active ? scenario.dpa2.amount : 0))}
-                                     </span>
+                                 <div className="flex justify-between border-t border-slate-300 pt-1.5 mt-1.5 bg-indigo-50 rounded-lg px-2 py-1.5 -mx-1">
+                                     <span className="font-bold text-indigo-900">Net Down Payment</span>
+                                     <span className="font-bold text-indigo-900">{formatMoney(netDownPayment)}</span>
                                  </div>
                                  
-                                 {/* Earnest Money Deduction - Only for Purchase */}
-                                 {scenario.transactionType === 'Purchase' && (
-                                     <div className="mb-4">
-                                         <div className="flex justify-between text-emerald-600 text-sm">
-                                             <span>Earnest Money</span>
-                                             <span className="font-bold">-{formatMoney(results.earnestMoney)}</span>
+                                 <div className="pt-1.5 border-t border-slate-300">
+                                     <div className="flex justify-between mb-0.5 text-slate-600">
+                                         <span>Section J Total (D + I)</span>
+                                         <span>{formatMoney(sectionJTotal)}</span>
+                                     </div>
+                                     {financedClosingCosts > 0 && (
+                                         <div className="flex justify-between mb-0.5 text-slate-600">
+                                             <span>Less Financed Costs (UFMIP/VA Fee)</span>
+                                             <span>-{formatMoney(financedClosingCosts)}</span>
                                          </div>
+                                     )}
+                                     <div className="flex justify-between mb-0.5 border-t border-slate-300 pt-0.5">
+                                         <span className="text-slate-700">Closing Costs to be Paid</span>
+                                         <span className="text-slate-900">{formatMoney(closingCostsToBePaid)}</span>
+                                     </div>
+                                     {sellerConcessionsAmount > 0 && (
+                                         <>
+                                             <div className="flex justify-between mb-0.5 mt-0.5 text-emerald-600">
+                                                 <span>Less Seller Concessions</span>
+                                                 <span>-{formatMoney(sellerConcessionsApplied)}</span>
+                                             </div>
+                                             {sellerConcessionsAmount > closingCostsToBePaid && (
+                                                 <div className="text-red-700 text-[10px] italic mb-0.5">
+                                                     (Unused: {formatMoney(sellerConcessionsAmount - closingCostsToBePaid)})
+                                                 </div>
+                                             )}
+                                         </>
+                                     )}
+                                     <div className="flex justify-between border-t border-slate-300 pt-0.5 mt-0.5 bg-indigo-50 rounded-lg px-2 py-1.5 -mx-1">
+                                         <span className="font-bold text-indigo-900">Net Closing Costs</span>
+                                         <span className="font-bold text-indigo-900">{formatMoney(netClosingCosts)}</span>
+                                     </div>
+                                 </div>
+                                 
+                                 {earnestMoney > 0 && (
+                                     <div className="flex justify-between text-emerald-600">
+                                         <span>Less Earnest Money</span>
+                                         <span className="font-bold">-{formatMoney(earnestMoney)}</span>
                                      </div>
                                  )}
-                             </>
-                         ) : (
-                             <>
-                                 {results.refinanceDetails && (
-                                     <>
-                                         {/* Loan Payoffs */}
-                                         <div className="flex justify-between text-slate-600">
-                                             <span>Loan Payoffs</span>
-                                             <span className="font-bold text-slate-900">{formatMoney(results.refinanceDetails.totalPayoff || 0)}</span>
-                                         </div>
-                                         
-                                         {/* Total Closing Costs */}
-                                         <div className="flex justify-between text-slate-600">
-                                             <span>Total Closing Costs</span>
-                                             <span className="font-bold text-slate-900">{formatMoney(results.totalClosingCosts || 0)}</span>
-                                         </div>
-                                         
-                                         {/* Cash Back (if any) */}
-                                         {(() => {
-                                             const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
-                                                 - (results.refinanceDetails.totalPayoff || 0) 
-                                                 - (results.refinanceDetails.financedClosingCosts || 0);
-                                             if (equity > 0) {
-                                                 return (
-                                                     <div className="flex justify-between text-slate-600">
-                                                         <span>Cash Back</span>
-                                                         <span className="font-bold text-emerald-600">
-                                                             {formatMoney(equity)}
-                                                         </span>
-                                                     </div>
-                                                 );
-                                             }
-                                             return null;
-                                         })()}
-                                         
-                                         {/* Total */}
-                                         {(() => {
-                                             const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
-                                                 - (results.refinanceDetails.totalPayoff || 0) 
-                                                 - (results.refinanceDetails.financedClosingCosts || 0);
-                                             const total = (results.refinanceDetails.totalPayoff || 0) 
-                                                 + (results.totalClosingCosts || 0) 
-                                                 + Math.max(0, equity);
+                                 
+                                 <div className="border-t-2 border-slate-400 pt-2 mt-2 bg-indigo-50 rounded-lg p-2.5 -mx-1">
+                                     <div className="flex justify-between items-center gap-4 min-w-0">
+                                         <span className="text-base font-black text-indigo-900 uppercase flex-1 min-w-0 pr-4 tracking-wide">
+                                             Cash to Close
+                                         </span>
+                                         <span className={`text-3xl font-black tracking-tight text-right shrink-0 ${
+                                             totalCashRequired < 0 ? 'text-emerald-600' : 'text-indigo-900'
+                                         }`}>
+                                             {formatMoney(totalCashRequired)}
+                                         </span>
+                                     </div>
+                                 </div>
+                             </div>
+                         );
+                     })() : (
+                         <>
+                             {results.refinanceDetails && (
+                                 <>
+                                     {/* Loan Payoffs */}
+                                     <div className="flex justify-between text-slate-600">
+                                         <span>Loan Payoffs</span>
+                                         <span className="font-bold text-slate-900">{formatMoney(results.refinanceDetails.totalPayoff || 0)}</span>
+                                     </div>
+                                     
+                                     {/* Total Closing Costs */}
+                                     <div className="flex justify-between text-slate-600">
+                                         <span>Total Closing Costs</span>
+                                         <span className="font-bold text-slate-900">{formatMoney(results.totalClosingCosts || 0)}</span>
+                                     </div>
+                                     
+                                     {/* Cash Back (if any) */}
+                                     {(() => {
+                                         const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
+                                             - (results.refinanceDetails.totalPayoff || 0) 
+                                             - (results.refinanceDetails.financedClosingCosts || 0);
+                                         if (equity > 0) {
                                              return (
-                                                 <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
-                                                     <span className="font-bold">Total</span>
-                                                     <span className="font-bold text-slate-900">{formatMoney(total)}</span>
+                                                 <div className="flex justify-between text-slate-600">
+                                                     <span>Cash Back</span>
+                                                     <span className="font-bold text-emerald-600">
+                                                         {formatMoney(equity)}
+                                                     </span>
                                                  </div>
                                              );
-                                         })()}
+                                         }
+                                         return null;
+                                     })()}
+                                     
+                                     {/* Total */}
+                                     {(() => {
+                                         const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
+                                             - (results.refinanceDetails.totalPayoff || 0) 
+                                             - (results.refinanceDetails.financedClosingCosts || 0);
+                                         const total = (results.refinanceDetails.totalPayoff || 0) 
+                                             + (results.totalClosingCosts || 0) 
+                                             + Math.max(0, equity);
+                                         return (
+                                             <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
+                                                 <span className="font-bold">Total</span>
+                                                 <span className="font-bold text-slate-900">{formatMoney(total)}</span>
+                                             </div>
+                                         );
+                                     })()}
+                                     
+                                     {/* Minus New Loan Amount */}
+                                     <div className="flex justify-between text-slate-600">
+                                         <span>New Loan Amount</span>
+                                         <span className="font-bold text-slate-900">-{formatMoney(results.totalLoanAmount || 0)}</span>
+                                     </div>
+                                     
+                                     {/* Result: Cash Out or Cash Required */}
+                                     {(() => {
+                                         const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
+                                             - (results.refinanceDetails.totalPayoff || 0) 
+                                             - (results.refinanceDetails.financedClosingCosts || 0);
+                                         const total = (results.refinanceDetails.totalPayoff || 0) 
+                                             + (results.totalClosingCosts || 0) 
+                                             + Math.max(0, equity);
+                                         const result = total - (results.totalLoanAmount || 0);
                                          
-                                         {/* Minus New Loan Amount */}
-                                         <div className="flex justify-between text-slate-600">
-                                             <span>New Loan Amount</span>
-                                             <span className="font-bold text-slate-900">-{formatMoney(results.totalLoanAmount || 0)}</span>
-                                         </div>
-                                         
-                                         {/* Result: Cash Out or Cash Required */}
-                                         {(() => {
-                                             const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
-                                                 - (results.refinanceDetails.totalPayoff || 0) 
-                                                 - (results.refinanceDetails.financedClosingCosts || 0);
-                                             const total = (results.refinanceDetails.totalPayoff || 0) 
-                                                 + (results.totalClosingCosts || 0) 
-                                                 + Math.max(0, equity);
-                                             const result = total - (results.totalLoanAmount || 0);
-                                             
-                                             if (result > 0) {
-                                                 // Positive = Shortfall = Cash Required to Close
-                                                 return (
-                                                     <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
-                                                         <span className="font-bold">Cash Required to Close</span>
-                                                         <span className="font-bold text-slate-900">{formatMoney(result)}</span>
-                                                     </div>
-                                                 );
-                                             } else if (result < 0) {
-                                                 // Negative = Excess = Cash Out (available equity)
-                                                 return (
-                                                     <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
-                                                         <span className="font-bold">Cash Out</span>
-                                                         <span className="font-bold text-emerald-600">{formatMoney(Math.abs(result))}</span>
-                                                     </div>
-                                                 );
-                                             }
-                                             return null;
-                                         })()}
-                                     </>
-                                 )}
-                             </>
-                         )}
-                     </div>
-                     
-                     <div className="border-t border-slate-200 pt-3 relative">
-                         <div className="flex justify-between items-start gap-4">
-                             <span className="text-lg font-bold text-slate-500 uppercase whitespace-nowrap flex-1 pr-4">
-                                 {scenario.transactionType === 'Purchase' 
-                                     ? 'Cash Required' 
-                                     : (results.refinanceDetails?.netCashToBorrower && results.refinanceDetails.netCashToBorrower > 0 
-                                         ? 'Cash Back' 
-                                         : 'Cash to Close')}
-                             </span>
-                             <span className={`text-3xl font-black tracking-tight text-right shrink-0 ${
-                                 scenario.transactionType === 'Refinance' && results.refinanceDetails
-                                     ? (results.refinanceDetails.netCashToBorrower > 0 
-                                         ? 'text-emerald-600' // Cash back shown in green
-                                         : 'text-slate-900') // Cash required shown in black
-                                     : (results.cashToClose < 0 ? 'text-emerald-600' : 'text-slate-900')
-                             }`}>
-                                 {scenario.transactionType === 'Refinance' && results.refinanceDetails
-                                     ? (results.refinanceDetails.netCashToBorrower > 0 
-                                         ? `-${formatMoney(results.refinanceDetails.netCashToBorrower)}` // Cash back with negative sign
-                                         : formatMoney(Math.abs(results.refinanceDetails.netCashToBorrower))) // Cash required as positive
-                                     : formatMoney(results.cashToClose)}
-                             </span>
-                         </div>
-                     </div>
+                                         if (result > 0) {
+                                             // Positive = Shortfall = Cash Required to Close
+                                             return (
+                                                 <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
+                                                     <span className="font-bold">Cash Required to Close</span>
+                                                     <span className="font-bold text-slate-900">{formatMoney(result)}</span>
+                                                 </div>
+                                             );
+                                         } else if (result < 0) {
+                                             // Negative = Excess = Cash Out (available equity)
+                                             return (
+                                                 <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
+                                                     <span className="font-bold">Cash Out</span>
+                                                     <span className="font-bold text-emerald-600">{formatMoney(Math.abs(result))}</span>
+                                                 </div>
+                                             );
+                                         }
+                                         return null;
+                                     })()}
+                                 </>
+                             )}
+                         </>
+                     )}
                 </div>
+                
+                {/* Cash Required Calculator - Removed (now integrated into Cash to Close Statement above) */}
+                {false && scenario.transactionType === 'Purchase' && (() => {
+                    // Calculate Section J (D + I) to match the Costs tab EXACTLY
+                    const sectionA = costGroups.find(g => g.category === 'A. Origination Charges');
+                    const sectionB = costGroups.find(g => g.category === 'B. Services You Cannot Shop For');
+                    const sectionC = costGroups.find(g => g.category === 'C. Services You Can Shop For');
+                    const sectionE = costGroups.find(g => g.category === 'E. Taxes and Other Government Fees');
+                    const sectionF = costGroups.find(g => g.category === 'F. Prepaids');
+                    const sectionG = costGroups.find(g => g.category === 'G. Initial Escrow Payment at Closing');
+                    const sectionH = costGroups.find(g => g.category === 'H. Other');
+                    
+                            const calcLoanCostsTotal = (group: typeof sectionA) => {
+                                if (!group) return 0;
+                                return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                    const itemCost = calculateItemCost(
+                                        cost,
+                                        {
+                                            settlementDate: scenario.settlementDate,
+                                            purchasePrice: scenario.purchasePrice,
+                                            homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                            propertyTaxYearly: scenario.propertyTaxYearly,
+                                            hoaMonthly: scenario.hoaMonthly,
+                                            interestRate: scenario.interestRate
+                                        },
+                                        {
+                                            totalLoanAmount: results.totalLoanAmount,
+                                            prepaidInterest: results.prepaidInterest,
+                                            prepaidInterestDays: results.prepaidInterestDays,
+                                            financedMIP: results.financedMIP,
+                                            buydownCost: results.buydownCost
+                                        }
+                                    );
+                                    return sum + itemCost;
+                                }, 0);
+                            };
+                            
+                            const calcOtherCostsTotal = (group: typeof sectionE) => {
+                                if (!group) return 0;
+                                return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                    const itemCost = calculateItemCost(
+                                        cost,
+                                        {
+                                            settlementDate: scenario.settlementDate,
+                                            purchasePrice: scenario.purchasePrice,
+                                            homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                            propertyTaxYearly: scenario.propertyTaxYearly,
+                                            hoaMonthly: scenario.hoaMonthly,
+                                            interestRate: scenario.interestRate
+                                        },
+                                        {
+                                            totalLoanAmount: results.totalLoanAmount,
+                                            prepaidInterest: results.prepaidInterest,
+                                            prepaidInterestDays: results.prepaidInterestDays,
+                                            financedMIP: results.financedMIP,
+                                            buydownCost: results.buydownCost
+                                        }
+                                    );
+                                    return sum + itemCost;
+                                }, 0);
+                            };
+                            
+                            const totalA = calcLoanCostsTotal(sectionA);
+                            const totalB = calcLoanCostsTotal(sectionB);
+                            const totalC = calcLoanCostsTotal(sectionC);
+                            const totalD = totalA + totalB + totalC;
+                            
+                            const totalE = calcOtherCostsTotal(sectionE);
+                            const totalF = calcOtherCostsTotal(sectionF);
+                            const totalG = calcOtherCostsTotal(sectionG);
+                            const totalH = calcOtherCostsTotal(sectionH);
+                            const totalI = totalE + totalF + totalG + totalH;
+                            
+                            const sectionJTotal = totalD + totalI;
+                    const financedClosingCosts = results.financedMIP || 0;
+                    const sellerConcessionsAmount = (!scenario.showSellerConcessions) 
+                        ? 0 
+                        : results.sellerConcessionsAmount;
+                    
+                    // Calculate exactly as Section J shows
+                    const closingCostsToBePaid = sectionJTotal - financedClosingCosts;
+                    const sellerConcessionsApplied = Math.min(sellerConcessionsAmount, closingCostsToBePaid);
+                    const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied;
+                    
+                    const downPayment = results.downPaymentRequired;
+                    const dpa1Amount = scenario.dpa.active ? scenario.dpa.amount : 0;
+                    const dpa2Amount = scenario.dpa2?.active ? scenario.dpa2.amount : 0;
+                    const earnestMoney = results.earnestMoney || 0;
+                    
+                    const subtotal = downPayment + netClosingCosts - dpa1Amount - dpa2Amount;
+                    const cashRequired = subtotal - earnestMoney;
+                    
+                    return (
+                        <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mt-4">
+                            <h4 className="text-xs font-bold text-blue-900 uppercase tracking-wide mb-3">Cash Required Calculator</h4>
+                            <div className="space-y-2 text-xs font-mono">
+                                <div className="flex justify-between">
+                                    <span className="text-blue-800">Down Payment:</span>
+                                    <span className="text-blue-900 font-bold">{formatMoney(downPayment)}</span>
+                                </div>
+                                <div className="pt-2 border-t border-blue-300">
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-blue-800">Section J Total (D + I):</span>
+                                        <span className="text-blue-900">{formatMoney(sectionJTotal)}</span>
+                                    </div>
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-blue-800">Less Financed Costs (UFMIP/VA Fee):</span>
+                                        <span className="text-blue-900">-{formatMoney(financedClosingCosts)}</span>
+                                    </div>
+                                    <div className="flex justify-between mb-1 border-t border-blue-300 pt-1">
+                                        <span className="text-blue-900 font-bold">Closing Costs to be Paid:</span>
+                                        <span className="text-blue-900 font-bold">{formatMoney(closingCostsToBePaid)}</span>
+                                    </div>
+                                    {sellerConcessionsAmount > 0 && (
+                                        <>
+                                            <div className="flex justify-between mb-1 mt-1">
+                                                <span className="text-emerald-700">Less Seller Concessions:</span>
+                                                <span className="text-emerald-700">-{formatMoney(sellerConcessionsApplied)}</span>
+                                            </div>
+                                            {sellerConcessionsAmount > closingCostsToBePaid && (
+                                                <div className="text-red-700 text-[10px] italic">
+                                                    (Unused: {formatMoney(sellerConcessionsAmount - closingCostsToBePaid)})
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                    <div className="flex justify-between border-t border-blue-300 pt-1 mt-1">
+                                        <span className="text-blue-900 font-bold">Net Closing Costs:</span>
+                                        <span className="text-blue-900 font-bold">{formatMoney(netClosingCosts)}</span>
+                                    </div>
+                                </div>
+                                {dpa1Amount > 0 && (
+                                    <div className="flex justify-between text-emerald-700">
+                                        <span>Less DPA (1st):</span>
+                                        <span>-{formatMoney(dpa1Amount)}</span>
+                                    </div>
+                                )}
+                                {dpa2Amount > 0 && (
+                                    <div className="flex justify-between text-emerald-700">
+                                        <span>Less DPA (2nd):</span>
+                                        <span>-{formatMoney(dpa2Amount)}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between border-t border-blue-300 pt-1 mt-1">
+                                    <span className="text-blue-900 font-bold">Subtotal:</span>
+                                    <span className="text-blue-900 font-bold">{formatMoney(subtotal)}</span>
+                                </div>
+                                {earnestMoney > 0 && (
+                                    <div className="flex justify-between text-emerald-700">
+                                        <span>Less Earnest Money:</span>
+                                        <span>-{formatMoney(earnestMoney)}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between border-t-2 border-blue-400 pt-1 mt-1">
+                                    <span className="text-blue-900 font-bold">Cash Required:</span>
+                                    <span className="text-blue-900 font-bold text-lg">{formatMoney(cashRequired)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
 
             </div>
         </div>
