@@ -21,9 +21,71 @@ interface ListingData {
 
 interface IngestResult {
   raw_text: string;
-  source: 'direct_fetch' | 'openai_web_search_fallback';
+  source: 'direct_fetch' | 'google_search_fallback';
   notes: string;
   needsFallback?: boolean;
+  searchProviderUsed?: 'google' | 'none';
+  searchQueryUsed?: string;
+  numSearchResultsUsed?: number;
+}
+
+interface GoogleSearchResult {
+  title: string;
+  snippet: string;
+  link: string;
+}
+
+/**
+ * Google Custom Search API helper
+ * Returns top 5 search results with title, snippet, and link
+ */
+async function googleSearch(query: string): Promise<GoogleSearchResult[]> {
+  const key = process.env.VITE_GOOGLE_SEARCH_API_KEY;
+  const cx = process.env.VITE_GOOGLE_SEARCH_ENGINE_ID;
+
+  if (!key || !cx) {
+    throw new Error('Missing VITE_GOOGLE_SEARCH_API_KEY or VITE_GOOGLE_SEARCH_ENGINE_ID in server environment variables.');
+  }
+
+  const url = `https://www.googleapis.com/customsearch/v1?key=${key}&cx=${cx}&q=${encodeURIComponent(query)}`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; PropertySearch/1.0)'
+      }
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`Google Search API error (${response.status}):`, errorText.substring(0, 200));
+      throw new Error(`Google Search API returned ${response.status}: ${errorText.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.items || !Array.isArray(data.items)) {
+      return [];
+    }
+
+    // Return top 5 results
+    return data.items.slice(0, 5).map((item: any) => ({
+      title: item.title || '',
+      snippet: item.snippet || '',
+      link: item.link || ''
+    }));
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Google Search API request timed out after 10 seconds');
+    }
+    throw error;
+  }
 }
 
 /**
@@ -92,7 +154,10 @@ async function ingestListingText(url: string): Promise<IngestResult> {
       return {
         raw_text: truncatedText,
         source: 'direct_fetch',
-        notes: `Successfully fetched ${htmlContent.length} chars, converted to ${truncatedText.length} chars of plain text`
+        notes: `Successfully fetched ${htmlContent.length} chars, converted to ${truncatedText.length} chars of plain text`,
+        searchProviderUsed: 'none',
+        searchQueryUsed: undefined,
+        numSearchResultsUsed: undefined
       };
     } else if (fetchResponse.status === 403 || fetchResponse.status === 401 || fetchResponse.status === 429) {
       // Blocked - will try OpenAI web search fallback
@@ -146,10 +211,10 @@ function hasCriticalMissingFields(listing: ListingData): boolean {
 }
 
 /**
- * Get listing data using OpenAI Responses API with web_search tool
+ * Get listing data using Google Search + OpenAI extraction
  * This is used as fallback when direct fetch is blocked or critical fields are missing
  */
-async function getListingDataFromUrlOpenAI(url: string, mlsNumber?: string, address?: string): Promise<ListingData> {
+async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, address?: string): Promise<{ listing: ListingData; ingestion: IngestResult }> {
   // Check both environment variable names for backward compatibility
   const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
   
@@ -161,22 +226,38 @@ async function getListingDataFromUrlOpenAI(url: string, mlsNumber?: string, addr
   // Priority: address (most specific) > mlsNumber > addressFromUrl > url
   let searchQuery: string;
   if (address) {
-    searchQuery = `"${address}" property listing`;
+    searchQuery = `"${address}"`;
   } else if (mlsNumber) {
-    searchQuery = `MLS #${mlsNumber} property listing`;
-  } else {
+    searchQuery = `"${mlsNumber}"`;
+  } else if (url) {
     // Extract address from URL for better search query
     const addressFromUrl = extractAddressFromUrl(url);
-    searchQuery = addressFromUrl 
-      ? `"${addressFromUrl}" property listing`
-      : `property listing ${url}`;
+    searchQuery = addressFromUrl ? `"${addressFromUrl}"` : `"${url}"`;
+  } else {
+    throw new Error('No search query available: need URL, address, or MLS number');
   }
 
-  const instructions = `You are a real estate data extraction assistant. Extract property listing information from the provided context.
+  // Perform Google Search
+  const searchResults = await googleSearch(searchQuery);
+  
+  if (searchResults.length === 0) {
+    throw new Error('No search results found from Google Search');
+  }
+
+  // Build raw_text from search results (top 3-5 results)
+  const topResults = searchResults.slice(0, 5);
+  let rawText = '';
+  for (const result of topResults) {
+    rawText += `Title: ${result.title}\n`;
+    rawText += `Snippet: ${result.snippet}\n`;
+    rawText += `Link: ${result.link}\n\n`;
+  }
+
+  const instructions = `You are a real estate data extraction assistant. Extract property listing information from the provided search results.
 
 IMPORTANT RULES:
-1. Extract ONLY verifiable facts. Never guess or invent values.
-2. If a field cannot be determined, return null (NOT 0 or empty string).
+1. Extract ONLY verifiable facts from the search results provided. Never guess or invent values.
+2. If a field cannot be determined from the search results, return null (NOT 0 or empty string).
 3. Include all fields you could not find in the missingFields array.
 4. Set confidence scores (0.0 to 1.0) for each field based on how certain you are.
 5. Return a valid JSON object matching the required schema.
@@ -194,19 +275,21 @@ Return a JSON object with these fields:
 - lotSqft: Lot size in square feet (or null)
 - status: Status like "For Sale", "Sold", "Pending" (or null)
 - keyFeatures: Array of up to 8 key features (empty array if none)
-- missingFields: Array of field names that were not found
-- confidence: Object mapping each field to a confidence score (0.0 to 1.0)
+- missingFields: Array of field names that were not found in the search results
+- confidence: Object mapping each extracted field to a confidence score (0.0 to 1.0)
 - extractionNotes: Brief explanation of what was found and any issues
 
 Return ONLY valid JSON, no markdown, no code blocks.`;
 
-  const input = `Extract property listing data for:
-${searchQuery}
-${address ? `Property address: ${address}` : ''}
-${mlsNumber ? `MLS number: ${mlsNumber}` : ''}
+  const input = `Extract property listing data from these search results:
+
+${rawText}
+
+${address ? `Target property address: ${address}` : ''}
+${mlsNumber ? `Target MLS number: ${mlsNumber}` : ''}
 ${url ? `Original URL: ${url}` : ''}
 
-Based on the search query and any available information, extract what you can determine about this property. Use null for any fields you cannot confidently determine. Include all missing fields in the missingFields array.`;
+Extract property information from the search results above. Use null for any fields you cannot confidently determine from the provided search results. Include all missing fields in the missingFields array.`;
 
   // JSON Schema for ListingData
   const listingDataSchema = {
@@ -362,7 +445,18 @@ Based on the search query and any available information, extract what you can de
   listingData.missingFields = listingData.missingFields || [];
   listingData.confidence = listingData.confidence || {};
 
-  return listingData;
+  // Return with ingestion metadata
+  return {
+    listing: listingData,
+    ingestion: {
+      raw_text: rawText,
+      source: 'google_search_fallback',
+      notes: `Used Google Search with query "${searchQuery}" and extracted data from ${topResults.length} results`,
+      searchProviderUsed: 'google',
+      searchQueryUsed: searchQuery,
+      numSearchResultsUsed: topResults.length
+    }
+  };
 }
 
 /**
@@ -555,25 +649,19 @@ async function getListingDataFromUrl(url: string): Promise<{ listing: ListingDat
     // Step 2: Extract with OpenAI from fetched text
     listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source);
     
-    // Step 3: Check if critical fields are missing - if so, use OpenAI web search fallback
+    // Step 3: Check if critical fields are missing - if so, use Google Search fallback
     if (hasCriticalMissingFields(listing)) {
-      console.log('Critical fields missing, using OpenAI web search fallback');
-      listing = await getListingDataFromUrlOpenAI(url, undefined, undefined);
-      ingestion = {
-        raw_text: '',
-        source: 'openai_web_search_fallback',
-        notes: 'Direct fetch succeeded but critical fields missing, used OpenAI web search to supplement'
-      };
+      console.log('Critical fields missing, using Google Search fallback');
+      const fallbackResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
+      listing = fallbackResult.listing;
+      ingestion = fallbackResult.ingestion;
     }
   } catch (fetchError) {
-    // Direct fetch failed (403/429/etc) - use OpenAI web search fallback
-    console.log('Direct fetch failed, using OpenAI web search fallback:', fetchError);
-    listing = await getListingDataFromUrlOpenAI(url, undefined, undefined);
-    ingestion = {
-      raw_text: '',
-      source: 'openai_web_search_fallback',
-      notes: `Direct fetch blocked/failed (${fetchError instanceof Error ? fetchError.message : 'unknown error'}), used OpenAI web search`
-    };
+    // Direct fetch failed (403/429/etc) - use Google Search fallback
+    console.log('Direct fetch failed, using Google Search fallback:', fetchError);
+    const fallbackResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
+    listing = fallbackResult.listing;
+    ingestion = fallbackResult.ingestion;
   }
   
   return { listing, ingestion };
@@ -628,13 +716,10 @@ export default async function handler(
     let ingestion: IngestResult;
     
     if (!url && address) {
-      // Use OpenAI to find property by address
-      listing = await getListingDataFromUrlOpenAI(propertyUrl, undefined, address);
-      ingestion = {
-        raw_text: '',
-        source: 'openai_web_search_fallback',
-        notes: `Searched for address "${address}" using OpenAI web search`
-      };
+      // Use Google Search to find property by address
+      const searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
+      listing = searchResult.listing;
+      ingestion = searchResult.ingestion;
     } else {
       // Normal URL processing
       const result = await getListingDataFromUrl(propertyUrl);
@@ -655,12 +740,15 @@ export default async function handler(
       hoa: listing.hoa, // Can be null (use 0 only if explicitly $0)
       propertyTax: listing.propertyTax ? (listing.propertyTax > 1000 ? listing.propertyTax / 12 : listing.propertyTax) : null,
       // Include additional metadata
-      _metadata: {
+        _metadata: {
         source: ingestion.source,
         notes: ingestion.notes,
         extractionNotes: listing.extractionNotes,
         missingFields: listing.missingFields || [],
-        confidence: listing.confidence || {}
+        confidence: listing.confidence || {},
+        searchProviderUsed: ingestion.searchProviderUsed || 'none',
+        searchQueryUsed: ingestion.searchQueryUsed,
+        numSearchResultsUsed: ingestion.numSearchResultsUsed
       }
     };
 
