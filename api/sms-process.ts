@@ -349,28 +349,33 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   if (address) {
     // Primary queries - try site-specific searches for major real estate sites
     // Search multiple sites to aggregate data
-    searchQuery = `"${address}" site:zillow.com OR site:redfin.com OR site:utahrealestate.com`;
+    searchQuery = `"${address}" site:zillow.com OR site:redfin.com OR site:utahrealestate.com HOA year built`;
     // Fallback queries with different strategies
     fallbackQueries = [
-      `"${address}" site:zillow.com`,
-      `"${address}" site:redfin.com`,
-      `"${address}" site:utahrealestate.com`,
-      `"${address}" site:realtor.com`,
-      `"${address}" zillow price beds baths sqft HOA`,
-      `"${address}" property listing for sale`,
-      `"${address}" real estate listing`,
+      `"${address}" site:zillow.com HOA`,
+      `"${address}" site:redfin.com HOA`,
+      `"${address}" site:utahrealestate.com HOA`,
+      `"${address}" site:realtor.com HOA`,
+      `"${address}" zillow price beds baths sqft HOA year built`,
+      `"${address}" property listing HOA fees`,
+      `"${address}" real estate listing HOA`,
+      `"${address}" zillow HOA`,
+      `"${address}" redfin HOA`,
       `"${address}" zillow`,
       `"${address}" redfin`,
       address // Just the address without quotes
     ];
   } else if (mlsNumber) {
-    searchQuery = `"${mlsNumber}" MLS site:zillow.com OR site:redfin.com OR site:utahrealestate.com`;
+    searchQuery = `"${mlsNumber}" MLS site:zillow.com OR site:redfin.com OR site:utahrealestate.com HOA year built`;
     fallbackQueries = [
-      `"${mlsNumber}" MLS site:zillow.com`,
-      `"${mlsNumber}" MLS site:redfin.com`,
-      `"${mlsNumber}" MLS site:utahrealestate.com`,
-      `"${mlsNumber}" MLS site:realtor.com`,
-      `MLS ${mlsNumber} zillow`,
+      `"${mlsNumber}" MLS site:zillow.com HOA`,
+      `"${mlsNumber}" MLS site:redfin.com HOA`,
+      `"${mlsNumber}" MLS site:utahrealestate.com HOA`,
+      `"${mlsNumber}" MLS site:realtor.com HOA`,
+      `MLS ${mlsNumber} zillow price beds baths sqft HOA year built`,
+      `MLS ${mlsNumber} property listing HOA`,
+      `MLS ${mlsNumber} real estate HOA`,
+      `MLS ${mlsNumber} property HOA`,
       `MLS ${mlsNumber} property listing`,
       `MLS ${mlsNumber} real estate`,
       `MLS ${mlsNumber} property`,
