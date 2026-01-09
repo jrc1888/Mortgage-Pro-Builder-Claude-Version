@@ -708,6 +708,16 @@ Use null for any fields you cannot confidently determine from the provided conte
   listingData.missingFields = listingData.missingFields || [];
   listingData.confidence = listingData.confidence || {};
 
+  // Try property tax lookup if missing
+  if ((listingData.propertyTax === null || listingData.propertyTax === undefined) && listingData.address && listingData.price) {
+    console.log('Property tax missing from Google Search results, attempting lookup...');
+    const lookedUpTax = await lookupPropertyTax(listingData.address, listingData.price);
+    if (lookedUpTax !== null) {
+      listingData.propertyTax = lookedUpTax;
+      console.log(`Found property tax via lookup: $${lookedUpTax}/year`);
+    }
+  }
+
   // Return with ingestion metadata
   return {
     listing: listingData,
