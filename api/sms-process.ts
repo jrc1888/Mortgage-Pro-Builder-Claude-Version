@@ -27,6 +27,46 @@ interface IngestResult {
   searchProviderUsed?: 'google' | 'none';
   searchQueryUsed?: string;
   numSearchResultsUsed?: number;
+  extractionDetails?: {
+    extractionLog: Array<{
+      source: string;
+      url: string;
+      extracted: {
+        address: string | null;
+        price: number | null;
+        beds: number | null;
+        baths: number | null;
+        sqft: number | null;
+        hoa: number | null;
+        yearBuilt: number | null;
+        confidence?: Record<string, number>;
+      };
+    }>;
+    aggregationDetails: {
+      totalSources: number;
+      matchedSources: number;
+      filteredSources: number;
+      targetAddress: string | null;
+      sources: Array<{
+        address: string | null;
+        price: number | null;
+        beds: number | null;
+        baths: number | null;
+        sqft: number | null;
+        hoa: number | null;
+        yearBuilt: number | null;
+        confidence?: Record<string, number>;
+      }>;
+      fieldVotes: {
+        price: Record<string, number>;
+        beds: Record<string, number>;
+        baths: Record<string, number>;
+        sqft: Record<string, number>;
+        hoa: Record<string, number>;
+        yearBuilt: Record<string, number>;
+      };
+    };
+  };
 }
 
 interface GoogleSearchResult {
