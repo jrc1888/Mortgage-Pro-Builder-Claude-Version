@@ -753,29 +753,25 @@ export default async function handler(
       }
     }
 
-    // For address, we'll need to search for the listing
-    // If we have address but no URL, we'll use OpenAI web search
-    let propertyUrl = url;
-    if (!url && address) {
-      // Create a placeholder URL that will trigger web search
-      propertyUrl = `https://search.property.com/address/${encodeURIComponent(address || '')}`;
-    }
+    // Determine if we have a real URL or just an address
+    const hasRealUrl = url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('search.property.com');
 
     // Get listing data
-    // If we have address but no URL, use OpenAI web search directly
     let listing: ListingData;
     let ingestion: IngestResult;
     
-    if (!url && address) {
-      // Use Google Search to find property by address
+    if (!hasRealUrl && address) {
+      // No real URL, just address - use Google Search directly
       const searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
       listing = searchResult.listing;
       ingestion = searchResult.ingestion;
-    } else {
-      // Normal URL processing
-      const result = await getListingDataFromUrl(propertyUrl);
+    } else if (hasRealUrl) {
+      // Real URL provided - try direct fetch first, fallback to Google Search
+      const result = await getListingDataFromUrl(url);
       listing = result.listing;
       ingestion = result.ingestion;
+    } else {
+      return response.status(400).json({ error: 'Either a valid URL or address is required' });
     }
 
     // Convert to format expected by frontend (maintain backward compatibility)

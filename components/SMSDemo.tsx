@@ -399,9 +399,8 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         // User confirmed - process the address (MLS numbers are converted to addresses first)
         addressToProcess = pendingConfirmation.value;
         setPendingConfirmation(null);
-        
-        // Construct placeholder URL for confirmed address
-        propertyUrl = `https://search.property.com/${encodeURIComponent(addressToProcess || '')}`;
+        // Don't create placeholder URL - we'll use Google Search directly
+        propertyUrl = undefined;
       } else if (mlsNumber && !url && !pendingConfirmation) {
         // First time detecting MLS - find the address first
         updateStep(step1Id, { 
@@ -551,20 +550,20 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         return;
       }
       
-      // If we have address but no URL, construct placeholder URL
-      if (!url && addressToProcess) {
-        propertyUrl = `https://search.property.com/${encodeURIComponent(addressToProcess)}`;
-      }
+      // Determine if we have a real URL or just an address
+      const hasRealUrl = url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('search.property.com');
 
       updateStep(step1Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-        details: propertyUrl ? `Found URL: ${propertyUrl}` : (mlsToProcess ? `Found MLS: #${mlsToProcess}` : `Found Address: ${addressToProcess}`)
+        details: hasRealUrl ? `Found URL: ${url}` : (mlsToProcess ? `Found MLS: #${mlsToProcess}` : `Found Address: ${addressToProcess}`)
       });
 
-      // Step 2: Fetch page content
-      const step2Id = addStep('Fetching page content', 'processing');
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Step 2: Fetch page content (only for real URLs)
+      const step2Id = hasRealUrl ? addStep('Fetching page content', 'processing') : null;
+      if (hasRealUrl) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
 
       // Step 3: Call OpenAI API
       const step3Id = addStep('Calling OpenAI', 'processing');
@@ -576,7 +575,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          url: propertyUrl || undefined,
+          url: hasRealUrl ? url : undefined, // Only send real URLs, not placeholder URLs
           address: addressToProcess || undefined
         })
       });
@@ -588,16 +587,18 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         const errorMessage = data.error || 'Failed to process property listing';
         const errorDetails = data.details || data.suggestion || '';
         
-        updateStep(step2Id, { 
-          status: data.ingestion?.source === 'openai_web_search_fallback' ? 'error' : 'success', 
-          icon: data.ingestion?.source === 'openai_web_search_fallback' 
-            ? <AlertCircle className="w-4 h-4 text-amber-500" />
-            : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-          details: data.ingestion?.source === 'openai_web_search_fallback' 
-            ? 'Direct fetch blocked, using OpenAI web search'
-            : 'Page content fetched successfully',
-          rawData: data.ingestion
-        });
+        if (step2Id) {
+          updateStep(step2Id, { 
+            status: data.ingestion?.source === 'google_search_fallback' ? 'error' : 'success', 
+            icon: data.ingestion?.source === 'google_search_fallback' 
+              ? <AlertCircle className="w-4 h-4 text-amber-500" />
+              : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+            details: data.ingestion?.source === 'google_search_fallback' 
+              ? 'Direct fetch blocked, using Google Search'
+              : 'Page content fetched successfully',
+            rawData: data.ingestion
+          });
+        }
 
         updateStep(step3Id, { 
           status: 'error', 
@@ -618,22 +619,31 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         return;
       }
 
-      // Update step 2 with ingestion info
+      // Update step 2 with ingestion info (only if we had a real URL)
+      if (step2Id) {
         updateStep(step2Id, { 
-          status: data.ingestion?.source === 'openai_web_search_fallback' ? 'error' : 'success', 
-          icon: data.ingestion?.source === 'openai_web_search_fallback' 
+          status: data.ingestion?.source === 'google_search_fallback' ? 'error' : 'success', 
+          icon: data.ingestion?.source === 'google_search_fallback' 
             ? <AlertCircle className="w-4 h-4 text-amber-500" />
             : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-          details: data.ingestion?.source === 'openai_web_search_fallback' 
-            ? 'Direct fetch blocked, using OpenAI web search'
+          details: data.ingestion?.source === 'google_search_fallback' 
+            ? 'Direct fetch blocked, using Google Search'
             : 'Page content fetched successfully',
-        rawData: data.ingestion
-      });
+          rawData: data.ingestion
+        });
+      }
 
+      // Update step 3 - show different message based on source
+      const extractionDetails = hasRealUrl 
+        ? 'Property data extracted successfully'
+        : data.ingestion?.source === 'google_search_fallback'
+          ? 'Property data extracted from Google Search results'
+          : 'Property data extracted successfully';
+      
       updateStep(step3Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-        details: 'Property data extracted successfully',
+        details: extractionDetails,
         rawData: data.propertyData
       });
 
