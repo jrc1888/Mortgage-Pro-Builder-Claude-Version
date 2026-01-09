@@ -501,7 +501,15 @@ CRITICAL EXTRACTION RULES:
    - Sqft: Look for "sq ft", "square feet", "sqft", "SF", "square footage"
    - Year Built: Look for "built", "year built", "constructed"
    - Property Type: Look for "Single Family", "Condo", "Townhouse", "Multi-Family", etc.
-   - HOA: Look for "HOA", "homeowners association", "monthly fee", "$/mo HOA", "HOA fee", "monthly HOA", "association fee" - THIS IS CRITICAL FOR PAYMENT CALCULATION
+   - HOA (CRITICAL - LOOK VERY CAREFULLY): 
+     * Look for "$20/mo HOA", "$20 monthly HOA", "$20/mo" followed by "HOA"
+     * Look for "HOA fee", "HOA dues", "homeowners association fee"
+     * Look for "$/mo" patterns near "HOA" or "association"
+     * On Zillow: Look in property details section for "$X/mo" or "$X monthly" near HOA
+     * Extract ONLY the dollar amount (e.g., "$20/mo HOA" = 20, "$150/month HOA" = 150)
+     * If explicitly "$0" or "No HOA" = 0
+     * If not found = null (NOT 0)
+     * THIS IS CRITICAL FOR PAYMENT CALCULATION
    - Property Tax: Look for "property tax", "taxes", "annual tax"
    - Lot Size: Look for "lot", "lot size", "acre", "sq ft lot"
    - Status: Look for "For Sale", "Sold", "Pending", "Active"
@@ -751,9 +759,23 @@ async function extractListingWithOpenAI(
 
   const userPrompt = `Extract property listing data from the following text. The text was obtained from: ${url} (source: ${source})
 
-CRITICAL: Look carefully for these fields:
-- HOA: Look for "$X/mo HOA", "$X monthly HOA", "HOA fee", "homeowners association", "$X/mo" near "HOA" - extract the dollar amount (e.g., "$20/mo" = 20)
-- Year Built: Look for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025", "Built:" followed by a year
+CRITICAL: Look carefully for these fields - HOA IS ESPECIALLY IMPORTANT:
+
+- HOA (CRITICAL - LOOK VERY CAREFULLY): 
+  * Look for "$20/mo HOA", "$20 monthly HOA", "$20/mo" followed by "HOA"
+  * Look for "HOA fee", "HOA dues", "homeowners association fee"
+  * Look for "$/mo" patterns near the word "HOA" or "association"
+  * On Zillow, HOA often appears as "$20/mo" or "$20 monthly" in the property details section
+  * Extract ONLY the dollar amount (e.g., "$20/mo HOA" = 20, "$150/month HOA" = 150)
+  * If HOA is explicitly stated as "$0" or "No HOA", return 0
+  * If HOA is not mentioned at all, return null (NOT 0)
+
+- Year Built (CRITICAL for insurance calculation):
+  * Look for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025"
+  * Look for "Built:" followed by a year
+  * Look for patterns like "2025" near construction/built keywords
+  * This is CRITICAL - insurance rates depend on this value
+
 - Property Tax: Look for "property tax", "annual tax", "taxes", "$X/year" or "$X annually" for property tax
 - Price: Look for "$1,099,900", "price", "list price", "asking price"
 - Beds: Look for "4 beds", "4 bed", "4 bedrooms", "4 BR"
@@ -794,7 +816,14 @@ RULES:
 - sqft: Square footage (integer)
 - yearBuilt: Year built (integer) - look carefully for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025", or "Built:" followed by a year. Return null if not found
 - propertyType: "Single Family", "Condo", "Townhouse", etc. or null
-- hoa: Monthly HOA amount in dollars (e.g., if text says "$20/mo HOA" or "$20 monthly HOA", return 20). Return null if not found (NOT 0 unless explicitly stated as $0)
+- hoa: Monthly HOA amount in dollars. CRITICAL: Look very carefully for HOA fees. Common patterns:
+  * "$20/mo HOA" = 20
+  * "$20 monthly HOA" = 20  
+  * "$150/month HOA" = 150
+  * "HOA: $20/mo" = 20
+  * "$20/mo" near "HOA" or "association" = 20
+  * If explicitly "$0" or "No HOA" = 0
+  * If not found anywhere = null (NOT 0)
 - propertyTax: Annual property tax (number) or null if not found
 - lotSqft: Lot size in square feet (number) or null
 - status: "For Sale", "Sold", "Pending", etc. or null

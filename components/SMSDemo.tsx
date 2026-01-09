@@ -698,19 +698,27 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       }
 
       // Insurance: Use consistent calculation based on year built and price
+      // IMPORTANT: Use consistent yearBuilt fallback to ensure insurance calculations match across all input types
       if (enrichedData.price) {
         const currentYear = new Date().getFullYear();
-        const yearBuilt = propertyData.yearBuilt || currentYear - 10; // Default to 10 years old if unknown
+        // Use consistent fallback: if yearBuilt is missing, assume 10 years old (2024 - 10 = 2014)
+        // This ensures insurance calculations are consistent regardless of input type
+        const defaultYearBuilt = currentYear - 10; // 2014 for 2024
+        const yearBuilt = propertyData.yearBuilt || defaultYearBuilt;
         const age = currentYear - yearBuilt;
         
-        // Consistent insurance rates based on age
+        // Consistent insurance rates based on age (same for all input types)
         let insuranceRate = 0.003; // Base 0.3% annually
         if (age > 20) insuranceRate = 0.0035; // Older homes (20+ years) cost more to insure
         if (age < 5) insuranceRate = 0.0025; // Newer homes (<5 years) cost less
         if (age < 0) insuranceRate = 0.0025; // New construction
 
         enrichedData.insurance = (enrichedData.price * insuranceRate) / 12; // Convert annual to monthly
-        estimates.push('Insurance');
+        
+        // Only mark as estimate if yearBuilt was actually missing
+        if (!propertyData.yearBuilt) {
+          estimates.push('Insurance');
+        }
       } else {
         enrichedData.insurance = null;
       }
