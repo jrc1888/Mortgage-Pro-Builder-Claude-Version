@@ -150,10 +150,11 @@ function hasCriticalMissingFields(listing: ListingData): boolean {
  * This is used as fallback when direct fetch is blocked or critical fields are missing
  */
 async function getListingDataFromUrlOpenAI(url: string, mlsNumber?: string, address?: string): Promise<ListingData> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  // Check both environment variable names for backward compatibility
+  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
   
   if (!apiKey) {
-    throw new Error('OpenAI API key not configured');
+    throw new Error('OpenAI API key not configured. Please set OPENAI_API_KEY in Vercel environment variables.');
   }
 
   // Build search query from MLS, address, or URL
@@ -364,7 +365,8 @@ async function extractListingWithOpenAI(
   rawText: string,
   source: string
 ): Promise<ListingData> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  // Check both environment variable names for backward compatibility
+  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
   
   if (!apiKey) {
     throw new Error('OpenAI API key not configured');

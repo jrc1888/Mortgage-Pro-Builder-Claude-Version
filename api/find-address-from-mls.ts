@@ -24,9 +24,10 @@ export default async function handler(
       return response.status(400).json({ error: 'MLS number is required' });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    // Check both environment variable names for backward compatibility
+    const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
     if (!apiKey) {
-      return response.status(500).json({ error: 'OpenAI API key not configured' });
+      return response.status(500).json({ error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in Vercel environment variables.' });
     }
 
     // Use OpenAI Responses API with web_search to find the property address from MLS number
