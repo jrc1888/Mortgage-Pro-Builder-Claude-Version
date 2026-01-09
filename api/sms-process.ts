@@ -226,20 +226,90 @@ async function ingestListingText(url: string): Promise<IngestResult> {
 
 /**
  * Extract address from URL for search query
+ * Properly formats addresses from URL patterns
  */
 function extractAddressFromUrl(url: string): string | null {
   try {
+    // Street type abbreviations mapping
+    const streetTypes: Record<string, string> = {
+      'st': 'Street', 'ave': 'Avenue', 'ave': 'Avenue', 'rd': 'Road', 'dr': 'Drive',
+      'ln': 'Lane', 'ct': 'Court', 'pl': 'Place', 'blvd': 'Boulevard', 'way': 'Way',
+      'cir': 'Circle', 'pkwy': 'Parkway', 'trl': 'Trail', 'hwy': 'Highway'
+    };
+    
     // Try to extract address from common real estate URL patterns
-    // Zillow: /homedetails/442-W-Randys-Ct-Farmington-UT-84025/458391817_zpid/
+    // Zillow: /homedetails/581-W-Summerhill-Ln-N-Centerville-UT-84014/450680059_zpid/
     const zillowMatch = url.match(/homedetails\/([^\/]+)\//);
     if (zillowMatch) {
-      return decodeURIComponent(zillowMatch[1].replace(/-/g, ' '));
+      const parts = zillowMatch[1].split('-');
+      // Format: Number Direction Street StreetType Direction City State Zip
+      // Example: 581-W-Summerhill-Ln-N-Centerville-UT-84014
+      let formatted = '';
+      let i = 0;
+      
+      // Street number
+      if (i < parts.length && /^\d+$/.test(parts[i])) {
+        formatted += parts[i++] + ' ';
+      }
+      
+      // Direction (optional)
+      const directions = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW', 'NORTH', 'SOUTH', 'EAST', 'WEST'];
+      if (i < parts.length && directions.includes(parts[i].toUpperCase())) {
+        formatted += parts[i++] + ' ';
+      }
+      
+      // Street name
+      const streetParts: string[] = [];
+      while (i < parts.length && !streetTypes[parts[i]?.toLowerCase()] && parts[i] !== 'N' && parts[i] !== 'S' && parts[i] !== 'E' && parts[i] !== 'W']) {
+        if (parts[i] && !directions.includes(parts[i].toUpperCase())) {
+          streetParts.push(parts[i]);
+        }
+        i++;
+      }
+      
+      // Street type
+      if (i < parts.length && streetTypes[parts[i]?.toLowerCase()]) {
+        formatted += streetParts.join(' ') + ' ' + streetTypes[parts[i].toLowerCase()] + ' ';
+        i++;
+      } else if (streetParts.length > 0) {
+        formatted += streetParts.join(' ') + ' ';
+      }
+      
+      // Direction after street (optional)
+      if (i < parts.length && directions.includes(parts[i]?.toUpperCase())) {
+        formatted += parts[i++] + ' ';
+      }
+      
+      // City, State, Zip
+      while (i < parts.length) {
+        if (parts[i]?.length === 2 && parts[i] === parts[i].toUpperCase()) {
+          // State
+          formatted += parts[i++] + ' ';
+        } else if (/^\d{5}$/.test(parts[i])) {
+          // Zip
+          formatted += parts[i++];
+        } else {
+          // City
+          formatted += parts[i++] + ' ';
+        }
+      }
+      
+      return formatted.trim();
     }
     
-    // Redfin: /home/...
-    const redfinMatch = url.match(/redfin\.com\/[^\/]+\/([^\/]+)/);
+    // Redfin: /UT/Centerville/581-W-Summerhill-Ln-84014/home/187673696
+    const redfinMatch = url.match(/redfin\.com\/[^\/]+\/([^\/]+)\/home\//);
     if (redfinMatch) {
-      return decodeURIComponent(redfinMatch[1].replace(/-/g, ' '));
+      const addressPart = redfinMatch[1];
+      // Extract state and city from URL path
+      const pathMatch = url.match(/redfin\.com\/([A-Z]{2})\/([^\/]+)\//);
+      if (pathMatch) {
+        const state = pathMatch[1];
+        const city = pathMatch[2];
+        // Format the address part
+        return addressPart.replace(/-/g, ' ') + ', ' + city + ', ' + state;
+      }
+      return addressPart.replace(/-/g, ' ');
     }
     
     // Generic: try to find address-like patterns in URL
@@ -623,60 +693,66 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   let fallbackQueries: string[] = [];
   
   if (address) {
-    // Primary queries - try site-specific searches for major real estate sites
-    // Search multiple sites to aggregate data
-    searchQuery = `"${address}" site:zillow.com OR site:redfin.com OR site:utahrealestate.com HOA year built`;
-    // Fallback queries with different strategies
+    // Primary query - search for the exact address across all sites
+    // Use a more specific query that should find the property
+    searchQuery = `"${address}" property listing for sale`;
+    // Fallback queries - search each major site separately for better results
     fallbackQueries = [
-      `"${address}" site:zillow.com HOA`,
-      `"${address}" site:redfin.com HOA`,
-      `"${address}" site:utahrealestate.com HOA`,
-      `"${address}" site:realtor.com HOA`,
-      `"${address}" zillow price beds baths sqft HOA year built`,
-      `"${address}" property listing HOA fees`,
-      `"${address}" real estate listing HOA`,
-      `"${address}" zillow HOA`,
-      `"${address}" redfin HOA`,
+      `"${address}" site:zillow.com`,
+      `"${address}" site:redfin.com`,
+      `"${address}" site:utahrealestate.com`,
+      `"${address}" site:realtor.com`,
+      `"${address}" site:homes.com`,
       `"${address}" zillow`,
       `"${address}" redfin`,
+      `"${address}" property listing`,
       address // Just the address without quotes
     ];
   } else if (mlsNumber) {
-    searchQuery = `"${mlsNumber}" MLS site:zillow.com OR site:redfin.com OR site:utahrealestate.com HOA year built`;
+    searchQuery = `"${mlsNumber}" MLS property listing`;
     fallbackQueries = [
-      `"${mlsNumber}" MLS site:zillow.com HOA`,
-      `"${mlsNumber}" MLS site:redfin.com HOA`,
-      `"${mlsNumber}" MLS site:utahrealestate.com HOA`,
-      `"${mlsNumber}" MLS site:realtor.com HOA`,
-      `MLS ${mlsNumber} zillow price beds baths sqft HOA year built`,
-      `MLS ${mlsNumber} property listing HOA`,
-      `MLS ${mlsNumber} real estate HOA`,
-      `MLS ${mlsNumber} property HOA`,
+      `"${mlsNumber}" MLS site:zillow.com`,
+      `"${mlsNumber}" MLS site:redfin.com`,
+      `"${mlsNumber}" MLS site:utahrealestate.com`,
+      `"${mlsNumber}" MLS site:realtor.com`,
+      `MLS ${mlsNumber} zillow`,
+      `MLS ${mlsNumber} redfin`,
       `MLS ${mlsNumber} property listing`,
       `MLS ${mlsNumber} real estate`,
-      `MLS ${mlsNumber} property`,
       mlsNumber
     ];
   } else if (url) {
     // Extract address from URL for better search query
     const addressFromUrl = extractAddressFromUrl(url);
     if (addressFromUrl) {
-      // If it's a Zillow URL, try Zillow-specific search
+      // Search for the exact address
+      searchQuery = `"${addressFromUrl}" property listing`;
+      // If it's a specific site URL, prioritize that site
       if (url.includes('zillow.com')) {
-        searchQuery = `"${addressFromUrl}" site:zillow.com`;
+        fallbackQueries = [
+          `"${addressFromUrl}" site:zillow.com`,
+          `"${addressFromUrl}" site:redfin.com`,
+          `"${addressFromUrl}" site:utahrealestate.com`,
+          `"${addressFromUrl}" zillow`,
+          addressFromUrl
+        ];
       } else if (url.includes('redfin.com')) {
-        searchQuery = `"${addressFromUrl}" site:redfin.com`;
+        fallbackQueries = [
+          `"${addressFromUrl}" site:redfin.com`,
+          `"${addressFromUrl}" site:zillow.com`,
+          `"${addressFromUrl}" site:utahrealestate.com`,
+          `"${addressFromUrl}" redfin`,
+          addressFromUrl
+        ];
       } else {
-        searchQuery = `"${addressFromUrl}" property listing`;
+        fallbackQueries = [
+          `"${addressFromUrl}" site:zillow.com`,
+          `"${addressFromUrl}" site:redfin.com`,
+          `"${addressFromUrl}" site:utahrealestate.com`,
+          `"${addressFromUrl}" property listing`,
+          addressFromUrl
+        ];
       }
-      fallbackQueries = [
-        `"${addressFromUrl}" site:zillow.com`,
-        `"${addressFromUrl}" site:redfin.com`,
-        `"${addressFromUrl}" zillow price beds baths`,
-        `"${addressFromUrl}" real estate`,
-        `"${addressFromUrl}" zillow`,
-        addressFromUrl
-      ];
     } else {
       searchQuery = `property listing ${url}`;
       fallbackQueries = [url];
@@ -803,10 +879,22 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   console.log(`Fetched pages from ${fetchedPages.length} sites: ${fetchedPages.map(p => p.domain).join(', ')}`);
   
   // Step 2: Extract data from EACH page separately with detailed logging
+  // Determine target address for validation
+  const targetAddress = address || (url ? extractAddressFromUrl(url) : null);
+  
   const extractionResults: Array<{ listing: ListingData; source: string; url: string }> = [];
   for (const page of fetchedPages) {
     try {
-      const extracted = await extractListingWithOpenAI(page.url, page.content, `google_search_${page.domain}`);
+      const extracted = await extractListingWithOpenAISinglePage(page.url, page.content, `google_search_${page.domain}`, targetAddress);
+      
+      // Additional validation: if target address provided, check if extracted address matches
+      if (targetAddress && extracted.address) {
+        if (!addressesMatch(extracted.address, targetAddress)) {
+          console.log(`Skipping ${page.domain}: extracted address "${extracted.address}" does not match target "${targetAddress}"`);
+          continue; // Skip this extraction
+        }
+      }
+      
       extractionResults.push({
         listing: extracted,
         source: page.domain,
@@ -824,7 +912,6 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   }
   
   // Step 3: Aggregate results using majority confidence with address validation
-  const targetAddress = address || (url ? extractAddressFromUrl(url) : null);
   const { listing: aggregatedListing, aggregationDetails } = aggregateListingData(
     extractionResults.map(r => r.listing),
     targetAddress
@@ -870,25 +957,29 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
 /**
  * Extract listing data from a single page using OpenAI
  * This is used internally by getListingDataFromGoogleSearch for multi-site extraction
+ * @param targetAddress - The expected address to validate against (optional but recommended)
  */
-async function extractListingWithOpenAISinglePage(url: string, rawText: string, source: string): Promise<ListingData> {
+async function extractListingWithOpenAISinglePage(url: string, rawText: string, source: string, targetAddress?: string | null): Promise<ListingData> {
   const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
   
   if (!apiKey) {
     throw new Error('OpenAI API key not configured');
   }
 
+  const targetAddressNote = targetAddress ? `\n\nCRITICAL ADDRESS VALIDATION: The expected property address is "${targetAddress}". You MUST extract data ONLY if the address in the text matches this address. If the extracted address does not match "${targetAddress}", return null for ALL fields (price, beds, baths, sqft, HOA, yearBuilt, etc.) - only return the address you found.` : '';
+
   const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be EXTREMELY thorough and look for ALL fields including HOA fees and year built. HOA is often displayed as "$20/mo" or "$20 monthly" - look very carefully. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.
 
-CRITICAL: The address you extract MUST match the property being described. If the text describes multiple properties or you're unsure which property the data refers to, return null for all fields except the address. Only extract data that clearly belongs to the same property as the address.`;
+CRITICAL: The address you extract MUST match the property being described. If the text describes multiple properties or you're unsure which property the data refers to, return null for all fields except the address. Only extract data that clearly belongs to the same property as the address.${targetAddressNote}`;
 
-  const userPrompt = `Extract property listing data from the following text. The text was obtained from: ${url} (source: ${source})
+  const userPrompt = `Extract property listing data from the following text. The text was obtained from: ${url} (source: ${source})${targetAddressNote}
 
 CRITICAL - EXTRACT ONLY DATA FOR THE EXACT PROPERTY DESCRIBED:
 - The address field is the MOST IMPORTANT - extract the FULL, COMPLETE address (street number, street name, city, state, zip)
 - ONLY extract price, beds, baths, sqft, HOA, yearBuilt, etc. if they CLEARLY belong to the SAME property as the address
 - If the text shows multiple properties or you're unsure, return null for all fields except address
 - If the address doesn't match what you're extracting, return null for that field
+${targetAddress ? `- EXPECTED ADDRESS: "${targetAddress}" - ONLY extract data if the address in the text matches this address exactly or very closely` : ''}
 
 CRITICAL - LOOK VERY CAREFULLY FOR THESE FIELDS:
 
@@ -1090,9 +1181,9 @@ IMPORTANT:
 /**
  * Legacy function - kept for backward compatibility but now uses multi-site aggregation
  */
-async function extractListingWithOpenAI(url: string, rawText: string, source: string): Promise<ListingData> {
+async function extractListingWithOpenAI(url: string, rawText: string, source: string, targetAddress?: string | null): Promise<ListingData> {
   // This is now just a wrapper that calls the single-page extraction
-  return extractListingWithOpenAISinglePage(url, rawText, source);
+  return extractListingWithOpenAISinglePage(url, rawText, source, targetAddress);
 }
 
 /**
@@ -1111,7 +1202,9 @@ async function getListingDataFromUrl(url: string): Promise<{ listing: ListingDat
     ingestion = await ingestListingText(url);
     
     // Step 2: Extract with OpenAI from fetched text
-    listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source);
+    // Extract target address from URL for validation
+    const targetAddress = extractAddressFromUrl(url);
+    listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source, targetAddress);
     
     // Step 2.5: If property tax is missing but we have address and price, try to lookup
     if ((listing.propertyTax === null || listing.propertyTax === undefined) && listing.address && listing.price) {
@@ -1192,68 +1285,32 @@ export default async function handler(
       }
     }
 
-    // NEW APPROACH: Always extract address and use Google Search aggregation
-    // This ensures we get data from multiple sites and aggregate using majority confidence
+    // APPROACH: Try direct fetch first for URLs, then fallback to Google Search
+    // For addresses/MLS, go straight to Google Search aggregation
     
-    let searchAddress: string | undefined = address;
+    let searchResult: { listing: ListingData; ingestion: IngestResult };
     
-    // If URL provided, extract address from it
-    if (url && !searchAddress) {
-      const addressFromUrl = extractAddressFromUrl(url);
-      if (addressFromUrl) {
-        searchAddress = addressFromUrl;
-      }
-    }
-    
-    // If we still don't have an address, try to extract from URL using OpenAI
-    if (!searchAddress && url) {
+    if (url) {
+      // For URLs: Try direct fetch first, then Google Search fallback
       try {
-        // Use OpenAI to extract address from URL if pattern matching failed
-        const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
-        if (apiKey) {
-          const addressResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                {
-                  role: 'system',
-                  content: 'Extract the property address from this URL. Return only the address in format: "Street Address, City, State Zip"'
-                },
-                {
-                  role: 'user',
-                  content: `Extract address from: ${url}`
-                }
-              ],
-              temperature: 0.1,
-              max_tokens: 100
-            })
-          });
-          
-          if (addressResponse.ok) {
-            const data = await addressResponse.json();
-            const extractedAddress = data.choices?.[0]?.message?.content?.trim();
-            if (extractedAddress && extractedAddress.length > 10) {
-              searchAddress = extractedAddress;
-            }
-          }
-        }
+        searchResult = await getListingDataFromUrl(url);
       } catch (error) {
-        console.log('Failed to extract address from URL:', error);
+        // If direct fetch fails completely, extract address and use Google Search
+        const addressFromUrl = extractAddressFromUrl(url);
+        if (addressFromUrl) {
+          console.log(`Direct fetch failed, using Google Search for address: ${addressFromUrl}`);
+          searchResult = await getListingDataFromGoogleSearch(undefined, undefined, addressFromUrl);
+        } else {
+          throw new Error('Could not extract address from URL and direct fetch failed');
+        }
       }
+    } else if (address) {
+      // For addresses: Use Google Search aggregation directly
+      console.log(`Searching for address: ${address}`);
+      searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
+    } else {
+      return response.status(400).json({ error: 'URL or address is required' });
     }
-    
-    if (!searchAddress) {
-      return response.status(400).json({ error: 'Could not determine property address from URL or address input. Please provide a complete address.' });
-    }
-    
-    // Always use Google Search aggregation approach
-    console.log(`Searching for address: ${searchAddress}`);
-    const searchResult = await getListingDataFromGoogleSearch(undefined, undefined, searchAddress);
     const listing = searchResult.listing;
     const ingestion = searchResult.ingestion;
 
