@@ -232,7 +232,7 @@ function extractAddressFromUrl(url: string): string | null {
   try {
     // Street type abbreviations mapping
     const streetTypes: Record<string, string> = {
-      'st': 'Street', 'ave': 'Avenue', 'ave': 'Avenue', 'rd': 'Road', 'dr': 'Drive',
+      'st': 'Street', 'ave': 'Avenue', 'rd': 'Road', 'dr': 'Drive',
       'ln': 'Lane', 'ct': 'Court', 'pl': 'Place', 'blvd': 'Boulevard', 'way': 'Way',
       'cir': 'Circle', 'pkwy': 'Parkway', 'trl': 'Trail', 'hwy': 'Highway'
     };
