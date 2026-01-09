@@ -204,6 +204,102 @@ function extractAddressFromUrl(url: string): string | null {
 }
 
 /**
+ * Lookup property tax from county assessor or listing sites
+ */
+async function lookupPropertyTax(address: string, price: number): Promise<number | null> {
+  try {
+    // Extract city/county from address for Utah
+    const utahCounties = ['davis', 'salt lake', 'utah', 'weber', 'cache', 'box elder'];
+    const addressLower = address.toLowerCase();
+    const county = utahCounties.find(c => addressLower.includes(c));
+    
+    if (!county) {
+      console.log('Could not determine county from address for tax lookup');
+      return null;
+    }
+
+    // Search for property tax information
+    const searchQueries = [
+      `"${address}" property tax ${county} county assessor`,
+      `"${address}" annual property tax ${county} county`,
+      `"${address}" site:${county}county.org property tax`,
+      `"${address}" property tax zillow`
+    ];
+
+    for (const query of searchQueries) {
+      try {
+        const searchResults = await googleSearch(query);
+        if (searchResults.length > 0) {
+          // Build text from search results
+          let taxText = '';
+          for (const result of searchResults.slice(0, 3)) {
+            taxText += `${result.title}\n${result.snippet}\n${result.link}\n\n`;
+          }
+
+          // Use OpenAI to extract property tax amount
+          const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+          if (!apiKey) break;
+
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o',
+              messages: [
+                {
+                  role: 'system',
+                  content: 'Extract the annual property tax amount in dollars from the provided text. Return only a number (no commas, no $). If not found, return null.'
+                },
+                {
+                  role: 'user',
+                  content: `Find the annual property tax for: ${address}\n\nSearch results:\n${taxText}\n\nReturn the annual property tax amount as a number (e.g., 6500 for $6,500/year). If not found, return null.`
+                }
+              ],
+              response_format: { type: 'json_object' },
+              temperature: 0.1,
+              max_tokens: 100
+            })
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const content = data.choices?.[0]?.message?.content;
+            if (content) {
+              const parsed = JSON.parse(content);
+              const taxAmount = parsed.propertyTax || parsed.tax || parsed.amount;
+              if (taxAmount && typeof taxAmount === 'number' && taxAmount > 0) {
+                // Validate against Utah average (0.58% of home value)
+                const utahAvgTax = price * 0.0058;
+                const variance = Math.abs(taxAmount - utahAvgTax) / utahAvgTax;
+                
+                // If within 50% of average, use it; otherwise use average
+                if (variance <= 0.5) {
+                  console.log(`Found property tax: $${taxAmount}/year (validated against Utah average)`);
+                  return taxAmount;
+                } else {
+                  console.log(`Property tax $${taxAmount} seems unusual (${(variance * 100).toFixed(0)}% variance), using Utah average`);
+                  return null; // Will use estimate
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.log(`Property tax lookup query failed: ${query}`);
+        continue;
+      }
+    }
+  } catch (error) {
+    console.log('Property tax lookup failed:', error);
+  }
+  
+  return null; // Will fall back to estimate
+}
+
+/**
  * Check if listing data has critical missing fields
  * Only trigger fallback if 2+ critical fields are missing (to avoid unnecessary fallbacks)
  */
