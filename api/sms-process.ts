@@ -205,9 +205,19 @@ function extractAddressFromUrl(url: string): string | null {
 
 /**
  * Check if listing data has critical missing fields
+ * Only trigger fallback if 2+ critical fields are missing (to avoid unnecessary fallbacks)
  */
 function hasCriticalMissingFields(listing: ListingData): boolean {
-  return !listing.price || !listing.sqft || !listing.beds || !listing.baths;
+  // Check if any critical field is missing (price, beds, baths, or sqft)
+  // Note: We allow null values, so check for null/undefined specifically
+  const missingPrice = listing.price === null || listing.price === undefined;
+  const missingBeds = listing.beds === null || listing.beds === undefined;
+  const missingBaths = listing.baths === null || listing.baths === undefined;
+  const missingSqft = listing.sqft === null || listing.sqft === undefined;
+  
+  // If 2 or more critical fields are missing, use fallback
+  const missingCount = [missingPrice, missingBeds, missingBaths, missingSqft].filter(Boolean).length;
+  return missingCount >= 2;
 }
 
 /**
@@ -229,18 +239,26 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   let fallbackQueries: string[] = [];
   
   if (address) {
-    // Primary query with property listing terms
-    searchQuery = `"${address}" property listing for sale`;
-    // Fallback queries if primary fails
+    // Primary queries - try site-specific searches first for better results
+    searchQuery = `"${address}" site:zillow.com`;
+    // Fallback queries with different strategies
     fallbackQueries = [
-      `"${address}" real estate`,
+      `"${address}" site:redfin.com`,
+      `"${address}" site:realtor.com`,
+      `"${address}" zillow price beds baths sqft`,
+      `"${address}" property listing for sale`,
+      `"${address}" real estate listing`,
       `"${address}" zillow`,
       `"${address}" redfin`,
       address // Just the address without quotes
     ];
   } else if (mlsNumber) {
-    searchQuery = `"${mlsNumber}" MLS property listing`;
+    searchQuery = `"${mlsNumber}" MLS site:zillow.com`;
     fallbackQueries = [
+      `"${mlsNumber}" MLS site:redfin.com`,
+      `"${mlsNumber}" MLS site:realtor.com`,
+      `MLS ${mlsNumber} zillow`,
+      `MLS ${mlsNumber} property listing`,
       `MLS ${mlsNumber} real estate`,
       `MLS ${mlsNumber} property`,
       mlsNumber
@@ -249,8 +267,18 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     // Extract address from URL for better search query
     const addressFromUrl = extractAddressFromUrl(url);
     if (addressFromUrl) {
-      searchQuery = `"${addressFromUrl}" property listing`;
+      // If it's a Zillow URL, try Zillow-specific search
+      if (url.includes('zillow.com')) {
+        searchQuery = `"${addressFromUrl}" site:zillow.com`;
+      } else if (url.includes('redfin.com')) {
+        searchQuery = `"${addressFromUrl}" site:redfin.com`;
+      } else {
+        searchQuery = `"${addressFromUrl}" property listing`;
+      }
       fallbackQueries = [
+        `"${addressFromUrl}" site:zillow.com`,
+        `"${addressFromUrl}" site:redfin.com`,
+        `"${addressFromUrl}" zillow price beds baths`,
         `"${addressFromUrl}" real estate`,
         `"${addressFromUrl}" zillow`,
         addressFromUrl
@@ -295,30 +323,80 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     throw new Error(`No search results found from Google Search. Tried queries: ${[searchQuery, ...fallbackQueries].join(', ')}`);
   }
 
-  // Build raw_text from search results (top 3-5 results)
+  // Build raw_text from search results (top 5 results)
+  // Try to fetch actual page content from real estate sites for better data
   const topResults = searchResults.slice(0, 5);
   let rawText = '';
+  
+  // Try to fetch actual page content from known real estate sites
+  const realEstateDomains = ['zillow.com', 'redfin.com', 'realtor.com', 'homes.com', 'trulia.com'];
+  let fetchedContent = false;
+  
   for (const result of topResults) {
+    const isRealEstateSite = realEstateDomains.some(domain => result.link.includes(domain));
+    
+    if (isRealEstateSite && !fetchedContent) {
+      // Try to fetch the actual page for better data extraction
+      try {
+        const pageResponse = await fetch(result.link, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          },
+          redirect: 'follow',
+        });
+        
+        if (pageResponse.ok) {
+          const htmlContent = await pageResponse.text();
+          const plainText = htmlToPlainText(htmlContent);
+          const truncatedText = plainText.length > 30000 
+            ? plainText.substring(0, 30000) + '... [truncated]'
+            : plainText;
+          
+          rawText += `=== Fetched from: ${result.link} ===\n`;
+          rawText += `${truncatedText}\n\n`;
+          fetchedContent = true;
+          continue; // Skip adding snippet since we have full content
+        }
+      } catch (fetchError) {
+        // If fetch fails, fall back to snippet
+        console.log(`Failed to fetch ${result.link}, using snippet instead`);
+      }
+    }
+    
+    // Use snippet if we couldn't fetch or it's not a real estate site
     rawText += `Title: ${result.title}\n`;
     rawText += `Snippet: ${result.snippet}\n`;
     rawText += `Link: ${result.link}\n\n`;
   }
 
-  const instructions = `You are a real estate data extraction assistant. Extract property listing information from the provided search results.
+  const instructions = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided search results or page content.
 
-IMPORTANT RULES:
-1. Extract ONLY verifiable facts from the search results provided. Never guess or invent values.
-2. If a field cannot be determined from the search results, return null (NOT 0 or empty string).
-3. Include all fields you could not find in the missingFields array.
-4. Set confidence scores (0.0 to 1.0) for each field based on how certain you are.
-5. Return a valid JSON object matching the required schema.
+CRITICAL EXTRACTION RULES:
+1. Extract ALL available information from the provided content. Be thorough and look for:
+   - Price: Look for "$", "price", "list price", "asking price", "for sale"
+   - Beds: Look for "bed", "bedroom", "BR", "beds"
+   - Baths: Look for "bath", "bathroom", "BA", "baths" (can be decimal like 2.5)
+   - Sqft: Look for "sq ft", "square feet", "sqft", "SF", "square footage"
+   - Year Built: Look for "built", "year built", "constructed"
+   - Property Type: Look for "Single Family", "Condo", "Townhouse", "Multi-Family", etc.
+   - HOA: Look for "HOA", "homeowners association", "monthly fee"
+   - Property Tax: Look for "property tax", "taxes", "annual tax"
+   - Lot Size: Look for "lot", "lot size", "acre", "sq ft lot"
+   - Status: Look for "For Sale", "Sold", "Pending", "Active"
+
+2. Extract ONLY verifiable facts from the content. Never guess or invent values.
+3. If a field cannot be determined from the content, return null (NOT 0 or empty string).
+4. Include all fields you could not find in the missingFields array.
+5. Set confidence scores (0.0 to 1.0) for each field based on how certain you are.
+6. Return a valid JSON object matching the required schema.
 
 Return a JSON object with these fields:
 - address: Full street address with city, state, zip (or null)
-- price: List price as number, no commas, no $ (or null)
-- beds: Number of bedrooms (or null)
-- baths: Number of bathrooms, can be decimal like 2.5 (or null)
-- sqft: Square footage (or null)
+- price: List price as number, no commas, no $ (or null) - THIS IS CRITICAL, LOOK CAREFULLY
+- beds: Number of bedrooms (or null) - THIS IS CRITICAL, LOOK CAREFULLY
+- baths: Number of bathrooms, can be decimal like 2.5 (or null) - THIS IS CRITICAL, LOOK CAREFULLY
+- sqft: Square footage (or null) - THIS IS CRITICAL, LOOK CAREFULLY
 - yearBuilt: Year built (or null)
 - propertyType: Property type like "Single Family", "Condo", "Townhouse" (or null)
 - hoa: Monthly HOA amount, use 0 only if explicitly stated as $0 (or null)
@@ -332,7 +410,7 @@ Return a JSON object with these fields:
 
 Return ONLY valid JSON, no markdown, no code blocks.`;
 
-  const input = `Extract property listing data from these search results:
+  const input = `Extract COMPLETE property listing data from these search results and page content:
 
 ${rawText}
 
@@ -340,7 +418,13 @@ ${address ? `Target property address: ${address}` : ''}
 ${mlsNumber ? `Target MLS number: ${mlsNumber}` : ''}
 ${url ? `Original URL: ${url}` : ''}
 
-Extract property information from the search results above. Use null for any fields you cannot confidently determine from the provided search results. Include all missing fields in the missingFields array.`;
+CAREFULLY extract ALL property information from the content above. Pay special attention to finding:
+- Price (look for dollar amounts, "for sale", "list price")
+- Beds (look for "bed", "bedroom", "BR")
+- Baths (look for "bath", "bathroom", "BA")
+- Sqft (look for "sq ft", "square feet", "sqft")
+
+Use null for any fields you cannot confidently determine from the provided content. Include all missing fields in the missingFields array.`;
 
   // JSON Schema for ListingData
   const listingDataSchema = {
