@@ -73,7 +73,10 @@ If you cannot find the address in web search results, return null.`;
         text: {
           format: {
             type: 'json_schema',
-            json_schema: addressSchema
+            json_schema: {
+              name: 'address_response',
+              schema: addressSchema
+            }
           }
         },
         include: ['web_search_call.action.sources']

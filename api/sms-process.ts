@@ -246,7 +246,10 @@ Use web_search to find current listing information. Only return values you can v
         text: {
           format: {
             type: 'json_schema',
-            json_schema: listingDataSchema
+            json_schema: {
+              name: 'listing_data',
+              schema: listingDataSchema
+            }
           }
         },
         include: ['web_search_call.action.sources']
