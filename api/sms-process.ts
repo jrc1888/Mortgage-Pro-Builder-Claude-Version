@@ -868,8 +868,6 @@ async function extractListingWithOpenAI(url: string, rawText: string, source: st
 /**
  * OLD FUNCTION - Removed, replaced by multi-site aggregation approach above
  */
-   - Beds: Look for "bed", "bedroom", "BR", "beds"
-   - Baths: Look for "bath", "bathroom", "BA", "baths" (can be decimal like 2.5)
    - Sqft: Look for "sq ft", "square feet", "sqft", "SF", "square footage"
    - Year Built: Look for "built", "year built", "constructed"
    - Property Type: Look for "Single Family", "Condo", "Townhouse", "Multi-Family", etc.
