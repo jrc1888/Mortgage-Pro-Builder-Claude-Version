@@ -329,8 +329,90 @@ function hasCriticalMissingFields(listing: ListingData): boolean {
 }
 
 /**
- * Get listing data using Google Search + OpenAI extraction
- * This is used as fallback when direct fetch is blocked or critical fields are missing
+ * Aggregate multiple ListingData results using majority confidence
+ * For each field, use the value that appears in the majority of results
+ * If there's a tie or no clear majority, use the value with highest confidence
+ */
+function aggregateListingData(results: ListingData[]): ListingData {
+  if (results.length === 0) {
+    throw new Error('Cannot aggregate empty results');
+  }
+  
+  if (results.length === 1) {
+    return results[0];
+  }
+
+  // Helper to find majority value for a field
+  const getMajorityValue = <T>(field: keyof ListingData, extractor: (r: ListingData) => T | null): T | null => {
+    const values = results
+      .map(r => ({ value: extractor(r), confidence: r.confidence?.[field as string] || 0.5 }))
+      .filter(v => v.value !== null && v.value !== undefined);
+    
+    if (values.length === 0) return null;
+    
+    // Count occurrences of each value
+    const counts = new Map<string | number, { count: number; maxConfidence: number }>();
+    for (const { value, confidence } of values) {
+      const key = String(value);
+      const existing = counts.get(key) || { count: 0, maxConfidence: 0 };
+      counts.set(key, {
+        count: existing.count + 1,
+        maxConfidence: Math.max(existing.maxConfidence, confidence)
+      });
+    }
+    
+    // Find value with highest count (majority)
+    let majorityValue: string | number | null = null;
+    let maxCount = 0;
+    let maxConfidence = 0;
+    
+    for (const [value, stats] of counts.entries()) {
+      if (stats.count > maxCount || (stats.count === maxCount && stats.maxConfidence > maxConfidence)) {
+        maxCount = stats.count;
+        maxConfidence = stats.maxConfidence;
+        majorityValue = typeof value === 'string' && !isNaN(Number(value)) ? Number(value) : value;
+      }
+    }
+    
+    return majorityValue as T | null;
+  };
+
+  // Aggregate each field
+  const aggregated: ListingData = {
+    address: getMajorityValue('address', r => r.address) || results[0].address,
+    price: getMajorityValue('price', r => r.price) as number | null,
+    beds: getMajorityValue('beds', r => r.beds) as number | null,
+    baths: getMajorityValue('baths', r => r.baths) as number | null,
+    sqft: getMajorityValue('sqft', r => r.sqft) as number | null,
+    yearBuilt: getMajorityValue('yearBuilt', r => r.yearBuilt) as number | null,
+    propertyType: getMajorityValue('propertyType', r => r.propertyType) || results[0].propertyType,
+    hoa: getMajorityValue('hoa', r => r.hoa) as number | null,
+    propertyTax: getMajorityValue('propertyTax', r => r.propertyTax) as number | null,
+    lotSqft: getMajorityValue('lotSqft', r => r.lotSqft) as number | null,
+    status: getMajorityValue('status', r => r.status) || results[0].status,
+    keyFeatures: results.flatMap(r => r.keyFeatures || []).filter((v, i, a) => a.indexOf(v) === i).slice(0, 8),
+    missingFields: results.flatMap(r => r.missingFields || []).filter((v, i, a) => a.indexOf(v) === i),
+    confidence: {},
+    extractionNotes: `Aggregated from ${results.length} sources using majority confidence`
+  };
+
+  // Calculate average confidence for each field
+  for (const field of ['address', 'price', 'beds', 'baths', 'sqft', 'yearBuilt', 'hoa', 'propertyTax'] as const) {
+    const confidences = results
+      .map(r => r.confidence?.[field] || 0)
+      .filter(c => c > 0);
+    if (confidences.length > 0) {
+      aggregated.confidence![field] = confidences.reduce((a, b) => a + b, 0) / confidences.length;
+    }
+  }
+
+  return aggregated;
+}
+
+/**
+ * Get listing data using Google Search + OpenAI extraction with multi-site aggregation
+ * Always searches for the address across major real estate sites, fetches pages from multiple sites,
+ * extracts from each separately, and aggregates using majority confidence
  */
 async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, address?: string): Promise<{ listing: ListingData; ingestion: IngestResult }> {
   // Check both environment variable names for backward compatibility
@@ -441,12 +523,11 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     throw new Error(`No search results found from Google Search. Tried queries: ${[searchQuery, ...fallbackQueries].join(', ')}`);
   }
 
-  // Build raw_text from search results - fetch from MULTIPLE real estate sites
-  // Try to aggregate data from Zillow, Redfin, Utah Realtor, etc.
-  const topResults = searchResults.slice(0, 5);
-  let rawText = '';
+  // NEW APPROACH: Fetch pages from MULTIPLE real estate sites and extract from each separately
+  // Then aggregate using majority confidence
+  const topResults = searchResults.slice(0, 10); // Get more results to find multiple sites
   
-  // Known real estate sites - prioritize these
+  // Known real estate sites - prioritize these for aggregation
   const realEstateDomains = [
     'zillow.com',
     'redfin.com', 
@@ -458,60 +539,338 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     'remax.com'
   ];
   
-  // Track which sites we've fetched from
-  const fetchedSites: string[] = [];
-  const maxFetches = 3; // Fetch from up to 3 different sites for aggregation
+  // Track which sites we've fetched from and their results
+  const fetchedPages: Array<{ domain: string; url: string; content: string }> = [];
+  const maxFetches = 5; // Fetch from up to 5 different sites for better aggregation
   
+  // Step 1: Fetch pages from multiple real estate sites
   for (const result of topResults) {
+    if (fetchedPages.length >= maxFetches) break;
+    
     const matchedDomain = realEstateDomains.find(domain => result.link.includes(domain));
-    const isRealEstateSite = !!matchedDomain;
+    if (!matchedDomain) continue;
     
-    // Try to fetch actual page content from real estate sites
-    if (isRealEstateSite && fetchedSites.length < maxFetches && !fetchedSites.includes(matchedDomain!)) {
-      try {
-        const pageResponse = await fetch(result.link, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          },
-          redirect: 'follow',
-        });
+    // Skip if we already fetched from this domain
+    if (fetchedPages.some(p => p.domain === matchedDomain)) continue;
+    
+    try {
+      const pageResponse = await fetch(result.link, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000), // 8 second timeout
+      });
+      
+      if (pageResponse.ok) {
+        const htmlContent = await pageResponse.text();
+        const plainText = htmlToPlainText(htmlContent);
+        const truncatedText = plainText.length > 30000 
+          ? plainText.substring(0, 30000) + '... [truncated]'
+          : plainText;
         
-        if (pageResponse.ok) {
-          const htmlContent = await pageResponse.text();
-          const plainText = htmlToPlainText(htmlContent);
-          const truncatedText = plainText.length > 25000 
-            ? plainText.substring(0, 25000) + '... [truncated]'
-            : plainText;
-          
-          rawText += `=== Fetched from ${matchedDomain}: ${result.link} ===\n`;
-          rawText += `${truncatedText}\n\n`;
-          fetchedSites.push(matchedDomain!);
-          continue; // Skip adding snippet since we have full content
-        }
-      } catch (fetchError) {
-        // If fetch fails, fall back to snippet
-        console.log(`Failed to fetch ${result.link}, using snippet instead`);
+        fetchedPages.push({
+          domain: matchedDomain,
+          url: result.link,
+          content: truncatedText
+        });
+        console.log(`Successfully fetched page from ${matchedDomain}`);
       }
+    } catch (fetchError) {
+      console.log(`Failed to fetch ${result.link} from ${matchedDomain}:`, fetchError instanceof Error ? fetchError.message : 'Unknown error');
+      continue;
     }
-    
-    // Use snippet if we couldn't fetch or it's not a real estate site
-    rawText += `Title: ${result.title}\n`;
-    rawText += `Snippet: ${result.snippet}\n`;
-    rawText += `Link: ${result.link}\n\n`;
   }
   
-  // If we didn't fetch any full pages, at least we have snippets
-  if (fetchedSites.length === 0) {
-    console.log('Warning: Could not fetch full pages from any real estate sites, using snippets only');
-  } else {
-    console.log(`Fetched full pages from: ${fetchedSites.join(', ')}`);
+  if (fetchedPages.length === 0) {
+    // Fallback: use snippets if we couldn't fetch any pages
+    console.log('Warning: Could not fetch full pages, using snippets');
+    let rawText = '';
+    for (const result of topResults.slice(0, 5)) {
+      rawText += `Title: ${result.title}\n`;
+      rawText += `Snippet: ${result.snippet}\n`;
+      rawText += `Link: ${result.link}\n\n`;
+    }
+    const listing = await extractListingWithOpenAI(url || address || 'unknown', rawText, 'google_search_snippets');
+    return {
+      listing,
+      ingestion: {
+        raw_text: rawText,
+        source: 'google_search_fallback',
+        notes: `Used Google Search snippets (could not fetch full pages). Query: "${queryUsed}"`,
+        searchProviderUsed: 'google',
+        searchQueryUsed: queryUsed,
+        numSearchResultsUsed: topResults.length
+      }
+    };
+  }
+  
+  console.log(`Fetched pages from ${fetchedPages.length} sites: ${fetchedPages.map(p => p.domain).join(', ')}`);
+  
+  // Step 2: Extract data from EACH page separately
+  const extractionResults: ListingData[] = [];
+  for (const page of fetchedPages) {
+    try {
+      const extracted = await extractListingWithOpenAI(page.url, page.content, `google_search_${page.domain}`);
+      extractionResults.push(extracted);
+      console.log(`Extracted data from ${page.domain}: price=${extracted.price}, hoa=${extracted.hoa}, yearBuilt=${extracted.yearBuilt}`);
+    } catch (extractError) {
+      console.log(`Failed to extract from ${page.domain}:`, extractError instanceof Error ? extractError.message : 'Unknown error');
+      // Continue with other extractions
+    }
+  }
+  
+  if (extractionResults.length === 0) {
+    throw new Error('Failed to extract data from any fetched pages');
+  }
+  
+  // Step 3: Aggregate results using majority confidence
+  const aggregatedListing = aggregateListingData(extractionResults);
+  
+  // Build combined raw text for ingestion metadata
+  const combinedRawText = fetchedPages.map(p => `=== ${p.domain}: ${p.url} ===\n${p.content.substring(0, 5000)}...\n\n`).join('\n');
+
+  // Return aggregated result
+  return {
+    listing: aggregatedListing,
+    ingestion: {
+      raw_text: combinedRawText,
+      source: 'google_search_fallback',
+      notes: `Aggregated data from ${extractionResults.length} sources (${fetchedPages.map(p => p.domain).join(', ')}) using majority confidence. Query: "${queryUsed}"`,
+      searchProviderUsed: 'google',
+      searchQueryUsed: queryUsed,
+      numSearchResultsUsed: fetchedPages.length
+    }
+  };
+}
+
+/**
+ * Extract listing data from a single page using OpenAI
+ * This is used internally by getListingDataFromGoogleSearch for multi-site extraction
+ */
+async function extractListingWithOpenAISinglePage(url: string, rawText: string, source: string): Promise<ListingData> {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error('OpenAI API key not configured');
   }
 
-  const instructions = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided search results or page content.
+  const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be EXTREMELY thorough and look for ALL fields including HOA fees and year built. HOA is often displayed as "$20/mo" or "$20 monthly" - look very carefully. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.`;
 
-CRITICAL EXTRACTION RULES:
-1. Extract ALL available information from the provided content. Be thorough and look for:
+  const userPrompt = `Extract property listing data from the following text. The text was obtained from: ${url} (source: ${source})
+
+CRITICAL - LOOK VERY CAREFULLY FOR THESE FIELDS:
+
+- HOA (MOST CRITICAL - LOOK EVERYWHERE IN THE TEXT):
+  * Search the ENTIRE text for any mention of HOA, homeowners association, or monthly fees
+  * Look for "$20/mo", "$20 monthly", "$20/mo HOA", "$20 monthly HOA"
+  * Look for "HOA fee", "HOA dues", "homeowners association fee"
+  * Look for patterns like "$/mo" or "$/month" near words like "HOA", "association", "fee"
+  * On Zillow: HOA often appears as "$20/mo" in property details or facts section
+  * Extract ONLY the dollar amount (e.g., "$20/mo" = 20, "$150/month" = 150)
+  * If explicitly "$0" or "No HOA" = 0
+  * If not found anywhere = null (NOT 0)
+
+- Year Built (CRITICAL for insurance calculation):
+  * Look for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025"
+  * Look for "Built:" followed by a year (e.g., "Built: 2025")
+  * Look for 4-digit years (2020-2030) near construction/built keywords
+  * This is CRITICAL - insurance rates depend on this value
+
+- Property Tax: Look for "property tax", "annual tax", "taxes", "$X/year" or "$X annually"
+- Price: Look for "$1,099,900", "price", "list price", "asking price"
+- Beds: Look for "4 beds", "4 bed", "4 bedrooms", "4 BR"
+- Baths: Look for "3 baths", "3 bath", "3 bathrooms", "3 BA"
+- Sqft: Look for "3,695 sqft", "3695 sq ft", "square feet"
+
+Raw text content:
+${rawText}
+
+Extract and return a JSON object with this EXACT structure:
+{
+  "address": "full street address with city, state, zip",
+  "price": 425000,
+  "beds": 3,
+  "baths": 2,
+  "sqft": 1850,
+  "yearBuilt": 2015,
+  "propertyType": "Single Family",
+  "hoa": 20,
+  "propertyTax": null,
+  "lotSqft": null,
+  "status": "For Sale",
+  "keyFeatures": ["feature1", "feature2"],
+  "missingFields": ["field1", "field2"],
+  "confidence": {
+    "address": 0.95,
+    "price": 0.90,
+    "beds": 0.85
+  },
+  "extractionNotes": "Brief notes about extraction quality"
+}
+
+RULES:
+- address: Full address if found, otherwise null
+- price: List price as number (no commas, no $)
+- beds: Number of bedrooms (integer)
+- baths: Number of bathrooms (can be decimal like 2.5)
+- sqft: Square footage (integer)
+- yearBuilt: Year built (integer) - look carefully for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025", or "Built:" followed by a year. Return null if not found
+- propertyType: "Single Family", "Condo", "Townhouse", etc. or null
+- hoa: Monthly HOA amount in dollars. CRITICAL: Look very carefully for HOA fees. Common patterns:
+  * "$20/mo HOA" = 20
+  * "$20 monthly HOA" = 20  
+  * "$150/month HOA" = 150
+  * "HOA: $20/mo" = 20
+  * "$20/mo" near "HOA" or "association" = 20
+  * If explicitly "$0" or "No HOA" = 0
+  * If not found anywhere = null (NOT 0)
+- propertyTax: Annual property tax (number) or null if not found
+- lotSqft: Lot size in square feet (number) or null
+- status: "For Sale", "Sold", "Pending", etc. or null
+- keyFeatures: Array of up to 8 key features (strings) or empty array
+- missingFields: Array of field names that were not found in the text
+- confidence: Object mapping each extracted field to a confidence score (0.0 to 1.0)
+- extractionNotes: Brief explanation of what was found and any issues
+
+IMPORTANT:
+- Only extract values that are explicitly stated in the text
+- If a field is not found, set it to null (or [] for arrays)
+- Include all fields in missingFields that were not found
+- Set confidence scores based on how clearly the data appears in the text
+- Return ONLY valid JSON, no markdown, no code blocks, no explanations`;
+
+  // Retry logic for rate limits
+  let openaiResponse;
+  let lastError;
+  const maxRetries = 3;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (attempt > 0) {
+      const waitTime = Math.pow(2, attempt - 1) * 1000;
+      console.log(`Rate limited, retrying in ${waitTime}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
+    const model = attempt === 0 ? 'gpt-4o' : 'gpt-4o-mini';
+
+    openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 2000
+      })
+    });
+
+    if (openaiResponse.ok) {
+      break;
+    }
+
+    const errorText = await openaiResponse.text();
+    lastError = errorText;
+    
+    if (openaiResponse.status !== 429) {
+      // Not a rate limit error, don't retry
+      break;
+    }
+  }
+
+  if (!openaiResponse || !openaiResponse.ok) {
+    let errorMessage = 'OpenAI API error';
+    try {
+      const errorText = lastError || await openaiResponse!.text();
+      const errorData = JSON.parse(errorText);
+      errorMessage = errorData.error?.message || errorText.substring(0, 200);
+      if (openaiResponse!.status === 429) {
+        errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
+      }
+    } catch {
+      errorMessage = lastError?.substring(0, 200) || 'Unknown error';
+    }
+    throw new Error(errorMessage);
+  }
+
+  const data = await openaiResponse.json();
+  
+  // Extract content from Chat Completions response
+  let outputText: string;
+  if (data.choices && data.choices[0]?.message?.content) {
+    outputText = data.choices[0].message.content;
+  } else {
+    throw new Error('No response content found in OpenAI API response');
+  }
+
+  if (!outputText) {
+    throw new Error('No response from OpenAI API');
+  }
+
+  // Clean JSON from response (remove markdown code blocks if present)
+  let cleanText = outputText.trim();
+  cleanText = cleanText.replace(/```json\n?/gi, '');
+  cleanText = cleanText.replace(/```\n?/g, '');
+  
+  const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleanText = jsonMatch[0];
+  }
+
+  // Parse JSON
+  let listingData: ListingData;
+  try {
+    listingData = JSON.parse(cleanText);
+  } catch (parseError) {
+    console.error('JSON Parse Error:', parseError);
+    console.error('Raw response:', cleanText);
+    throw new Error('Failed to parse property data from OpenAI response');
+  }
+
+  // Validate and normalize the data
+  if (!listingData.address && !listingData.price) {
+    throw new Error('Incomplete property data: missing both address and price');
+  }
+
+  // Ensure numeric fields are numbers or null (NOT 0 for missing)
+  listingData.price = listingData.price !== null && listingData.price !== undefined ? Number(listingData.price) : null;
+  listingData.beds = listingData.beds !== null && listingData.beds !== undefined ? Number(listingData.beds) : null;
+  listingData.baths = listingData.baths !== null && listingData.baths !== undefined ? Number(listingData.baths) : null;
+  listingData.sqft = listingData.sqft !== null && listingData.sqft !== undefined ? Number(listingData.sqft) : null;
+  listingData.yearBuilt = listingData.yearBuilt !== null && listingData.yearBuilt !== undefined ? Number(listingData.yearBuilt) : null;
+  listingData.hoa = listingData.hoa !== null && listingData.hoa !== undefined ? Number(listingData.hoa) : null;
+  listingData.lotSqft = listingData.lotSqft !== null && listingData.lotSqft !== undefined ? Number(listingData.lotSqft) : null;
+  
+  // Property tax: keep as provided (annual)
+  if (listingData.propertyTax !== null && listingData.propertyTax !== undefined) {
+    listingData.propertyTax = Number(listingData.propertyTax);
+  }
+
+  return listingData;
+}
+
+/**
+ * Legacy function - kept for backward compatibility but now uses multi-site aggregation
+ */
+async function extractListingWithOpenAI(url: string, rawText: string, source: string): Promise<ListingData> {
+  // This is now just a wrapper that calls the single-page extraction
+  return extractListingWithOpenAISinglePage(url, rawText, source);
+}
+
+/**
+ * OLD FUNCTION - Now replaced by multi-site aggregation approach above
+ * Keeping for reference but should not be used
+ */
+async function getListingDataFromGoogleSearchOLD(): Promise<never> {
+  throw new Error('This function has been replaced by the multi-site aggregation approach');
    - Price: Look for "$", "price", "list price", "asking price", "for sale"
    - Beds: Look for "bed", "bedroom", "BR", "beds"
    - Baths: Look for "bath", "bathroom", "BA", "baths" (can be decimal like 2.5)
@@ -759,28 +1118,26 @@ Use null for any fields you cannot confidently determine from the provided conte
     }
   }
 
-  // Return with ingestion metadata
-  return {
-    listing: listingData,
-    ingestion: {
-      raw_text: rawText,
-      source: 'google_search_fallback',
-      notes: `Used Google Search with query "${queryUsed}" and extracted data from ${topResults.length} results`,
-      searchProviderUsed: 'google',
-      searchQueryUsed: queryUsed,
-      numSearchResultsUsed: topResults.length
-    }
-  };
+  // This code should not be reached - the function was refactored above
+  throw new Error('Old getListingDataFromGoogleSearch code reached - this should not happen');
 }
 
 /**
  * Step B: OpenAI extraction with strict JSON schema
+ * This is now a wrapper that calls extractListingWithOpenAISinglePage
  */
 async function extractListingWithOpenAI(
   url: string,
   rawText: string,
   source: string
 ): Promise<ListingData> {
+  return extractListingWithOpenAISinglePage(url, rawText, source);
+}
+
+/**
+ * OLD VERSION - Removed, kept for reference
+ */
+async function extractListingWithOpenAIOld(
   // Check both environment variable names for backward compatibility
   const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
   
@@ -1072,26 +1429,70 @@ export default async function handler(
       }
     }
 
-    // Determine if we have a real URL or just an address
-    const hasRealUrl = url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('search.property.com');
-
-    // Get listing data
-    let listing: ListingData;
-    let ingestion: IngestResult;
+    // NEW APPROACH: Always extract address and use Google Search aggregation
+    // This ensures we get data from multiple sites and aggregate using majority confidence
     
-    if (!hasRealUrl && address) {
-      // No real URL, just address - use Google Search directly
-      const searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
-      listing = searchResult.listing;
-      ingestion = searchResult.ingestion;
-    } else if (hasRealUrl) {
-      // Real URL provided - try direct fetch first, fallback to Google Search
-      const result = await getListingDataFromUrl(url);
-      listing = result.listing;
-      ingestion = result.ingestion;
-    } else {
-      return response.status(400).json({ error: 'Either a valid URL or address is required' });
+    let searchAddress: string | undefined = address;
+    
+    // If URL provided, extract address from it
+    if (url && !searchAddress) {
+      const addressFromUrl = extractAddressFromUrl(url);
+      if (addressFromUrl) {
+        searchAddress = addressFromUrl;
+      }
     }
+    
+    // If we still don't have an address, try to extract from URL using OpenAI
+    if (!searchAddress && url) {
+      try {
+        // Use OpenAI to extract address from URL if pattern matching failed
+        const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+        if (apiKey) {
+          const addressResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                {
+                  role: 'system',
+                  content: 'Extract the property address from this URL. Return only the address in format: "Street Address, City, State Zip"'
+                },
+                {
+                  role: 'user',
+                  content: `Extract address from: ${url}`
+                }
+              ],
+              temperature: 0.1,
+              max_tokens: 100
+            })
+          });
+          
+          if (addressResponse.ok) {
+            const data = await addressResponse.json();
+            const extractedAddress = data.choices?.[0]?.message?.content?.trim();
+            if (extractedAddress && extractedAddress.length > 10) {
+              searchAddress = extractedAddress;
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Failed to extract address from URL:', error);
+      }
+    }
+    
+    if (!searchAddress) {
+      return response.status(400).json({ error: 'Could not determine property address from URL or address input. Please provide a complete address.' });
+    }
+    
+    // Always use Google Search aggregation approach
+    console.log(`Searching for address: ${searchAddress}`);
+    const searchResult = await getListingDataFromGoogleSearch(undefined, undefined, searchAddress);
+    const listing = searchResult.listing;
+    const ingestion = searchResult.ingestion;
 
     // Convert to format expected by frontend (maintain backward compatibility)
     // Note: Keep null values as null (don't convert to 0) so frontend can show "Unknown"
