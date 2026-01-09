@@ -224,24 +224,75 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
 
   // Build search query from MLS, address, or URL
   // Priority: address (most specific) > mlsNumber > addressFromUrl > url
+  // Add property listing terms to improve search results
   let searchQuery: string;
+  let fallbackQueries: string[] = [];
+  
   if (address) {
-    searchQuery = `"${address}"`;
+    // Primary query with property listing terms
+    searchQuery = `"${address}" property listing for sale`;
+    // Fallback queries if primary fails
+    fallbackQueries = [
+      `"${address}" real estate`,
+      `"${address}" zillow`,
+      `"${address}" redfin`,
+      address // Just the address without quotes
+    ];
   } else if (mlsNumber) {
-    searchQuery = `"${mlsNumber}"`;
+    searchQuery = `"${mlsNumber}" MLS property listing`;
+    fallbackQueries = [
+      `MLS ${mlsNumber} real estate`,
+      `MLS ${mlsNumber} property`,
+      mlsNumber
+    ];
   } else if (url) {
     // Extract address from URL for better search query
     const addressFromUrl = extractAddressFromUrl(url);
-    searchQuery = addressFromUrl ? `"${addressFromUrl}"` : `"${url}"`;
+    if (addressFromUrl) {
+      searchQuery = `"${addressFromUrl}" property listing`;
+      fallbackQueries = [
+        `"${addressFromUrl}" real estate`,
+        `"${addressFromUrl}" zillow`,
+        addressFromUrl
+      ];
+    } else {
+      searchQuery = `property listing ${url}`;
+      fallbackQueries = [url];
+    }
   } else {
     throw new Error('No search query available: need URL, address, or MLS number');
   }
 
-  // Perform Google Search
-  const searchResults = await googleSearch(searchQuery);
+  // Perform Google Search with fallback strategies
+  let searchResults: GoogleSearchResult[] = [];
+  let queryUsed = searchQuery;
+  
+  try {
+    searchResults = await googleSearch(searchQuery);
+    queryUsed = searchQuery;
+  } catch (error) {
+    console.log(`Primary search failed, trying fallbacks...`);
+  }
+  
+  // If primary search returns no results, try fallbacks
+  if (searchResults.length === 0 && fallbackQueries.length > 0) {
+    for (const fallbackQuery of fallbackQueries) {
+      try {
+        searchResults = await googleSearch(fallbackQuery);
+        if (searchResults.length > 0) {
+          queryUsed = fallbackQuery;
+          console.log(`Fallback query succeeded: ${fallbackQuery}`);
+          break;
+        }
+      } catch (fallbackError) {
+        console.log(`Fallback query failed: ${fallbackQuery}`);
+        continue;
+      }
+    }
+  }
   
   if (searchResults.length === 0) {
-    throw new Error('No search results found from Google Search');
+    throw new Error(`No search results found from Google Search. Tried queries: ${[searchQuery, ...fallbackQueries].join(', ')}`);
   }
 
   // Build raw_text from search results (top 3-5 results)
@@ -451,9 +502,9 @@ Extract property information from the search results above. Use null for any fie
     ingestion: {
       raw_text: rawText,
       source: 'google_search_fallback',
-      notes: `Used Google Search with query "${searchQuery}" and extracted data from ${topResults.length} results`,
+      notes: `Used Google Search with query "${queryUsed}" and extracted data from ${topResults.length} results`,
       searchProviderUsed: 'google',
-      searchQueryUsed: searchQuery,
+      searchQueryUsed: queryUsed,
       numSearchResultsUsed: topResults.length
     }
   };

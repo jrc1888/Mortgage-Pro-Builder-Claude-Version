@@ -473,21 +473,65 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
           return;
         }
       } else if (address && !url && !pendingConfirmation) {
-        // First time detecting address - ask for confirmation
+        // First time detecting address - normalize it first, then ask for confirmation
         updateStep(step1Id, { 
-          status: 'success', 
-          icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-          details: `Detected: ${address}`
+          status: 'processing', 
+          icon: <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />,
+          details: 'Normalizing address...'
         });
         
-        setPendingConfirmation({ type: 'address', value: address });
-        
-        setMessages(prev => [...prev, {
-          id: crypto.randomUUID(),
-          text: `I found ${address}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
-          sender: 'system',
-          timestamp: new Date()
-        }]);
+        try {
+          const normalizedAddress = await normalizeAddressWithOpenAI(address);
+          if (normalizedAddress) {
+            updateStep(step1Id, { 
+              status: 'success', 
+              icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+              details: `Normalized: ${normalizedAddress}`
+            });
+            
+            setPendingConfirmation({ type: 'address', value: normalizedAddress });
+            
+            setMessages(prev => [...prev, {
+              id: crypto.randomUUID(),
+              text: `I found ${normalizedAddress}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
+              sender: 'system',
+              timestamp: new Date()
+            }]);
+          } else {
+            // If normalization fails, still ask for confirmation with original
+            updateStep(step1Id, { 
+              status: 'success', 
+              icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+              details: `Detected: ${address}`
+            });
+            
+            setPendingConfirmation({ type: 'address', value: address });
+            
+            setMessages(prev => [...prev, {
+              id: crypto.randomUUID(),
+              text: `I found ${address}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
+              sender: 'system',
+              timestamp: new Date()
+            }]);
+          }
+        } catch (error) {
+          console.error('Error normalizing address:', error);
+          // If normalization fails, still ask for confirmation with original
+          updateStep(step1Id, { 
+            status: 'success', 
+            icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+            details: `Detected: ${address}`
+          });
+          
+          setPendingConfirmation({ type: 'address', value: address });
+          
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            text: `I found ${address}. Is this the property you're interested in? Please reply "yes" or "confirm" to proceed.`,
+            sender: 'system',
+            timestamp: new Date()
+          }]);
+        }
         setIsProcessing(false);
         return;
       } else if (!url && !mlsNumber && !address && !pendingConfirmation) {

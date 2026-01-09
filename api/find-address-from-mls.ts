@@ -89,12 +89,34 @@ export default async function handler(
       return response.status(500).json({ error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in Vercel environment variables.' });
     }
 
-    // Step 1: Use Google Search to find MLS listing
-    const searchQuery = `"${mlsNumber}" real estate listing address`;
-    const searchResults = await googleSearch(searchQuery);
+    // Step 1: Use Google Search to find MLS listing with fallback strategies
+    const searchQueries = [
+      `"${mlsNumber}" MLS real estate listing address`,
+      `MLS ${mlsNumber} property address`,
+      `"${mlsNumber}" real estate address`,
+      `MLS ${mlsNumber} address`,
+      mlsNumber
+    ];
+    
+    let searchResults: GoogleSearchResult[] = [];
+    let queryUsed = searchQueries[0];
+    
+    for (const query of searchQueries) {
+      try {
+        searchResults = await googleSearch(query);
+        if (searchResults.length > 0) {
+          queryUsed = query;
+          console.log(`MLS search succeeded with query: ${query}`);
+          break;
+        }
+      } catch (error) {
+        console.log(`MLS search query failed: ${query}`);
+        continue;
+      }
+    }
     
     if (searchResults.length === 0) {
-      return response.status(404).json({ error: 'Address not found from MLS search results' });
+      return response.status(404).json({ error: `Address not found from MLS search results. Tried queries: ${searchQueries.join(', ')}` });
     }
 
     // Step 2: Build raw_text from search results
