@@ -641,9 +641,18 @@ async function extractListingWithOpenAI(
     throw new Error('OpenAI API key not configured');
   }
 
-  const systemPrompt = `You are a real estate data extraction assistant. Extract ONLY what is explicitly stated in the provided text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.`;
+  const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be thorough and look for ALL fields including HOA fees and year built. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.`;
 
   const userPrompt = `Extract property listing data from the following text. The text was obtained from: ${url} (source: ${source})
+
+CRITICAL: Look carefully for these fields:
+- HOA: Look for "$X/mo HOA", "$X monthly HOA", "HOA fee", "homeowners association", "$X/mo" near "HOA" - extract the dollar amount (e.g., "$20/mo" = 20)
+- Year Built: Look for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025", "Built:" followed by a year
+- Property Tax: Look for "property tax", "annual tax", "taxes", "$X/year" or "$X annually" for property tax
+- Price: Look for "$1,099,900", "price", "list price", "asking price"
+- Beds: Look for "4 beds", "4 bed", "4 bedrooms", "4 BR"
+- Baths: Look for "3 baths", "3 bath", "3 bathrooms", "3 BA"
+- Sqft: Look for "3,695 sqft", "3695 sq ft", "square feet"
 
 Raw text content:
 ${rawText}
@@ -657,7 +666,7 @@ Extract and return a JSON object with this EXACT structure:
   "sqft": 1850,
   "yearBuilt": 2015,
   "propertyType": "Single Family",
-  "hoa": 0,
+  "hoa": 20,
   "propertyTax": null,
   "lotSqft": null,
   "status": "For Sale",
@@ -677,9 +686,9 @@ RULES:
 - beds: Number of bedrooms (integer)
 - baths: Number of bathrooms (can be decimal like 2.5)
 - sqft: Square footage (integer)
-- yearBuilt: Year built (integer) or null if not found
+- yearBuilt: Year built (integer) - look carefully for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025", or "Built:" followed by a year. Return null if not found
 - propertyType: "Single Family", "Condo", "Townhouse", etc. or null
-- hoa: Monthly HOA amount (number) or 0 if not found
+- hoa: Monthly HOA amount in dollars (e.g., if text says "$20/mo HOA" or "$20 monthly HOA", return 20). Return null if not found (NOT 0 unless explicitly stated as $0)
 - propertyTax: Annual property tax (number) or null if not found
 - lotSqft: Lot size in square feet (number) or null
 - status: "For Sale", "Sold", "Pending", etc. or null
@@ -816,12 +825,30 @@ async function getListingDataFromUrl(url: string): Promise<{ listing: ListingDat
     // Step 2: Extract with OpenAI from fetched text
     listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source);
     
+    // Step 2.5: If property tax is missing but we have address and price, try to lookup
+    if ((listing.propertyTax === null || listing.propertyTax === undefined) && listing.address && listing.price) {
+      console.log('Property tax missing, attempting lookup from county/listing sites...');
+      const lookedUpTax = await lookupPropertyTax(listing.address, listing.price);
+      if (lookedUpTax !== null) {
+        listing.propertyTax = lookedUpTax;
+        console.log(`Found property tax via lookup: $${lookedUpTax}/year`);
+      }
+    }
+    
     // Step 3: Check if critical fields are missing - if so, use Google Search fallback
     if (hasCriticalMissingFields(listing)) {
       console.log('Critical fields missing, using Google Search fallback');
       const fallbackResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
       listing = fallbackResult.listing;
       ingestion = fallbackResult.ingestion;
+      
+      // Try property tax lookup for fallback result too
+      if ((listing.propertyTax === null || listing.propertyTax === undefined) && listing.address && listing.price) {
+        const lookedUpTax = await lookupPropertyTax(listing.address, listing.price);
+        if (lookedUpTax !== null) {
+          listing.propertyTax = lookedUpTax;
+        }
+      }
     }
   } catch (fetchError) {
     // Direct fetch failed (403/429/etc) - use Google Search fallback
@@ -829,6 +856,14 @@ async function getListingDataFromUrl(url: string): Promise<{ listing: ListingDat
     const fallbackResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
     listing = fallbackResult.listing;
     ingestion = fallbackResult.ingestion;
+    
+    // Try property tax lookup for fallback result too
+    if ((listing.propertyTax === null || listing.propertyTax === undefined) && listing.address && listing.price) {
+      const lookedUpTax = await lookupPropertyTax(listing.address, listing.price);
+      if (lookedUpTax !== null) {
+        listing.propertyTax = lookedUpTax;
+      }
+    }
   }
   
   return { listing, ingestion };

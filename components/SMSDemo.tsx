@@ -682,23 +682,34 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         enrichedData.price = null;
       }
 
+      // Property Tax: Use provided value, or estimate if missing
+      // Note: propertyTax from API is ANNUAL, we need to convert to monthly
       if (propertyData.propertyTax === null || propertyData.propertyTax === undefined) {
         if (enrichedData.price) {
-          enrichedData.propertyTax = enrichedData.price * 0.0058 / 12; // Utah avg monthly
+          // Utah average: 0.58% of home value annually
+          enrichedData.propertyTax = (enrichedData.price * 0.0058) / 12; // Convert annual to monthly
           estimates.push('Property Tax');
         } else {
           enrichedData.propertyTax = null;
         }
+      } else {
+        // Property tax is provided as ANNUAL from API, convert to monthly
+        enrichedData.propertyTax = propertyData.propertyTax / 12;
       }
 
-      // Estimate insurance with age adjustment (only if we have price)
+      // Insurance: Use consistent calculation based on year built and price
       if (enrichedData.price) {
-        const age = new Date().getFullYear() - (propertyData.yearBuilt || 2020);
+        const currentYear = new Date().getFullYear();
+        const yearBuilt = propertyData.yearBuilt || currentYear - 10; // Default to 10 years old if unknown
+        const age = currentYear - yearBuilt;
+        
+        // Consistent insurance rates based on age
         let insuranceRate = 0.003; // Base 0.3% annually
-        if (age > 20) insuranceRate = 0.0035; // Older homes cost more to insure
-        if (age < 5) insuranceRate = 0.0025; // Newer homes cost less
+        if (age > 20) insuranceRate = 0.0035; // Older homes (20+ years) cost more to insure
+        if (age < 5) insuranceRate = 0.0025; // Newer homes (<5 years) cost less
+        if (age < 0) insuranceRate = 0.0025; // New construction
 
-        enrichedData.insurance = enrichedData.price * insuranceRate / 12;
+        enrichedData.insurance = (enrichedData.price * insuranceRate) / 12; // Convert annual to monthly
         estimates.push('Insurance');
       } else {
         enrichedData.insurance = null;
