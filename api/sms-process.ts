@@ -866,12 +866,8 @@ async function extractListingWithOpenAI(url: string, rawText: string, source: st
 }
 
 /**
- * OLD FUNCTION - Now replaced by multi-site aggregation approach above
- * Keeping for reference but should not be used
+ * OLD FUNCTION - Removed, replaced by multi-site aggregation approach above
  */
-async function getListingDataFromGoogleSearchOLD(): Promise<never> {
-  throw new Error('This function has been replaced by the multi-site aggregation approach');
-   - Price: Look for "$", "price", "list price", "asking price", "for sale"
    - Beds: Look for "bed", "bedroom", "BR", "beds"
    - Baths: Look for "bath", "bathroom", "BA", "baths" (can be decimal like 2.5)
    - Sqft: Look for "sq ft", "square feet", "sqft", "SF", "square footage"
