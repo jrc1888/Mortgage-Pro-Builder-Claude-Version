@@ -97,6 +97,14 @@ function htmlToPlainText(html: string): string {
   let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
   text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
   
+  // Preserve line breaks from certain HTML elements that often contain structured data
+  // This helps preserve context for HOA, year built, etc.
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n');
+  text = text.replace(/<\/div>/gi, '\n');
+  text = text.replace(/<\/li>/gi, '\n');
+  text = text.replace(/<\/tr>/gi, '\n');
+  
   // Remove HTML tags but keep text content
   text = text.replace(/<[^>]+>/g, ' ');
   
@@ -107,9 +115,13 @@ function htmlToPlainText(html: string): string {
   text = text.replace(/&gt;/g, '>');
   text = text.replace(/&quot;/g, '"');
   text = text.replace(/&#39;/g, "'");
+  text = text.replace(/&#x27;/g, "'");
+  text = text.replace(/&#x2F;/g, '/');
   
-  // Clean up whitespace
-  text = text.replace(/\s+/g, ' ').trim();
+  // Clean up excessive whitespace but preserve intentional line breaks
+  text = text.replace(/[ \t]+/g, ' '); // Multiple spaces/tabs to single space
+  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n'); // Multiple newlines to double newline
+  text = text.trim();
   
   return text;
 }
