@@ -549,13 +549,29 @@ ${url ? `Original URL: ${url}` : ''}
 
 CAREFULLY extract ALL property information from the content above. You have data from multiple sources - aggregate and cross-reference to find the most accurate values.
 
-Pay special attention to finding:
+Pay special attention to finding (in order of importance):
+
+- HOA (MOST CRITICAL - SEARCH THE ENTIRE CONTENT):
+  * Search EVERY result and page for HOA information
+  * Look for "$20/mo", "$20 monthly", "$20/mo HOA", "$20 monthly HOA"
+  * Look for "HOA fee", "HOA dues", "homeowners association fee"
+  * Look for "$/mo" or "$/month" patterns near "HOA", "association", "fee"
+  * On Zillow pages: Look in property details, facts, or overview sections
+  * Extract ONLY the dollar amount (e.g., "$20/mo" = 20)
+  * If explicitly "$0" or "No HOA" = 0
+  * If not found = null (NOT 0)
+  * THIS IS CRITICAL FOR PAYMENT CALCULATION
+
+- Year Built (CRITICAL for insurance calculation):
+  * Look for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025"
+  * Look for "Built:" followed by a year
+  * Look for 4-digit years (2020-2030) near construction keywords
+  * This affects insurance rates - must be accurate
+
 - Price (look for dollar amounts, "for sale", "list price", "asking price") - make sure you get the CORRECT price for the exact address
 - Beds (look for "bed", "bedroom", "BR", "4 beds", "4 bed")
 - Baths (look for "bath", "bathroom", "BA", "3 baths", "3 bath")
 - Sqft (look for "sq ft", "square feet", "sqft", "3,695 sqft", "3695 sq ft")
-- HOA (look for "HOA", "$20/mo HOA", "monthly HOA", "HOA fee", "association fee") - THIS IS CRITICAL
-- Year Built (look for "Built in", "Built", "Year built", "constructed")
 - Property Type (look for "Single Family", "Condo", "Townhouse")
 
 IMPORTANT: If you have data from multiple sources (Zillow, Redfin, etc.), use the most common value or the value from the most authoritative source. Make sure the address matches exactly.
