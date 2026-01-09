@@ -260,9 +260,20 @@ function extractAddressFromUrl(url: string): string | null {
       
       // Street name
       const streetParts: string[] = [];
-      while (i < parts.length && !streetTypes[parts[i]?.toLowerCase()] && parts[i] !== 'N' && parts[i] !== 'S' && parts[i] !== 'E' && parts[i] !== 'W']) {
-        if (parts[i] && !directions.includes(parts[i].toUpperCase())) {
-          streetParts.push(parts[i]);
+      while (i < parts.length) {
+        const currentPart = parts[i];
+        if (!currentPart) break;
+        
+        const currentPartLower = currentPart.toLowerCase();
+        const isStreetType = streetTypes[currentPartLower];
+        const isDirection = currentPart === 'N' || currentPart === 'S' || currentPart === 'E' || currentPart === 'W';
+        
+        if (isStreetType || isDirection) {
+          break;
+        }
+        
+        if (!directions.includes(currentPart.toUpperCase())) {
+          streetParts.push(currentPart);
         }
         i++;
       }
