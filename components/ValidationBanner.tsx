@@ -66,28 +66,28 @@ export const ValidationBanner: React.FC<Props> = ({ errors, onDismiss }) => {
           return (
             <div key={idx} className={`${colors.bg} border-2 ${colors.border} rounded-xl p-2 shadow-sm`}>
               <div className="flex items-start justify-between mb-1.5">
-                <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
                   <AlertTriangle className={`w-4 h-4 ${colors.icon} shrink-0`} />
                   <h4 className={`font-bold ${colors.title} text-sm`}>
                     Warning: <span className="font-semibold">{label}</span>
-                  </h4>
-                </div>
-                {onDismiss && (
-                  <button
-                    onClick={onDismiss}
+              </h4>
+            </div>
+            {onDismiss && (
+              <button
+                onClick={onDismiss}
                     className={`${colors.close} transition-colors`}
-                  >
+              >
                     <X size={16} />
-                  </button>
-                )}
-              </div>
+              </button>
+            )}
+          </div>
               <p className={`text-xs ${colors.text} leading-relaxed`}>
                 {warning.message}
               </p>
             </div>
           );
         })}
-      </div>
+        </div>
     </div>
   );
 };

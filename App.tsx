@@ -205,6 +205,8 @@ const App: React.FC = () => {
         ...DEFAULT_SCENARIO,
         ...userDefaults,
         downPaymentAmount: userDefaults.purchasePrice * (userDefaults.downPaymentPercent / 100),
+        // Ensure DPA defaults are preserved (3.5% and 360 months) - explicitly set after userDefaults spread
+        dpa: DEFAULT_SCENARIO.dpa,
         id: crypto.randomUUID(),
         dateCreated: now,
         lastUpdated: now,

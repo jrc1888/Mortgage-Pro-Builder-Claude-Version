@@ -63,6 +63,7 @@ export const DEFAULT_SCENARIO: Scenario = {
   purchasePrice: 500000,
   earnestMoney: 0,
   sellerConcessions: 0,
+  sellerConcessionsMode: 'fixed',
   showSellerConcessions: false,
   lenderCredits: 0,
   lenderCreditsMode: 'fixed',

@@ -133,15 +133,15 @@ export class APRCalculator {
 
     // Finance charges from fees
     feeClassifications.forEach(fc => {
-      const amount = fc.fee.amount;
+        const amount = fc.fee.amount;
       
       // Process positive finance charges
       if (fc.is_finance_charge && amount > 0) {
-        if (fc.fee.paid_by === 'borrower_cash' || fc.fee.paid_by === 'lender_credit') {
-          cash += amount;
-        } else if (fc.fee.paid_by === 'financed') {
-          financed += amount;
-        }
+          if (fc.fee.paid_by === 'borrower_cash' || fc.fee.paid_by === 'lender_credit') {
+            cash += amount;
+          } else if (fc.fee.paid_by === 'financed') {
+            financed += amount;
+          }
       }
       
       // Process negative fees (credits) - these reduce finance charges

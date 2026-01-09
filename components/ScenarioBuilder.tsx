@@ -317,6 +317,7 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
         }
     }
     
+    
     // Add/Remove Origination Fee based on DPA status
     const hasOriginationFee = updatedCosts.some(c => c && c.id === 'origination-fee');
     if (scenario.dpa.active) {
@@ -747,6 +748,26 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
           ...prev,
           lenderCreditsMode: isCurrentlyFixed ? 'percent' : 'fixed',
           lenderCredits: Number(newAmount.toFixed(4))
+      }));
+  };
+
+  const toggleSellerConcessionsMode = () => {
+      const currentMode = scenario.sellerConcessionsMode || 'fixed';
+      const isCurrentlyFixed = currentMode === 'fixed';
+      let newAmount = 0;
+      
+      if (isCurrentlyFixed) {
+          if (scenario.purchasePrice > 0) {
+             newAmount = (scenario.sellerConcessions / scenario.purchasePrice) * 100;
+          }
+      } else {
+          newAmount = scenario.purchasePrice * (scenario.sellerConcessions / 100);
+      }
+      
+      setScenario(prev => ({
+          ...prev,
+          sellerConcessionsMode: isCurrentlyFixed ? 'percent' : 'fixed',
+          sellerConcessions: Number(newAmount.toFixed(4))
       }));
   };
 
@@ -1597,10 +1618,10 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     })()}
                     
                     {/* Header Grid */}
-                    <div className={`mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 ${scenario.transactionType === 'Refinance' ? 'md:grid-cols-2' : ''}`}>
+                    <div className={`mb-8 flex flex-col md:flex-row gap-4 ${scenario.transactionType === 'Refinance' ? 'md:flex-row' : ''}`}>
                         {/* Earnest Money - Only show for Purchase */}
                         {scenario.transactionType === 'Purchase' && (
-                            <div className="col-span-1 bg-emerald-50/50 p-4 rounded-lg border border-emerald-100/60 h-28 flex flex-col justify-between">
+                            <div className="w-full md:w-[25%] bg-emerald-50/50 p-4 rounded-lg border border-emerald-100/60 h-28 flex flex-col justify-between">
                                  <label className="block text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-0.5">Earnest Money</label>
                                  <div className="flex items-center w-full bg-white border border-emerald-200 rounded-lg shadow-sm h-10 overflow-hidden mt-auto">
                                     <div className="flex items-center justify-center h-full px-3 bg-emerald-50 border-r border-emerald-100 text-emerald-600 text-xs font-bold">$</div>
@@ -1609,47 +1630,8 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                             </div>
                         )}
 
-                        {/* Seller Concessions - Only show for Purchase */}
-                        {scenario.transactionType === 'Purchase' && (
-                            <div className="col-span-1 md:col-span-2 bg-indigo-50/50 p-4 rounded-lg border border-indigo-100/60 h-28 flex flex-col justify-between">
-                            <div className="flex justify-between items-start">
-                                <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest ml-0.5">Seller Concessions</label>
-                                <button onClick={() => setScenario(prev => ({ ...prev, showSellerConcessions: !prev.showSellerConcessions }))} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showSellerConcessions ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
-                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm transform transition-transform ${scenario.showSellerConcessions ? 'translate-x-3.5' : ''}`}></div>
-                                </button>
-                            </div>
-                            
-                            {scenario.showSellerConcessions ? (
-                                <div className="flex gap-4 items-end mt-auto">
-                                     <div className="flex items-center w-40 bg-white border border-indigo-200 rounded-lg shadow-sm h-10 overflow-hidden shrink-0">
-                                        <div className="flex items-center justify-center h-full px-3 bg-indigo-50 border-r border-indigo-100 text-indigo-600 text-xs font-bold">$</div>
-                                        <FormattedNumberInput value={scenario.sellerConcessions || 0} onChangeValue={(val) => handleInputChange('sellerConcessions', val)} className="h-full px-4 text-sm text-indigo-900 font-medium" />
-                                    </div>
-                                    <div className="flex-1 pb-1">
-                                        <div className="flex justify-between items-end mb-1">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-400'}`}>
-                                                {formatPercent(results.sellerConcessionsPercent, 2)} Used
-                                            </span>
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-300'}`}>
-                                                Max {formatPercent(maxConcessionsPercent, 1)} / {formatMoney(results.maxConcessionsAllowed)}
-                                            </span>
-                                        </div>
-                                        <div className="h-1.5 w-full bg-indigo-200/50 rounded-full overflow-hidden">
-                                            <div 
-                                                className={`h-full rounded-full transition-all duration-500 ${isConcessionLimitExceeded ? 'bg-red-500' : 'bg-indigo-500'}`} 
-                                                style={{ width: `${Math.min((results.sellerConcessionsPercent / maxConcessionsPercent) * 100, 100)}%` }}
-                                            ></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="h-10 mt-auto w-full bg-slate-200/20 rounded-lg border border-transparent flex items-center justify-center text-xs text-slate-400 italic font-medium">Disabled</div>
-                            )}
-                            </div>
-                        )}
-
                         {/* Lender Credit - Wider box for refinances, normal size for purchases */}
-                        <div className={`${scenario.transactionType === 'Refinance' ? 'col-span-2' : 'col-span-1'} bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between`}>
+                        <div className={`${scenario.transactionType === 'Refinance' ? 'w-full md:w-[50%]' : 'w-full md:w-[33%]'} bg-slate-100/50 p-4 rounded-lg border border-slate-200 h-28 flex flex-col justify-between`}>
                             <div className="flex justify-between items-center">
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-0.5">L.C.</label>
                                 <button onClick={() => setScenario(prev => ({ ...prev, showLenderCredits: !prev.showLenderCredits }))} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showLenderCredits ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
@@ -1659,17 +1641,90 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
 
                             <div className="h-10 mt-auto flex items-center">
                                 {scenario.showLenderCredits ? (
-                                    <CompactTypeToggleInput 
-                                        value={scenario.lenderCredits}
-                                        onChange={(val) => setScenario(prev => ({ ...prev, lenderCredits: val }))}
-                                        isFixed={scenario.lenderCreditsMode === 'fixed'}
-                                        onToggle={toggleLenderCreditMode}
-                                    />
+                                    <div className="w-full" style={{ maxWidth: '200px' }}>
+                                        <CompactTypeToggleInput 
+                                            value={scenario.lenderCredits}
+                                            onChange={(val) => setScenario(prev => ({ ...prev, lenderCredits: val }))}
+                                            isFixed={scenario.lenderCreditsMode === 'fixed'}
+                                            onToggle={toggleLenderCreditMode}
+                                        />
+                                    </div>
                                 ) : (
                                     <div className="h-full w-full bg-slate-200/20 rounded-lg border border-transparent flex items-center justify-center text-xs text-slate-400 italic font-medium">Disabled</div>
                                 )}
                             </div>
                         </div>
+
+                        {/* Seller Concessions - Only show for Purchase */}
+                        {scenario.transactionType === 'Purchase' && (
+                            <div className="w-full md:flex-1 bg-indigo-50/50 p-4 rounded-lg border border-indigo-100/60 h-28 flex flex-col justify-between">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest ml-0.5">S.C.</label>
+                                    <span className={`text-[9px] font-bold uppercase tracking-wider ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-500'}`}>
+                                        {formatPercent(results.sellerConcessionsPercent, 2)} Used
+                                    </span>
+                                </div>
+                                <button onClick={() => setScenario(prev => ({ ...prev, showSellerConcessions: !prev.showSellerConcessions }))} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showSellerConcessions ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
+                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm transform transition-transform ${scenario.showSellerConcessions ? 'translate-x-3.5' : ''}`}></div>
+                                </button>
+                            </div>
+                            
+                            {scenario.showSellerConcessions ? (
+                                <div className="mt-auto flex items-center gap-3">
+                                    <div className="flex-shrink-0" style={{ width: '200px' }}>
+                                        <CompactTypeToggleInput 
+                                            value={scenario.sellerConcessions}
+                                            onChange={(val) => handleInputChange('sellerConcessions', val)}
+                                            isFixed={(scenario.sellerConcessionsMode || 'fixed') === 'fixed'}
+                                            onToggle={toggleSellerConcessionsMode}
+                                        />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        {(() => {
+                                            const currentSCAmount = (scenario.sellerConcessionsMode || 'fixed') === 'fixed' 
+                                                ? scenario.sellerConcessions 
+                                                : (scenario.sellerConcessions / 100) * scenario.purchasePrice;
+                                            const currentSCPercent = scenario.purchasePrice > 0 
+                                                ? (currentSCAmount / scenario.purchasePrice) * 100 
+                                                : 0;
+                                            const percentOfMax = maxConcessionsPercent > 0 
+                                                ? (currentSCPercent / maxConcessionsPercent) * 100 
+                                                : 0;
+                                            const dollarOfMax = results.maxConcessionsAllowed > 0 
+                                                ? (currentSCAmount / results.maxConcessionsAllowed) * 100 
+                                                : 0;
+                                            
+                                            return (
+                                                <div className="text-[9px] space-y-0.5">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-indigo-600 font-semibold">Max:</span>
+                                                        <span className={`font-bold ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-700'}`}>
+                                                            {formatPercent(maxConcessionsPercent, 1)} / {formatMoney(results.maxConcessionsAllowed)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-indigo-600 font-semibold">Current:</span>
+                                                        <span className={`font-bold ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-700'}`}>
+                                                            {formatPercent(currentSCPercent, 2)} / {formatMoney(currentSCAmount)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-indigo-600 font-semibold">Usage:</span>
+                                                        <span className={`font-bold ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-700'}`}>
+                                                            {formatPercent(Math.max(percentOfMax, dollarOfMax), 1)} of max
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="h-10 mt-auto w-full bg-slate-200/20 rounded-lg border border-transparent flex items-center justify-center text-xs text-slate-400 italic font-medium">Disabled</div>
+                            )}
+                            </div>
+                        )}
                     </div>
 
                      {/* Warnings */}

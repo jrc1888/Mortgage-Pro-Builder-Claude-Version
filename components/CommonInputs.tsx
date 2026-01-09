@@ -160,27 +160,27 @@ export const CustomCheckbox = ({ checked, onChange, label, warning, className, d
     : label;
   
   return (
-    <div className={`flex flex-col ${className}`}>
-        <div 
+  <div className={`flex flex-col ${className}`}>
+      <div 
             onClick={() => !disabled && onChange(!checked)} 
             className={`flex items-center gap-2.5 select-none ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer group'}`}
-        >
-            <div className={`w-5 h-5 rounded flex items-center justify-center transition-all border shadow-sm ${
-                checked 
-                ? 'bg-indigo-600 border-indigo-600' 
+      >
+          <div className={`w-5 h-5 rounded flex items-center justify-center transition-all border shadow-sm ${
+              checked 
+              ? 'bg-indigo-600 border-indigo-600' 
                 : disabled
                 ? 'bg-slate-100 border-slate-200'
-                : 'bg-white border-slate-300 group-hover:border-indigo-400'
-            }`}>
-                {checked && <Check size={14} className="text-white" strokeWidth={3} />}
-            </div>
+              : 'bg-white border-slate-300 group-hover:border-indigo-400'
+          }`}>
+              {checked && <Check size={14} className="text-white" strokeWidth={3} />}
+          </div>
             {labelElement}
-        </div>
-        {warning && checked && (
-             <p className="text-[10px] text-amber-700 font-medium mt-1.5 ml-8 bg-amber-50 p-2 rounded border border-amber-100">
-                {warning}
-             </p>
-        )}
-    </div>
-  );
+      </div>
+      {warning && checked && (
+           <p className="text-[10px] text-amber-700 font-medium mt-1.5 ml-8 bg-amber-50 p-2 rounded border border-amber-100">
+              {warning}
+           </p>
+      )}
+  </div>
+);
 };

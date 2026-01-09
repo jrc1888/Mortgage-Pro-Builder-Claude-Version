@@ -202,20 +202,20 @@ export const validateScenario = (
       }
     } else {
       // For other loan types (VA, Jumbo, etc.), use generic thresholds
-      if (results.dti.frontEnd > thresholds.dtiFrontEndWarning) {
-        errors.push({
-          field: 'income',
-          message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiFrontEndWarning}%)`,
-          severity: 'warning'
-        });
-      }
+    if (results.dti.frontEnd > thresholds.dtiFrontEndWarning) {
+      errors.push({
+        field: 'income',
+        message: `Front-end DTI (${results.dti.frontEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiFrontEndWarning}%)`,
+        severity: 'warning'
+      });
+    }
 
-      if (results.dti.backEnd > thresholds.dtiBackEndMax) {
-        errors.push({
-          field: 'income',
-          message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiBackEndMax}%)`,
-          severity: 'error'
-        });
+    if (results.dti.backEnd > thresholds.dtiBackEndMax) {
+      errors.push({
+        field: 'income',
+        message: `Back-end DTI (${results.dti.backEnd.toFixed(1)}%) exceeds typical limit (${thresholds.dtiBackEndMax}%)`,
+        severity: 'error'
+      });
       }
     }
   }

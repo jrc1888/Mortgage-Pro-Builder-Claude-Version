@@ -173,7 +173,7 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
     } catch (error) {
       // Fallback to default dimensions if image loading fails
       console.warn('Failed to get logo dimensions, using default:', error);
-      doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.6, 1.0);
+    doc.addImage(logoBase64, 'PNG', marginLeft, yPos, 2.6, 1.0);
     }
   }
 
@@ -189,7 +189,7 @@ async function generatePDFWithData(data: PreApprovalData): Promise<jsPDF> {
       // Fallback to default dimensions if image loading fails
       console.warn('Failed to get headshot dimensions, using default:', error);
       const headshotX = pageWidth - marginRight - 1.1;
-      doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.1, 1.1);
+    doc.addImage(headshotBase64, 'PNG', headshotX, yPos, 1.1, 1.1);
     }
   }
 

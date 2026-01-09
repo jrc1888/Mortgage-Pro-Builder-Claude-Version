@@ -145,9 +145,21 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // Logic Update: Only calculate credits if toggled ON.
   // The raw values remain in the scenario object for persistence, but we treat them as 0 for math if hidden.
   // For refinances: Seller concessions are not applicable (no seller in a refi)
-  const sellerConcessionsInput = (scenario.transactionType === 'Refinance' || !scenario.showSellerConcessions) 
+  const sellerConcessionsVal = (scenario.transactionType === 'Refinance' || !scenario.showSellerConcessions) 
     ? 0 
     : safeNum(scenario.sellerConcessions);
+  
+  // Calculate seller concessions amount (handle both dollar and percentage modes)
+  let sellerConcessionsInput = 0;
+  if (sellerConcessionsVal > 0) {
+    if (scenario.sellerConcessionsMode === 'percent') {
+      // Percentage mode: calculate based on purchase price
+      sellerConcessionsInput = purchasePrice * (sellerConcessionsVal / 100);
+    } else {
+      // Fixed dollar mode
+      sellerConcessionsInput = sellerConcessionsVal;
+    }
+  }
 
   // REFINANCE LOGIC
   const isRefinance = scenario.transactionType === 'Refinance';
@@ -685,12 +697,14 @@ export const calculateScenario = (scenario: Scenario): CalculatedResults => {
   // This MUST match the "Closing Costs to be Paid" line in Section J display
   const closingCostsToBePaid = sectionJTotal - financedMIP;
   
-  // Net Closing Costs = Closing Costs to be Paid - Seller Concessions (capped at closingCostsToBePaid)
+  // Net Closing Costs = Closing Costs to be Paid - Seller Concessions (capped at closingCostsToBePaid) - Lender Credits
   // IMPORTANT: Only apply seller concessions up to closingCostsToBePaid
   // Unused seller concessions (excess) should NOT reduce cash to close
-  // This matches Section J: Net = Closing Costs to be Paid - Seller Concessions Applied
+  // Lender credits can be applied to all closing costs (including UFMIP/VA Funding Fee)
+  // This matches Section J: Net = Closing Costs to be Paid - Seller Concessions Applied - Lender Credits
   const sellerConcessionsApplied = Math.min(sellerConcessionsInput, closingCostsToBePaid);
-  const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied;
+  const lenderCreditsApplied = Math.min(lenderCreditsAmount, closingCostsToBePaid - sellerConcessionsApplied);
+  const netClosingCosts = Math.max(0, closingCostsToBePaid - sellerConcessionsApplied - lenderCreditsApplied);
   
   // Unused seller concessions = seller concessions that exceed "Closing Costs to be Paid"
   // IMPORTANT: Compare seller concessions to "Closing Costs to be Paid" (Section J - UFMIP/VA Funding Fee)
