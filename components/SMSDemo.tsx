@@ -150,6 +150,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([]);
+  const [processingHistory, setProcessingHistory] = useState<Array<{ query: string; steps: ProcessingStep[]; timestamp: Date }>>([]);
   const [pendingConfirmation, setPendingConfirmation] = useState<{ type: 'mls' | 'address'; value: string } | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -353,6 +354,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     const messageText = inputText.trim();
     setInputText('');
     setIsProcessing(true);
+    // Don't clear steps - keep history
     setProcessingSteps([]);
 
     try {
@@ -633,18 +635,50 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         });
       }
 
-      // Update step 3 - show different message based on source
-      const extractionDetails = hasRealUrl 
+      // Update step 3 - show detailed extraction information
+      let extractionDetails = hasRealUrl 
         ? 'Property data extracted successfully'
         : data.ingestion?.source === 'google_search_fallback'
           ? 'Property data extracted from Google Search results'
           : 'Property data extracted successfully';
       
+      // Add detailed extraction log if available
+      if (data.ingestion?.extractionDetails) {
+        const details = data.ingestion.extractionDetails;
+        const extractionLog = details.extractionLog || [];
+        const aggregationDetails = details.aggregationDetails || {};
+        
+        let detailsText = `Extracted from ${extractionLog.length} sources:\n`;
+        extractionLog.forEach((log: any, idx: number) => {
+          detailsText += `\n${idx + 1}. ${log.source}:\n`;
+          detailsText += `   Address: ${log.extracted.address || 'Unknown'}\n`;
+          detailsText += `   Price: ${log.extracted.price ? `$${log.extracted.price.toLocaleString()}` : 'Unknown'}\n`;
+          detailsText += `   Beds: ${log.extracted.beds || '?'} | Baths: ${log.extracted.baths || '?'} | Sqft: ${log.extracted.sqft ? log.extracted.sqft.toLocaleString() : 'Unknown'}\n`;
+          detailsText += `   HOA: ${log.extracted.hoa !== null ? `$${log.extracted.hoa}/mo` : 'Unknown'} | Built: ${log.extracted.yearBuilt || 'Unknown'}\n`;
+        });
+        
+        if (aggregationDetails.filteredSources > 0) {
+          detailsText += `\n⚠️ Filtered ${aggregationDetails.filteredSources} results with non-matching addresses`;
+        }
+        
+        detailsText += `\n\nAggregated Result:\n`;
+        detailsText += `Address: ${data.propertyData.address || 'Unknown'}\n`;
+        detailsText += `Price: ${data.propertyData.price ? `$${data.propertyData.price.toLocaleString()}` : 'Unknown'}\n`;
+        detailsText += `Beds: ${data.propertyData.beds || '?'} | Baths: ${data.propertyData.baths || '?'} | Sqft: ${data.propertyData.sqft ? data.propertyData.sqft.toLocaleString() : 'Unknown'}\n`;
+        detailsText += `HOA: ${data.propertyData.hoa !== null ? `$${data.propertyData.hoa}/mo` : 'Unknown'} | Built: ${data.propertyData.yearBuilt || 'Unknown'}`;
+        
+        extractionDetails = detailsText;
+      }
+      
       updateStep(step3Id, { 
         status: 'success', 
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: extractionDetails,
-        rawData: data.propertyData
+        rawData: { 
+          propertyData: data.propertyData,
+          extractionDetails: data.ingestion?.extractionDetails,
+          ingestion: data.ingestion
+        }
       });
 
       // Step 4: Parse JSON response
@@ -1131,10 +1165,12 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
                         )}
                       </div>
                       {step.details && (
-                        <p className="text-xs text-slate-600 mt-1">{step.details}</p>
+                        <div className="text-xs text-slate-600 mt-1 whitespace-pre-wrap font-mono leading-relaxed">
+                          {step.details}
+                        </div>
                       )}
                       {step.expanded && step.rawData && (
-                        <div className="mt-3 p-3 bg-slate-100 rounded border border-slate-200">
+                        <div className="mt-3 p-3 bg-slate-100 rounded border border-slate-200 max-h-96 overflow-y-auto">
                           <pre className="text-xs text-slate-700 overflow-x-auto">
                             {JSON.stringify(step.rawData, null, 2)}
                           </pre>

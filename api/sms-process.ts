@@ -333,31 +333,131 @@ function hasCriticalMissingFields(listing: ListingData): boolean {
  * For each field, use the value that appears in the majority of results
  * If there's a tie or no clear majority, use the value with highest confidence
  */
-function aggregateListingData(results: ListingData[]): ListingData {
+/**
+ * Normalize address for comparison (remove extra spaces, convert to lowercase, etc.)
+ */
+function normalizeAddressForComparison(address: string | null): string {
+  if (!address) return '';
+  return address
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.,]/g, '')
+    .trim();
+}
+
+/**
+ * Check if two addresses match (allowing for minor variations)
+ */
+function addressesMatch(addr1: string | null, addr2: string | null): boolean {
+  if (!addr1 || !addr2) return false;
+  const norm1 = normalizeAddressForComparison(addr1);
+  const norm2 = normalizeAddressForComparison(addr2);
+  
+  // Exact match
+  if (norm1 === norm2) return true;
+  
+  // Extract street number and name for comparison
+  const extractStreet = (addr: string) => {
+    const match = addr.match(/^(\d+)\s+([a-z0-9\s]+)/);
+    return match ? { number: match[1], street: match[2].trim() } : null;
+  };
+  
+  const street1 = extractStreet(norm1);
+  const street2 = extractStreet(norm2);
+  
+  if (!street1 || !street2) return false;
+  
+  // Match if street number and first 10 chars of street name match
+  return street1.number === street2.number && 
+         street1.street.substring(0, 10) === street2.street.substring(0, 10);
+}
+
+function aggregateListingData(results: ListingData[], targetAddress?: string | null): { listing: ListingData; aggregationDetails: any } {
   if (results.length === 0) {
     throw new Error('Cannot aggregate empty results');
   }
   
   if (results.length === 1) {
-    return results[0];
+    return {
+      listing: results[0],
+      aggregationDetails: {
+        totalSources: 1,
+        matchedSources: 1,
+        filteredSources: 0,
+        sources: [{
+          address: results[0].address,
+          price: results[0].price,
+          beds: results[0].beds,
+          baths: results[0].baths,
+          sqft: results[0].sqft,
+          hoa: results[0].hoa,
+          yearBuilt: results[0].yearBuilt
+        }]
+      }
+    };
+  }
+
+  // CRITICAL: Filter results to only include those with matching addresses
+  // If targetAddress is provided, use it; otherwise use the most common address
+  let addressToMatch: string | null = targetAddress || null;
+  
+  if (!addressToMatch) {
+    // Find the most common address
+    const addressCounts = new Map<string, number>();
+    for (const r of results) {
+      if (r.address) {
+        const normalized = normalizeAddressForComparison(r.address);
+        addressCounts.set(normalized, (addressCounts.get(normalized) || 0) + 1);
+      }
+    }
+    
+    let maxCount = 0;
+    for (const [addr, count] of addressCounts.entries()) {
+      if (count > maxCount) {
+        maxCount = count;
+        addressToMatch = addr;
+      }
+    }
+    
+    // Find the original address that matches this normalized one
+    for (const r of results) {
+      if (r.address && normalizeAddressForComparison(r.address) === addressToMatch) {
+        addressToMatch = r.address;
+        break;
+      }
+    }
+  }
+  
+  // Filter to only results with matching addresses
+  const matchedResults = results.filter(r => {
+    if (!r.address || !addressToMatch) return false;
+    return addressesMatch(r.address, addressToMatch);
+  });
+  
+  // If no matches, use all results but log warning
+  const resultsToUse = matchedResults.length > 0 ? matchedResults : results;
+  
+  if (matchedResults.length < results.length) {
+    console.warn(`Address mismatch: Filtered ${results.length - matchedResults.length} results with non-matching addresses. Target: ${addressToMatch}`);
   }
 
   // Helper to find majority value for a field
   const getMajorityValue = <T>(field: keyof ListingData, extractor: (r: ListingData) => T | null): T | null => {
-    const values = results
+    const values = resultsToUse
       .map(r => ({ value: extractor(r), confidence: r.confidence?.[field as string] || 0.5 }))
       .filter(v => v.value !== null && v.value !== undefined);
     
     if (values.length === 0) return null;
     
     // Count occurrences of each value
-    const counts = new Map<string | number, { count: number; maxConfidence: number }>();
+    const counts = new Map<string | number, { count: number; maxConfidence: number; sources: string[] }>();
     for (const { value, confidence } of values) {
       const key = String(value);
-      const existing = counts.get(key) || { count: 0, maxConfidence: 0 };
+      const existing = counts.get(key) || { count: 0, maxConfidence: 0, sources: [] };
       counts.set(key, {
         count: existing.count + 1,
-        maxConfidence: Math.max(existing.maxConfidence, confidence)
+        maxConfidence: Math.max(existing.maxConfidence, confidence),
+        sources: existing.sources
       });
     }
     
@@ -377,28 +477,82 @@ function aggregateListingData(results: ListingData[]): ListingData {
     return majorityValue as T | null;
   };
 
+  // Build aggregation details for logging
+  const aggregationDetails = {
+    totalSources: results.length,
+    matchedSources: matchedResults.length,
+    filteredSources: results.length - matchedResults.length,
+    targetAddress: addressToMatch,
+    sources: resultsToUse.map(r => ({
+      address: r.address,
+      price: r.price,
+      beds: r.beds,
+      baths: r.baths,
+      sqft: r.sqft,
+      hoa: r.hoa,
+      yearBuilt: r.yearBuilt,
+      confidence: r.confidence
+    })),
+    fieldVotes: {
+      price: {} as Record<string, number>,
+      beds: {} as Record<string, number>,
+      baths: {} as Record<string, number>,
+      sqft: {} as Record<string, number>,
+      hoa: {} as Record<string, number>,
+      yearBuilt: {} as Record<string, number>
+    }
+  };
+
+  // Track votes for each field
+  for (const r of resultsToUse) {
+    if (r.price !== null) {
+      const key = String(r.price);
+      aggregationDetails.fieldVotes.price[key] = (aggregationDetails.fieldVotes.price[key] || 0) + 1;
+    }
+    if (r.beds !== null) {
+      const key = String(r.beds);
+      aggregationDetails.fieldVotes.beds[key] = (aggregationDetails.fieldVotes.beds[key] || 0) + 1;
+    }
+    if (r.baths !== null) {
+      const key = String(r.baths);
+      aggregationDetails.fieldVotes.baths[key] = (aggregationDetails.fieldVotes.baths[key] || 0) + 1;
+    }
+    if (r.sqft !== null) {
+      const key = String(r.sqft);
+      aggregationDetails.fieldVotes.sqft[key] = (aggregationDetails.fieldVotes.sqft[key] || 0) + 1;
+    }
+    if (r.hoa !== null) {
+      const key = String(r.hoa);
+      aggregationDetails.fieldVotes.hoa[key] = (aggregationDetails.fieldVotes.hoa[key] || 0) + 1;
+    }
+    if (r.yearBuilt !== null) {
+      const key = String(r.yearBuilt);
+      aggregationDetails.fieldVotes.yearBuilt[key] = (aggregationDetails.fieldVotes.yearBuilt[key] || 0) + 1;
+    }
+  }
+
   // Aggregate each field
   const aggregated: ListingData = {
-    address: getMajorityValue('address', r => r.address) || results[0].address,
+    address: addressToMatch || getMajorityValue('address', r => r.address) || resultsToUse[0].address,
     price: getMajorityValue('price', r => r.price) as number | null,
     beds: getMajorityValue('beds', r => r.beds) as number | null,
     baths: getMajorityValue('baths', r => r.baths) as number | null,
     sqft: getMajorityValue('sqft', r => r.sqft) as number | null,
     yearBuilt: getMajorityValue('yearBuilt', r => r.yearBuilt) as number | null,
-    propertyType: getMajorityValue('propertyType', r => r.propertyType) || results[0].propertyType,
+    propertyType: getMajorityValue('propertyType', r => r.propertyType) || resultsToUse[0].propertyType,
     hoa: getMajorityValue('hoa', r => r.hoa) as number | null,
     propertyTax: getMajorityValue('propertyTax', r => r.propertyTax) as number | null,
     lotSqft: getMajorityValue('lotSqft', r => r.lotSqft) as number | null,
-    status: getMajorityValue('status', r => r.status) || results[0].status,
-    keyFeatures: results.flatMap(r => r.keyFeatures || []).filter((v, i, a) => a.indexOf(v) === i).slice(0, 8),
-    missingFields: results.flatMap(r => r.missingFields || []).filter((v, i, a) => a.indexOf(v) === i),
+    status: getMajorityValue('status', r => r.status) || resultsToUse[0].status,
+    keyFeatures: resultsToUse.flatMap(r => r.keyFeatures || []).filter((v, i, a) => a.indexOf(v) === i).slice(0, 8),
+    missingFields: resultsToUse.flatMap(r => r.missingFields || []).filter((v, i, a) => a.indexOf(v) === i),
     confidence: {},
-    extractionNotes: `Aggregated from ${results.length} sources using majority confidence`
+    extractionNotes: `Aggregated from ${resultsToUse.length} sources (${matchedResults.length} matched address) using majority confidence`
   };
 
   // Calculate average confidence for each field
   for (const field of ['address', 'price', 'beds', 'baths', 'sqft', 'yearBuilt', 'hoa', 'propertyTax'] as const) {
-    const confidences = results
+    const confidences = resultsToUse
       .map(r => r.confidence?.[field] || 0)
       .filter(c => c > 0);
     if (confidences.length > 0) {
@@ -406,7 +560,7 @@ function aggregateListingData(results: ListingData[]): ListingData {
     }
   }
 
-  return aggregated;
+  return { listing: aggregated, aggregationDetails };
 }
 
 /**
@@ -608,13 +762,17 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   
   console.log(`Fetched pages from ${fetchedPages.length} sites: ${fetchedPages.map(p => p.domain).join(', ')}`);
   
-  // Step 2: Extract data from EACH page separately
-  const extractionResults: ListingData[] = [];
+  // Step 2: Extract data from EACH page separately with detailed logging
+  const extractionResults: Array<{ listing: ListingData; source: string; url: string }> = [];
   for (const page of fetchedPages) {
     try {
       const extracted = await extractListingWithOpenAI(page.url, page.content, `google_search_${page.domain}`);
-      extractionResults.push(extracted);
-      console.log(`Extracted data from ${page.domain}: price=${extracted.price}, hoa=${extracted.hoa}, yearBuilt=${extracted.yearBuilt}`);
+      extractionResults.push({
+        listing: extracted,
+        source: page.domain,
+        url: page.url
+      });
+      console.log(`Extracted from ${page.domain}: address="${extracted.address}", price=${extracted.price}, beds=${extracted.beds}, baths=${extracted.baths}, sqft=${extracted.sqft}, hoa=${extracted.hoa}, yearBuilt=${extracted.yearBuilt}`);
     } catch (extractError) {
       console.log(`Failed to extract from ${page.domain}:`, extractError instanceof Error ? extractError.message : 'Unknown error');
       // Continue with other extractions
@@ -625,22 +783,46 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     throw new Error('Failed to extract data from any fetched pages');
   }
   
-  // Step 3: Aggregate results using majority confidence
-  const aggregatedListing = aggregateListingData(extractionResults);
+  // Step 3: Aggregate results using majority confidence with address validation
+  const targetAddress = address || (url ? extractAddressFromUrl(url) : null);
+  const { listing: aggregatedListing, aggregationDetails } = aggregateListingData(
+    extractionResults.map(r => r.listing),
+    targetAddress
+  );
+  
+  // Build detailed extraction log
+  const extractionLog = extractionResults.map(r => ({
+    source: r.source,
+    url: r.url,
+    extracted: {
+      address: r.listing.address,
+      price: r.listing.price,
+      beds: r.listing.beds,
+      baths: r.listing.baths,
+      sqft: r.listing.sqft,
+      hoa: r.listing.hoa,
+      yearBuilt: r.listing.yearBuilt,
+      confidence: r.listing.confidence
+    }
+  }));
   
   // Build combined raw text for ingestion metadata
   const combinedRawText = fetchedPages.map(p => `=== ${p.domain}: ${p.url} ===\n${p.content.substring(0, 5000)}...\n\n`).join('\n');
 
-  // Return aggregated result
+  // Return aggregated result with detailed logging
   return {
     listing: aggregatedListing,
     ingestion: {
       raw_text: combinedRawText,
       source: 'google_search_fallback',
-      notes: `Aggregated data from ${extractionResults.length} sources (${fetchedPages.map(p => p.domain).join(', ')}) using majority confidence. Query: "${queryUsed}"`,
+      notes: `Aggregated data from ${extractionResults.length} sources (${fetchedPages.map(p => p.domain).join(', ')}) using majority confidence. Query: "${queryUsed}". ${aggregationDetails.filteredSources > 0 ? `Filtered ${aggregationDetails.filteredSources} results with non-matching addresses.` : ''}`,
       searchProviderUsed: 'google',
       searchQueryUsed: queryUsed,
-      numSearchResultsUsed: fetchedPages.length
+      numSearchResultsUsed: fetchedPages.length,
+      extractionDetails: {
+        extractionLog,
+        aggregationDetails
+      }
     }
   };
 }
@@ -656,9 +838,17 @@ async function extractListingWithOpenAISinglePage(url: string, rawText: string, 
     throw new Error('OpenAI API key not configured');
   }
 
-  const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be EXTREMELY thorough and look for ALL fields including HOA fees and year built. HOA is often displayed as "$20/mo" or "$20 monthly" - look very carefully. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.`;
+  const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be EXTREMELY thorough and look for ALL fields including HOA fees and year built. HOA is often displayed as "$20/mo" or "$20 monthly" - look very carefully. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.
+
+CRITICAL: The address you extract MUST match the property being described. If the text describes multiple properties or you're unsure which property the data refers to, return null for all fields except the address. Only extract data that clearly belongs to the same property as the address.`;
 
   const userPrompt = `Extract property listing data from the following text. The text was obtained from: ${url} (source: ${source})
+
+CRITICAL - EXTRACT ONLY DATA FOR THE EXACT PROPERTY DESCRIBED:
+- The address field is the MOST IMPORTANT - extract the FULL, COMPLETE address (street number, street name, city, state, zip)
+- ONLY extract price, beds, baths, sqft, HOA, yearBuilt, etc. if they CLEARLY belong to the SAME property as the address
+- If the text shows multiple properties or you're unsure, return null for all fields except address
+- If the address doesn't match what you're extracting, return null for that field
 
 CRITICAL - LOOK VERY CAREFULLY FOR THESE FIELDS:
 
@@ -1061,7 +1251,11 @@ export default async function handler(
       propertyData,
       ingestion: {
         source: ingestion.source,
-        notes: ingestion.notes
+        notes: ingestion.notes,
+        searchProviderUsed: ingestion.searchProviderUsed,
+        searchQueryUsed: ingestion.searchQueryUsed,
+        numSearchResultsUsed: ingestion.numSearchResultsUsed,
+        extractionDetails: ingestion.extractionDetails
       }
     });
 
