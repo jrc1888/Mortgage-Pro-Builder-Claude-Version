@@ -239,13 +239,16 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   let fallbackQueries: string[] = [];
   
   if (address) {
-    // Primary queries - try site-specific searches first for better results
-    searchQuery = `"${address}" site:zillow.com`;
+    // Primary queries - try site-specific searches for major real estate sites
+    // Search multiple sites to aggregate data
+    searchQuery = `"${address}" site:zillow.com OR site:redfin.com OR site:utahrealestate.com`;
     // Fallback queries with different strategies
     fallbackQueries = [
+      `"${address}" site:zillow.com`,
       `"${address}" site:redfin.com`,
+      `"${address}" site:utahrealestate.com`,
       `"${address}" site:realtor.com`,
-      `"${address}" zillow price beds baths sqft`,
+      `"${address}" zillow price beds baths sqft HOA`,
       `"${address}" property listing for sale`,
       `"${address}" real estate listing`,
       `"${address}" zillow`,
@@ -253,9 +256,11 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
       address // Just the address without quotes
     ];
   } else if (mlsNumber) {
-    searchQuery = `"${mlsNumber}" MLS site:zillow.com`;
+    searchQuery = `"${mlsNumber}" MLS site:zillow.com OR site:redfin.com OR site:utahrealestate.com`;
     fallbackQueries = [
+      `"${mlsNumber}" MLS site:zillow.com`,
       `"${mlsNumber}" MLS site:redfin.com`,
+      `"${mlsNumber}" MLS site:utahrealestate.com`,
       `"${mlsNumber}" MLS site:realtor.com`,
       `MLS ${mlsNumber} zillow`,
       `MLS ${mlsNumber} property listing`,
@@ -323,20 +328,33 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     throw new Error(`No search results found from Google Search. Tried queries: ${[searchQuery, ...fallbackQueries].join(', ')}`);
   }
 
-  // Build raw_text from search results (top 5 results)
-  // Try to fetch actual page content from real estate sites for better data
+  // Build raw_text from search results - fetch from MULTIPLE real estate sites
+  // Try to aggregate data from Zillow, Redfin, Utah Realtor, etc.
   const topResults = searchResults.slice(0, 5);
   let rawText = '';
   
-  // Try to fetch actual page content from known real estate sites
-  const realEstateDomains = ['zillow.com', 'redfin.com', 'realtor.com', 'homes.com', 'trulia.com'];
-  let fetchedContent = false;
+  // Known real estate sites - prioritize these
+  const realEstateDomains = [
+    'zillow.com',
+    'redfin.com', 
+    'realtor.com',
+    'utahrealestate.com',
+    'homes.com',
+    'trulia.com',
+    'century21.com',
+    'remax.com'
+  ];
+  
+  // Track which sites we've fetched from
+  const fetchedSites: string[] = [];
+  const maxFetches = 3; // Fetch from up to 3 different sites for aggregation
   
   for (const result of topResults) {
-    const isRealEstateSite = realEstateDomains.some(domain => result.link.includes(domain));
+    const matchedDomain = realEstateDomains.find(domain => result.link.includes(domain));
+    const isRealEstateSite = !!matchedDomain;
     
-    if (isRealEstateSite && !fetchedContent) {
-      // Try to fetch the actual page for better data extraction
+    // Try to fetch actual page content from real estate sites
+    if (isRealEstateSite && fetchedSites.length < maxFetches && !fetchedSites.includes(matchedDomain!)) {
       try {
         const pageResponse = await fetch(result.link, {
           headers: {
@@ -349,13 +367,13 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
         if (pageResponse.ok) {
           const htmlContent = await pageResponse.text();
           const plainText = htmlToPlainText(htmlContent);
-          const truncatedText = plainText.length > 30000 
-            ? plainText.substring(0, 30000) + '... [truncated]'
+          const truncatedText = plainText.length > 25000 
+            ? plainText.substring(0, 25000) + '... [truncated]'
             : plainText;
           
-          rawText += `=== Fetched from: ${result.link} ===\n`;
+          rawText += `=== Fetched from ${matchedDomain}: ${result.link} ===\n`;
           rawText += `${truncatedText}\n\n`;
-          fetchedContent = true;
+          fetchedSites.push(matchedDomain!);
           continue; // Skip adding snippet since we have full content
         }
       } catch (fetchError) {
@@ -369,6 +387,13 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     rawText += `Snippet: ${result.snippet}\n`;
     rawText += `Link: ${result.link}\n\n`;
   }
+  
+  // If we didn't fetch any full pages, at least we have snippets
+  if (fetchedSites.length === 0) {
+    console.log('Warning: Could not fetch full pages from any real estate sites, using snippets only');
+  } else {
+    console.log(`Fetched full pages from: ${fetchedSites.join(', ')}`);
+  }
 
   const instructions = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided search results or page content.
 
@@ -380,7 +405,7 @@ CRITICAL EXTRACTION RULES:
    - Sqft: Look for "sq ft", "square feet", "sqft", "SF", "square footage"
    - Year Built: Look for "built", "year built", "constructed"
    - Property Type: Look for "Single Family", "Condo", "Townhouse", "Multi-Family", etc.
-   - HOA: Look for "HOA", "homeowners association", "monthly fee"
+   - HOA: Look for "HOA", "homeowners association", "monthly fee", "$/mo HOA", "HOA fee", "monthly HOA", "association fee" - THIS IS CRITICAL FOR PAYMENT CALCULATION
    - Property Tax: Look for "property tax", "taxes", "annual tax"
    - Lot Size: Look for "lot", "lot size", "acre", "sq ft lot"
    - Status: Look for "For Sale", "Sold", "Pending", "Active"
@@ -399,7 +424,7 @@ Return a JSON object with these fields:
 - sqft: Square footage (or null) - THIS IS CRITICAL, LOOK CAREFULLY
 - yearBuilt: Year built (or null)
 - propertyType: Property type like "Single Family", "Condo", "Townhouse" (or null)
-- hoa: Monthly HOA amount, use 0 only if explicitly stated as $0 (or null)
+- hoa: Monthly HOA amount in dollars (e.g., if it says "$20/mo" or "$20 monthly", return 20). Use 0 only if explicitly stated as $0. Return null if not found. THIS IS CRITICAL - look carefully for HOA fees.
 - propertyTax: Annual property tax (or null)
 - lotSqft: Lot size in square feet (or null)
 - status: Status like "For Sale", "Sold", "Pending" (or null)
@@ -418,11 +443,18 @@ ${address ? `Target property address: ${address}` : ''}
 ${mlsNumber ? `Target MLS number: ${mlsNumber}` : ''}
 ${url ? `Original URL: ${url}` : ''}
 
-CAREFULLY extract ALL property information from the content above. Pay special attention to finding:
-- Price (look for dollar amounts, "for sale", "list price")
-- Beds (look for "bed", "bedroom", "BR")
-- Baths (look for "bath", "bathroom", "BA")
-- Sqft (look for "sq ft", "square feet", "sqft")
+CAREFULLY extract ALL property information from the content above. You have data from multiple sources - aggregate and cross-reference to find the most accurate values.
+
+Pay special attention to finding:
+- Price (look for dollar amounts, "for sale", "list price", "asking price") - make sure you get the CORRECT price for the exact address
+- Beds (look for "bed", "bedroom", "BR", "4 beds", "4 bed")
+- Baths (look for "bath", "bathroom", "BA", "3 baths", "3 bath")
+- Sqft (look for "sq ft", "square feet", "sqft", "3,695 sqft", "3695 sq ft")
+- HOA (look for "HOA", "$20/mo HOA", "monthly HOA", "HOA fee", "association fee") - THIS IS CRITICAL
+- Year Built (look for "Built in", "Built", "Year built", "constructed")
+- Property Type (look for "Single Family", "Condo", "Townhouse")
+
+IMPORTANT: If you have data from multiple sources (Zillow, Redfin, etc.), use the most common value or the value from the most authoritative source. Make sure the address matches exactly.
 
 Use null for any fields you cannot confidently determine from the provided content. Include all missing fields in the missingFields array.`;
 
