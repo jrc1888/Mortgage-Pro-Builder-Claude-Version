@@ -172,16 +172,41 @@ async function getListingDataFromUrlOpenAI(url: string, mlsNumber?: string, addr
       : `property listing ${url}`;
   }
 
-  const instructions = `You are a real estate data extraction assistant. Use web_search results to find property listing information. Extract ONLY verifiable facts from web search results. Never guess or invent values. If a field cannot be verified in the search results, return null and include it in missingFields.`;
+  const instructions = `You are a real estate data extraction assistant. Extract property listing information from the provided context.
 
-  const input = `Find and extract property listing data using web search.
+IMPORTANT RULES:
+1. Extract ONLY verifiable facts. Never guess or invent values.
+2. If a field cannot be determined, return null (NOT 0 or empty string).
+3. Include all fields you could not find in the missingFields array.
+4. Set confidence scores (0.0 to 1.0) for each field based on how certain you are.
+5. Return a valid JSON object matching the required schema.
 
-Search query: ${searchQuery}
+Return a JSON object with these fields:
+- address: Full street address with city, state, zip (or null)
+- price: List price as number, no commas, no $ (or null)
+- beds: Number of bedrooms (or null)
+- baths: Number of bathrooms, can be decimal like 2.5 (or null)
+- sqft: Square footage (or null)
+- yearBuilt: Year built (or null)
+- propertyType: Property type like "Single Family", "Condo", "Townhouse" (or null)
+- hoa: Monthly HOA amount, use 0 only if explicitly stated as $0 (or null)
+- propertyTax: Annual property tax (or null)
+- lotSqft: Lot size in square feet (or null)
+- status: Status like "For Sale", "Sold", "Pending" (or null)
+- keyFeatures: Array of up to 8 key features (empty array if none)
+- missingFields: Array of field names that were not found
+- confidence: Object mapping each field to a confidence score (0.0 to 1.0)
+- extractionNotes: Brief explanation of what was found and any issues
+
+Return ONLY valid JSON, no markdown, no code blocks.`;
+
+  const input = `Extract property listing data for:
+${searchQuery}
 ${address ? `Property address: ${address}` : ''}
 ${mlsNumber ? `MLS number: ${mlsNumber}` : ''}
 ${url ? `Original URL: ${url}` : ''}
 
-Use web_search to find current listing information. Only return values you can verify in the search results. Otherwise return null. Never guess.`;
+Based on the search query and any available information, extract what you can determine about this property. Use null for any fields you cannot confidently determine. Include all missing fields in the missingFields array.`;
 
   // JSON Schema for ListingData
   const listingDataSchema = {
@@ -231,28 +256,24 @@ Use web_search to find current listing information. Only return values you can v
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
 
-    // Use OpenAI Responses API with web_search tool
-    openaiResponse = await fetch('https://api.openai.com/v1/responses', {
+    // Use OpenAI Chat Completions API with structured JSON output
+    // Note: For web search, we'll need to use a third-party service or rely on the model's knowledge
+    // For now, we use Chat Completions which is reliable and well-documented
+    openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-5',
-        instructions: instructions,
-        input: input,
-        tools: [{ type: 'web_search' }],
-        text: {
-          format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'listing_data',
-              schema: listingDataSchema
-            }
-          }
-        },
-        include: ['web_search_call.action.sources']
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: instructions },
+          { role: 'user', content: input }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 2048
       })
     });
 
@@ -284,52 +305,36 @@ Use web_search to find current listing information. Only return values you can v
 
   const data = await openaiResponse.json();
   
-  // Extract output_text from Responses API
-  // The response structure may vary, but output_text should contain the final JSON
+  // Extract content from Chat Completions response
   let outputText: string;
-  if (data.output_text) {
-    outputText = data.output_text;
-  } else if (data.output?.text) {
-    outputText = data.output.text;
-  } else if (data.text) {
-    outputText = data.text;
+  if (data.choices && data.choices[0]?.message?.content) {
+    outputText = data.choices[0].message.content;
   } else {
-    // Fallback: look for text in the response structure
-    const responseText = JSON.stringify(data);
-    const jsonMatch = responseText.match(/"output_text"\s*:\s*"([^"]+)"/);
-    if (jsonMatch) {
-      outputText = JSON.parse(`"${jsonMatch[1]}"`);
-    } else {
-      throw new Error('No output_text found in OpenAI Responses API response');
-    }
+    throw new Error('No response content found in OpenAI API response');
   }
 
   if (!outputText) {
     throw new Error('No response from OpenAI API');
   }
 
-  // Parse JSON from output_text
+  // Clean JSON from response (remove markdown code blocks if present)
+  let cleanText = outputText.trim();
+  cleanText = cleanText.replace(/```json\n?/gi, '');
+  cleanText = cleanText.replace(/```\n?/g, '');
+  
+  const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleanText = jsonMatch[0];
+  }
+
+  // Parse JSON
   let listingData: ListingData;
   try {
-    listingData = JSON.parse(outputText);
+    listingData = JSON.parse(cleanText);
   } catch (parseError) {
     console.error('JSON Parse Error:', parseError);
-    console.error('Raw output_text:', outputText);
+    console.error('Raw response:', cleanText);
     throw new Error('Failed to parse property data from OpenAI response');
-  }
-
-  // Extract sources for debugging (if available)
-  let sources: any[] = [];
-  if (data.web_search_call?.action?.sources) {
-    sources = data.web_search_call.action.sources;
-  } else if (data.include?.web_search_call?.action?.sources) {
-    sources = data.include.web_search_call.action.sources;
-  }
-
-  // Store sources in extractionNotes if available
-  if (sources.length > 0 && listingData.extractionNotes) {
-    const sourceUrls = sources.slice(0, 3).map((s: any) => s.url || s).join(', ');
-    listingData.extractionNotes += ` | Sources: ${sourceUrls}`;
   }
 
   // Validate and normalize the data

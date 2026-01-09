@@ -30,17 +30,22 @@ export default async function handler(
       return response.status(500).json({ error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in Vercel environment variables.' });
     }
 
-    // Use OpenAI Responses API with web_search to find the property address from MLS number
-    const instructions = `You are a real estate assistant. Your job is to find the property address associated with an MLS number. Use web_search to find the MLS listing and return the complete property address.`;
+    // Use OpenAI Chat Completions to find the property address from MLS number
+    const instructions = `You are a real estate assistant. Your job is to find the property address associated with an MLS number.
+
+Return a JSON object with:
+- address: Complete property address in format "[Street Number] [Street Name], [City], [State] [Zip Code]" (or null if not found)
+- sources: Array of source URLs used (optional, can be empty array)
+
+Example address format: "626 W Cottle Ln, Farmington, UT 84025"
+
+If you cannot find the address, return null for the address field.`;
 
     const input = `Find the property address for MLS number: ${mlsNumber}
 
-Use web_search to find this MLS listing. Return the complete property address in the format:
-[Street Number] [Street Name], [City], [State] [Zip Code]
+Return the complete property address in the format: [Street Number] [Street Name], [City], [State] [Zip Code]
 
-Example: "626 W Cottle Ln, Farmington, UT 84025"
-
-If you cannot find the address in web search results, return null.`;
+If you cannot find the address, return null for the address field.`;
 
     // JSON Schema for address response
     const addressSchema = {
@@ -59,27 +64,22 @@ If you cannot find the address in web search results, return null.`;
       required: ['address']
     };
 
-    const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
+    // Use OpenAI Chat Completions API with structured JSON output
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-5',
-        instructions: instructions,
-        input: input,
-        tools: [{ type: 'web_search' }],
-        text: {
-          format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'address_response',
-              schema: addressSchema
-            }
-          }
-        },
-        include: ['web_search_call.action.sources']
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: instructions },
+          { role: 'user', content: input }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 200
       })
     });
 
@@ -97,16 +97,22 @@ If you cannot find the address in web search results, return null.`;
 
     const data = await openaiResponse.json();
     
-    // Extract output_text from Responses API
+    // Extract content from Chat Completions response
     let outputText: string;
-    if (data.output_text) {
-      outputText = data.output_text;
-    } else if (data.output?.text) {
-      outputText = data.output.text;
-    } else if (data.text) {
-      outputText = data.text;
+    if (data.choices && data.choices[0]?.message?.content) {
+      outputText = data.choices[0].message.content;
     } else {
-      throw new Error('No output_text found in OpenAI Responses API response');
+      return response.status(500).json({ error: 'No response content found in OpenAI API response' });
+    }
+    
+    // Clean JSON from response (remove markdown code blocks if present)
+    let cleanText = outputText.trim();
+    cleanText = cleanText.replace(/```json\n?/gi, '');
+    cleanText = cleanText.replace(/```\n?/g, '');
+    
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleanText = jsonMatch[0];
     }
 
     let result: { address: string | null; sources?: string[] };
