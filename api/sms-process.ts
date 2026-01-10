@@ -848,36 +848,55 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   }
 
   // Perform Google Search with fallback strategies
-  let searchResults: GoogleSearchResult[] = [];
+  // Try to get results from multiple sites by trying multiple queries and collecting all results
+  let allSearchResults: GoogleSearchResult[] = [];
   let queryUsed = searchQuery;
   
+  // Try primary query first
   try {
-    searchResults = await googleSearch(searchQuery);
+    const primaryResults = await googleSearch(searchQuery);
+    allSearchResults.push(...primaryResults);
     queryUsed = searchQuery;
+    console.log(`Primary search found ${primaryResults.length} results`);
   } catch (error) {
     console.log(`Primary search failed, trying fallbacks...`);
   }
   
-  // If primary search returns no results, try fallbacks
-  if (searchResults.length === 0 && fallbackQueries.length > 0) {
-    for (const fallbackQuery of fallbackQueries) {
-      try {
-        searchResults = await googleSearch(fallbackQuery);
-        if (searchResults.length > 0) {
-          queryUsed = fallbackQuery;
-          console.log(`Fallback query succeeded: ${fallbackQuery}`);
-          break;
+  // Try fallback queries to get more results from different sites
+  // Don't stop at first success - collect results from multiple queries to find multiple sites
+  for (const fallbackQuery of fallbackQueries) {
+    try {
+      const fallbackResults = await googleSearch(fallbackQuery);
+      // Add results that aren't already in allSearchResults (by URL)
+      for (const result of fallbackResults) {
+        if (!allSearchResults.some(r => r.link === result.link)) {
+          allSearchResults.push(result);
         }
-      } catch (fallbackError) {
-        console.log(`Fallback query failed: ${fallbackQuery}`);
-        continue;
       }
+      if (fallbackResults.length > 0) {
+        console.log(`Fallback query "${fallbackQuery}" found ${fallbackResults.length} results (${fallbackResults.length - fallbackResults.filter(r => allSearchResults.some(a => a.link === r.link)).length} new)`);
+      }
+      // If we have enough results from multiple sites, we can stop early
+      if (allSearchResults.length >= 15) {
+        break;
+      }
+    } catch (fallbackError) {
+      console.log(`Fallback query failed: ${fallbackQuery}`);
+      continue;
     }
   }
   
-  if (searchResults.length === 0) {
+  // Remove duplicates by URL
+  const uniqueResults = Array.from(
+    new Map(allSearchResults.map(r => [r.link, r])).values()
+  );
+  
+  if (uniqueResults.length === 0) {
     throw new Error(`No search results found from Google Search. Tried queries: ${[searchQuery, ...fallbackQueries].join(', ')}`);
   }
+  
+  console.log(`Total unique search results: ${uniqueResults.length}`);
+  const searchResults = uniqueResults;
 
   // NEW APPROACH: Fetch pages from MULTIPLE real estate sites and extract from each separately
   // Then aggregate using majority confidence
