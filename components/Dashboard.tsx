@@ -399,7 +399,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
   
   const renderEmptyState = () => (
       <div className="flex flex-col h-full bg-slate-50">
-          <header className="bg-slate-950 border-b border-slate-800 h-[5.5rem] px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
+          <header className="bg-slate-950 border-b border-slate-800 h-[6.4rem] px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
                 {/* Decorative Background Icon */}
                 <div className="absolute right-32 top-1/2 -translate-y-1/2 text-slate-900/80 pointer-events-none transform group-hover:scale-105 transition-transform duration-1000">
                     <Target size={200} strokeWidth={0.5} />
@@ -578,7 +578,7 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
             {selectedClient ? (
                 <>
                     {/* Dark Header Strip */}
-                    <header className="bg-slate-950 border-b border-slate-800 h-28 px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
+                    <header className="bg-slate-950 border-b border-slate-800 h-[6.4rem] px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
                          {/* Decorative Background Icon */}
                          <div className="absolute right-32 top-1/2 -translate-y-1/2 text-slate-900/80 pointer-events-none transform group-hover:scale-105 transition-transform duration-1000">
                              <FolderOpen size={240} strokeWidth={0.5} />
