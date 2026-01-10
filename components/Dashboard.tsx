@@ -27,9 +27,10 @@ interface Props {
   onSync: () => void;
   isSyncing: boolean;
   userEmail?: string | null;
+  onNavigateHome?: () => void;
 }
 
-const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, onDelete, onDeleteClient, onDuplicate, onPin, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing, userEmail }) => {
+const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, onDelete, onDeleteClient, onDuplicate, onPin, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing, userEmail, onNavigateHome }) => {
   const [isComparing, setIsComparing] = useState(false);
   const [selectedClient, setSelectedClient] = useState<string | null>(initialClient || null);
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([]);

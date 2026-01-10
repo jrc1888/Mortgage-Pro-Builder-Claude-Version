@@ -123,6 +123,7 @@ export interface Scenario {
   purchasePrice: number; // For purchases; for refinances, this represents property/appraised value
   earnestMoney: number;
   sellerConcessions: number; // New field ($ amount)
+  sellerConcessionsMode?: 'fixed' | 'percent'; // Mode for seller concessions (fixed $ or %)
   showSellerConcessions: boolean; // UI Toggle
   lenderCredits: number; // New top-level field
   lenderCreditsMode: 'fixed' | 'percent'; 
