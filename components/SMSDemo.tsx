@@ -150,7 +150,12 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([]);
-  const [processingHistory, setProcessingHistory] = useState<Array<{ query: string; steps: ProcessingStep[]; timestamp: Date }>>([]);
+  const [processingHistory, setProcessingHistory] = useState<Array<{ 
+    userInput: string; 
+    systemResponse?: string; 
+    steps: ProcessingStep[]; 
+    timestamp: Date 
+  }>>([]);
   const [pendingConfirmation, setPendingConfirmation] = useState<{ type: 'mls' | 'address'; value: string } | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -354,10 +359,15 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     const messageText = inputText.trim();
     setInputText('');
     setIsProcessing(true);
-    // Save current steps to history before clearing
+    
+    // Track system response for this query
+    let systemResponseText: string | undefined = undefined;
+    
+    // Save current steps to history before clearing (for any previous incomplete searches)
     if (processingSteps.length > 0) {
       setProcessingHistory(prev => [...prev, {
-        query: messageText,
+        userInput: 'Previous search (incomplete)',
+        systemResponse: systemResponseText,
         steps: [...processingSteps],
         timestamp: new Date()
       }]);
@@ -366,8 +376,10 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     setProcessingSteps([]);
 
     try {
+      // Add user input as a step at the beginning
+      const userInputStepId = addStep('👤 USER INPUT', 'success', `User message: "${messageText}"`);
       // Step 1: Detect URL, MLS, or Address
-      const step1Id = addStep('Analyzing message', 'processing');
+      const step1Id = addStep('🔍 Analyzing message', 'processing', `Detecting URL, MLS number, or address in message...`);
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const url = detectURL(messageText);
@@ -569,16 +581,25 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         details: hasRealUrl ? `Found URL: ${url}` : (mlsToProcess ? `Found MLS: #${mlsToProcess}` : `Found Address: ${addressToProcess}`)
       });
 
-      // Step 2: Fetch page content (only for real URLs)
-      const step2Id = hasRealUrl ? addStep('Fetching page content', 'processing') : null;
+      // Add detailed step for what we're searching for
+      const searchDetails = hasRealUrl 
+        ? `URL: ${url}`
+        : mlsToProcess
+          ? `MLS Number: ${mlsToProcess}`
+          : `Address: ${addressToProcess}`;
+      
+      addStep('🔍 Search Details', 'processing', searchDetails);
+      
+      const step2Id = hasRealUrl ? addStep('📥 Fetching page content', 'processing', `Attempting direct fetch from: ${url}`) : null;
       if (hasRealUrl) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Step 3: Call OpenAI API
-      const step3Id = addStep('Calling OpenAI', 'processing');
+      // Step 3: Call API
+      const step3Id = addStep('🤖 Calling API', 'processing', `Sending request to /api/sms-process${addressToProcess ? ` with address: ${addressToProcess}` : ''}${hasRealUrl ? ` with URL: ${url}` : ''}`);
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      const apiRequestStart = Date.now();
       const response = await fetch('/api/sms-process', {
         method: 'POST',
         headers: {
@@ -589,8 +610,16 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
           address: addressToProcess || undefined
         })
       });
+      const apiRequestDuration = Date.now() - apiRequestStart;
 
       const data = await response.json();
+      
+      // Add API response details
+      updateStep(step3Id, { 
+        status: response.ok && data.success ? 'success' : 'error',
+        details: `API Response received in ${apiRequestDuration}ms\nStatus: ${response.status} ${response.statusText}\nSuccess: ${data.success ? 'Yes' : 'No'}${data.ingestion ? `\nSource: ${data.ingestion.source}\nSearch Provider: ${data.ingestion.searchProviderUsed || 'none'}\nQuery Used: ${data.ingestion.searchQueryUsed || 'N/A'}\nResults Used: ${data.ingestion.numSearchResultsUsed || 'N/A'}` : ''}`,
+        rawData: { responseTime: apiRequestDuration, status: response.status, data }
+      });
 
       // Handle API errors (even if response is 200, check for success flag)
       if (!response.ok || !data.success) {
@@ -613,8 +642,8 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         updateStep(step3Id, { 
           status: 'error', 
           icon: <XCircle className="w-4 h-4 text-red-500" />,
-          details: errorMessage,
-          rawData: { error: errorMessage, details: errorDetails, ...data }
+          details: `${errorMessage}\n\nDetails: ${errorDetails}\n\nFull API Response:\n${JSON.stringify(data, null, 2)}`,
+          rawData: { error: errorMessage, details: errorDetails, fullResponse: data }
         });
 
         setMessages(prev => [...prev, {
@@ -631,51 +660,95 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
 
       // Update step 2 with ingestion info (only if we had a real URL)
       if (step2Id) {
+        let fetchDetails = hasRealUrl 
+          ? `Direct fetch attempted from: ${url}\n`
+          : '';
+        
+        if (data.ingestion?.source === 'google_search_fallback') {
+          fetchDetails += `❌ Direct fetch blocked (403/401/429 or empty)\n`;
+          fetchDetails += `✅ Fallback: Using Google Search\n`;
+          if (data.ingestion.searchQueryUsed) {
+            fetchDetails += `Search Query: "${data.ingestion.searchQueryUsed}"\n`;
+          }
+          if (data.ingestion.numSearchResultsUsed) {
+            fetchDetails += `Search Results Found: ${data.ingestion.numSearchResultsUsed}\n`;
+          }
+        } else {
+          fetchDetails += `✅ Direct fetch successful\n`;
+          fetchDetails += `Content length: ${data.ingestion?.raw_text?.length || 0} characters\n`;
+        }
+        
         updateStep(step2Id, { 
           status: data.ingestion?.source === 'google_search_fallback' ? 'error' : 'success', 
           icon: data.ingestion?.source === 'google_search_fallback' 
             ? <AlertCircle className="w-4 h-4 text-amber-500" />
             : <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-          details: data.ingestion?.source === 'google_search_fallback' 
-            ? 'Direct fetch blocked, using Google Search'
-            : 'Page content fetched successfully',
+          details: fetchDetails,
           rawData: data.ingestion
         });
       }
 
-      // Update step 3 - show detailed extraction information
-      let extractionDetails = hasRealUrl 
-        ? 'Property data extracted successfully'
-        : data.ingestion?.source === 'google_search_fallback'
-          ? 'Property data extracted from Google Search results'
-          : 'Property data extracted successfully';
+      // Add detailed step for extraction with all available information
+      let extractionDetails = `\n📊 EXTRACTION DETAILS:\n`;
+      extractionDetails += `─────────────────────────────────────\n`;
       
-      // Add detailed extraction log if available
       if (data.ingestion?.extractionDetails) {
         const details = data.ingestion.extractionDetails;
         const extractionLog = details.extractionLog || [];
         const aggregationDetails = details.aggregationDetails || {};
         
-        let detailsText = `Extracted from ${extractionLog.length} sources:\n`;
+        extractionDetails += `\n🔍 Extraction Sources (${extractionLog.length} total):\n`;
         extractionLog.forEach((log: any, idx: number) => {
-          detailsText += `\n${idx + 1}. ${log.source}:\n`;
-          detailsText += `   Address: ${log.extracted.address || 'Unknown'}\n`;
-          detailsText += `   Price: ${log.extracted.price ? `$${log.extracted.price.toLocaleString()}` : 'Unknown'}\n`;
-          detailsText += `   Beds: ${log.extracted.beds || '?'} | Baths: ${log.extracted.baths || '?'} | Sqft: ${log.extracted.sqft ? log.extracted.sqft.toLocaleString() : 'Unknown'}\n`;
-          detailsText += `   HOA: ${log.extracted.hoa !== null ? `$${log.extracted.hoa}/mo` : 'Unknown'} | Built: ${log.extracted.yearBuilt || 'Unknown'}\n`;
+          extractionDetails += `\n  ${idx + 1}. ${log.source.toUpperCase()}\n`;
+          extractionDetails += `     URL: ${log.url}\n`;
+          extractionDetails += `     Extracted Address: ${log.extracted.address || '❌ NOT FOUND'}\n`;
+          extractionDetails += `     Price: ${log.extracted.price ? `$${log.extracted.price.toLocaleString()}` : '❌ NOT FOUND'}\n`;
+          extractionDetails += `     Beds: ${log.extracted.beds || '❌ NOT FOUND'} | Baths: ${log.extracted.baths || '❌ NOT FOUND'} | Sqft: ${log.extracted.sqft ? log.extracted.sqft.toLocaleString() : '❌ NOT FOUND'}\n`;
+          extractionDetails += `     HOA: ${log.extracted.hoa !== null && log.extracted.hoa !== undefined ? `$${log.extracted.hoa}/mo` : '❌ NOT FOUND'} | Year Built: ${log.extracted.yearBuilt || '❌ NOT FOUND'}\n`;
+          if (log.extracted.confidence) {
+            extractionDetails += `     Confidence: ${JSON.stringify(log.extracted.confidence)}\n`;
+          }
         });
         
+        extractionDetails += `\n\n🔄 AGGREGATION PROCESS:\n`;
+        extractionDetails += `  Total Sources: ${aggregationDetails.totalSources || extractionLog.length}\n`;
+        extractionDetails += `  Matched Address: ${aggregationDetails.matchedSources || extractionLog.length}\n`;
         if (aggregationDetails.filteredSources > 0) {
-          detailsText += `\n⚠️ Filtered ${aggregationDetails.filteredSources} results with non-matching addresses`;
+          extractionDetails += `  ⚠️  FILTERED OUT: ${aggregationDetails.filteredSources} results with non-matching addresses\n`;
+        }
+        if (aggregationDetails.targetAddress) {
+          extractionDetails += `  Target Address: ${aggregationDetails.targetAddress}\n`;
         }
         
-        detailsText += `\n\nAggregated Result:\n`;
-        detailsText += `Address: ${data.propertyData.address || 'Unknown'}\n`;
-        detailsText += `Price: ${data.propertyData.price ? `$${data.propertyData.price.toLocaleString()}` : 'Unknown'}\n`;
-        detailsText += `Beds: ${data.propertyData.beds || '?'} | Baths: ${data.propertyData.baths || '?'} | Sqft: ${data.propertyData.sqft ? data.propertyData.sqft.toLocaleString() : 'Unknown'}\n`;
-        detailsText += `HOA: ${data.propertyData.hoa !== null ? `$${data.propertyData.hoa}/mo` : 'Unknown'} | Built: ${data.propertyData.yearBuilt || 'Unknown'}`;
-        
-        extractionDetails = detailsText;
+        if (aggregationDetails.fieldVotes) {
+          extractionDetails += `\n  Field Votes (Majority Selection):\n`;
+          Object.entries(aggregationDetails.fieldVotes).forEach(([field, votes]: [string, any]) => {
+            if (votes && Object.keys(votes).length > 0) {
+              extractionDetails += `    ${field}: ${JSON.stringify(votes)}\n`;
+            }
+          });
+        }
+      }
+      
+      extractionDetails += `\n\n✅ FINAL AGGREGATED RESULT:\n`;
+      extractionDetails += `─────────────────────────────────────\n`;
+      extractionDetails += `Address: ${data.propertyData.address || '❌ NOT FOUND'}\n`;
+      extractionDetails += `Price: ${data.propertyData.price ? `$${data.propertyData.price.toLocaleString()}` : '❌ NOT FOUND'}\n`;
+      extractionDetails += `Beds: ${data.propertyData.beds || '❌ NOT FOUND'} | Baths: ${data.propertyData.baths || '❌ NOT FOUND'} | Sqft: ${data.propertyData.sqft ? data.propertyData.sqft.toLocaleString() : '❌ NOT FOUND'}\n`;
+      extractionDetails += `HOA: ${data.propertyData.hoa !== null && data.propertyData.hoa !== undefined ? `$${data.propertyData.hoa}/mo` : '❌ NOT FOUND'} | Year Built: ${data.propertyData.yearBuilt || '❌ NOT FOUND'}\n`;
+      if (data.propertyData.missingFields && data.propertyData.missingFields.length > 0) {
+        extractionDetails += `\n⚠️  Missing Fields: ${data.propertyData.missingFields.join(', ')}\n`;
+      }
+      if (data.propertyData.confidence) {
+        extractionDetails += `\nConfidence Scores: ${JSON.stringify(data.propertyData.confidence, null, 2)}\n`;
+      }
+      if (data.propertyData.extractionNotes) {
+        extractionDetails += `\nExtraction Notes: ${data.propertyData.extractionNotes}\n`;
+      }
+      
+      // Add ingestion notes if available
+      if (data.ingestion?.notes) {
+        extractionDetails += `\n\n📝 Ingestion Notes:\n${data.ingestion.notes}\n`;
       }
       
       updateStep(step3Id, { 
@@ -685,7 +758,8 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         rawData: { 
           propertyData: data.propertyData,
           extractionDetails: data.ingestion?.extractionDetails,
-          ingestion: data.ingestion
+          ingestion: data.ingestion,
+          fullApiResponse: data
         }
       });
 
@@ -916,23 +990,46 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       });
 
       // Step 9: Display response in chat
+      systemResponseText = responseText;
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         text: responseText,
         sender: 'system',
         timestamp: new Date()
       }]);
+      
+      // Add system response as final step
+      addStep('💬 SYSTEM RESPONSE', 'success', `Response sent to user:\n\n${responseText}`);
 
     } catch (error) {
       console.error('Error processing message:', error);
+      const errorResponseText = 'Sorry, I encountered an error. Please try again.';
+      systemResponseText = errorResponseText;
+      
+      addStep('❌ ERROR', 'error', `Error occurred: ${error instanceof Error ? error.message : String(error)}\n\nStack trace: ${error instanceof Error ? error.stack : 'N/A'}`);
+      addStep('💬 SYSTEM RESPONSE', 'error', `Error response sent to user:\n\n${errorResponseText}`);
+      
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
-        text: 'Sorry, I encountered an error. Please try again.',
+        text: errorResponseText,
         sender: 'system',
         timestamp: new Date()
       }]);
     } finally {
       setIsProcessing(false);
+      
+      // Save completed processing to history with user input and system response
+      // Use setTimeout to ensure all steps are captured
+      setTimeout(() => {
+        if (processingSteps.length > 0) {
+          setProcessingHistory(prev => [...prev, {
+            userInput: messageText,
+            systemResponse: systemResponseText,
+            steps: [...processingSteps],
+            timestamp: new Date()
+          }]);
+        }
+      }, 100);
     }
   };
 
@@ -1145,14 +1242,30 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {/* Show history first */}
             {processingHistory.map((historyItem, historyIdx) => (
-              <div key={`history-${historyIdx}`} className="space-y-2">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 pb-1">
-                  {formatTime(historyItem.timestamp)} - Query: {historyItem.query.substring(0, 50)}{historyItem.query.length > 50 ? '...' : ''}
+              <div key={`history-${historyIdx}`} className="space-y-3 mb-6">
+                {/* Header with timestamp */}
+                <div className="text-xs font-bold text-slate-600 uppercase tracking-wider border-b-2 border-indigo-300 pb-2 mb-3">
+                  {formatTime(historyItem.timestamp)} - Search Session #{historyIdx + 1}
                 </div>
+                
+                {/* USER INPUT - Clearly labeled */}
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">👤</span>
+                    </div>
+                    <h3 className="font-bold text-blue-900 text-sm uppercase tracking-wide">USER INPUT</h3>
+                  </div>
+                  <div className="ml-8 text-sm text-slate-800 font-mono whitespace-pre-wrap break-words">
+                    {historyItem.userInput}
+                  </div>
+                </div>
+                
+                {/* Processing Steps */}
                 {historyItem.steps.map((step) => (
                   <div
                     key={step.id}
-                    className="bg-slate-50 border border-slate-200 rounded-lg p-4 transition-all hover:shadow-sm opacity-75"
+                    className="bg-slate-50 border border-slate-200 rounded-lg p-4 transition-all hover:shadow-sm opacity-80"
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5">{step.icon}</div>
