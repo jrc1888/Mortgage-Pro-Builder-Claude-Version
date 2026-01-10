@@ -511,11 +511,25 @@ function extractAddressFromUrl(url: string): string | null {
     if (url.includes('zillow.com')) {
       const match = pathname.match(/\/homedetails\/([^\/]+)/);
       if (match) {
-        return match[1]
+        // Extract full address from path, converting dashes to spaces
+        let address = match[1]
           .replace(/-/g, ' ')
-          .replace(/(\d{5}).*/, '$1')
           .replace(/\s+/g, ' ')
           .trim();
+        
+        // Extract zip code and format properly
+        const zipMatch = address.match(/(\d{5})/);
+        if (zipMatch) {
+          const zip = zipMatch[1];
+          // Remove everything after zip code (like _zpid references)
+          address = address.replace(/\s+\d+.*$/, '').trim();
+          // Ensure we have the zip code at the end
+          if (!address.includes(zip)) {
+            address = address + ' ' + zip;
+          }
+        }
+        
+        return address;
       }
     }
     
@@ -807,23 +821,26 @@ async function getListingDataFromUrl(url: string): Promise<{ listing: ListingDat
     console.log(`✗ Direct fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
-  // STEP 2: Extract address and try direct URL construction
+  // STEP 2: Extract address and try direct URL construction BEFORE Google Search
+  console.log(`\nSTEP 2: Attempting direct URL construction before Google Search fallback...`);
   const addressFromUrl = extractAddressFromUrl(url);
   if (addressFromUrl) {
-    console.log(`\nSTEP 2: Trying direct URL construction with address: ${addressFromUrl}`);
+    console.log(`Extracted address from URL: ${addressFromUrl}`);
+    console.log(`Trying direct URL construction with address: ${addressFromUrl}`);
     const directUrlResult = await tryDirectUrlConstruction(addressFromUrl);
     if (directUrlResult) {
-      console.log(`✓ Direct URL construction SUCCESS`);
+      console.log(`✓ Direct URL construction SUCCESS - returning result`);
       return directUrlResult;
     } else {
-      console.log(`✗ Direct URL construction failed`);
+      console.log(`✗ Direct URL construction failed - will fall back to Google Search`);
     }
   } else {
-    console.log(`\nSTEP 2: Skipped - could not extract address from URL`);
+    console.log(`✗ Could not extract address from URL for direct URL construction`);
+    console.log(`Will attempt Google Search as last resort`);
   }
 
-  // STEP 3: Fall back to Google Search
-  console.log(`\nSTEP 3: Falling back to Google Search...`);
+  // STEP 3: Fall back to Google Search ONLY if direct URL construction failed
+  console.log(`\nSTEP 3: All direct methods failed - falling back to Google Search as last resort...`);
   return await getListingDataFromGoogleSearch(url, undefined, addressFromUrl || undefined);
 }
 
