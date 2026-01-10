@@ -843,18 +843,18 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       
       extractionDetails += `\n\n✅ FINAL AGGREGATED RESULT:\n`;
       extractionDetails += `─────────────────────────────────────\n`;
-      extractionDetails += `Address: ${data.propertyData.address || '❌ NOT FOUND'}\n`;
-      extractionDetails += `Price: ${data.propertyData.price ? `$${data.propertyData.price.toLocaleString()}` : '❌ NOT FOUND'}\n`;
-      extractionDetails += `Beds: ${data.propertyData.beds || '❌ NOT FOUND'} | Baths: ${data.propertyData.baths || '❌ NOT FOUND'} | Sqft: ${data.propertyData.sqft ? data.propertyData.sqft.toLocaleString() : '❌ NOT FOUND'}\n`;
-      extractionDetails += `HOA: ${data.propertyData.hoa !== null && data.propertyData.hoa !== undefined ? `$${data.propertyData.hoa}/mo` : '❌ NOT FOUND'} | Year Built: ${data.propertyData.yearBuilt || '❌ NOT FOUND'}\n`;
-      if (data.propertyData.missingFields && data.propertyData.missingFields.length > 0) {
-        extractionDetails += `\n⚠️  Missing Fields: ${data.propertyData.missingFields.join(', ')}\n`;
+      extractionDetails += `Address: ${data.listing?.address || '❌ NOT FOUND'}\n`;
+      extractionDetails += `Price: ${data.listing?.price ? `$${data.listing.price.toLocaleString()}` : '❌ NOT FOUND'}\n`;
+      extractionDetails += `Beds: ${data.listing?.beds || '❌ NOT FOUND'} | Baths: ${data.listing?.baths || '❌ NOT FOUND'} | Sqft: ${data.listing?.sqft ? data.listing.sqft.toLocaleString() : '❌ NOT FOUND'}\n`;
+      extractionDetails += `HOA: ${data.listing?.hoa !== null && data.listing?.hoa !== undefined ? `$${data.listing.hoa}/mo` : '❌ NOT FOUND'} | Year Built: ${data.listing?.yearBuilt || '❌ NOT FOUND'}\n`;
+      if (data.listing?.missingFields && data.listing.missingFields.length > 0) {
+        extractionDetails += `\n⚠️  Missing Fields: ${data.listing.missingFields.join(', ')}\n`;
       }
-      if (data.propertyData.confidence) {
-        extractionDetails += `\nConfidence Scores: ${JSON.stringify(data.propertyData.confidence, null, 2)}\n`;
+      if (data.listing?.confidence) {
+        extractionDetails += `\nConfidence Scores: ${JSON.stringify(data.listing.confidence, null, 2)}\n`;
       }
-      if (data.propertyData.extractionNotes) {
-        extractionDetails += `\nExtraction Notes: ${data.propertyData.extractionNotes}\n`;
+      if (data.listing?.extractionNotes) {
+        extractionDetails += `\nExtraction Notes: ${data.listing.extractionNotes}\n`;
       }
       
       // Add ingestion notes if available
@@ -867,7 +867,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
         details: extractionDetails,
         rawData: { 
-          propertyData: data.propertyData,
+          propertyData: data.listing,
           extractionDetails: data.ingestion?.extractionDetails,
           ingestion: data.ingestion,
           fullApiResponse: data
@@ -878,7 +878,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       const step4Id = addStep('Processing property data', 'processing');
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      const propertyData = data.propertyData;
+      const propertyData = data.listing;
       if (!propertyData) {
         updateStep(step4Id, { 
           status: 'error', 
