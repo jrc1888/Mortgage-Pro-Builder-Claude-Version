@@ -16,6 +16,7 @@ export const SharedHeader: React.FC<Props> = ({ onNavigateHome, title, userEmail
   return (
     <header className={`${isDark ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200'} border-b px-6 py-3 flex items-center justify-between shrink-0 h-[6.4rem] relative z-30 shadow-md w-full`}>
       <div className="flex items-center gap-5 flex-1 min-w-0">
+        {/* MortgagePro Home Button - Exact positioning match from ScenarioBuilder */}
         <button
           onClick={onNavigateHome}
           className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors group shrink-0 w-72 ${
