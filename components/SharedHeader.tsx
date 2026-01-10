@@ -19,16 +19,12 @@ export const SharedHeader: React.FC<Props> = ({ onNavigateHome, title, userEmail
         {/* MortgagePro Home Button - Exact positioning match from ScenarioBuilder */}
         <button
           onClick={onNavigateHome}
-          className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors group shrink-0 w-72 ${
-            isDark ? 'hover:bg-slate-900' : 'hover:bg-slate-50'
-          }`}
+          className="flex items-center gap-3 px-4 py-2 rounded-lg transition-colors group shrink-0 w-72 hover:bg-slate-900"
         >
           <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
             <HomeIcon className="w-7 h-7 text-white" />
           </div>
-          <span className={`text-2xl font-bold group-hover:text-indigo-400 transition-colors ${
-            isDark ? 'text-white' : 'text-slate-900'
-          }`}>
+          <span className="text-2xl font-bold text-white group-hover:text-indigo-400 transition-colors">
             MortgagePro
           </span>
         </button>

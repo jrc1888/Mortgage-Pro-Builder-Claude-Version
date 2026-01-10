@@ -113,11 +113,13 @@ export const Home: React.FC<Props> = ({ onNavigate, onLogout, userEmail }) => {
       <header className="bg-slate-950 border-b border-slate-800 px-6 py-3 flex items-center justify-between shrink-0 h-[6.4rem] relative z-30 shadow-md w-full">
         <div className="flex items-center gap-5 flex-1 min-w-0">
           {/* MortgagePro Home Button - Exact positioning match from ScenarioBuilder */}
-          <div className="flex items-center gap-3 px-4 py-2 shrink-0 w-72">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-sm">
+          <div className="flex items-center gap-3 px-4 py-2 rounded-lg transition-colors group shrink-0 w-72">
+            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
               <HomeIcon className="w-7 h-7 text-white" />
             </div>
-            <span className="text-2xl font-bold text-white">MortgagePro</span>
+            <span className="text-2xl font-bold text-white group-hover:text-indigo-400 transition-colors">
+              MortgagePro
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-4 shrink-0">
