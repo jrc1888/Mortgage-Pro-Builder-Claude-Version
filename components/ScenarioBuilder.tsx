@@ -1660,11 +1660,16 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                         {/* Seller Concessions - Only show for Purchase */}
                         {scenario.transactionType === 'Purchase' && (
                             <div className="w-full md:flex-1 bg-indigo-50/50 p-3 rounded-lg border border-indigo-100/60 h-24 flex flex-col justify-between">
-                            <div className="flex items-center gap-2">
-                                <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest ml-0.5">S.C.</label>
-                                <span className={`text-[9px] font-bold uppercase tracking-wider ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-500'}`}>
-                                    {formatPercent(results.sellerConcessionsPercent, 2)} / {formatPercent(maxConcessionsPercent, 1)}
-                                </span>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest ml-0.5">S.C.</label>
+                                    <span className={`text-[9px] font-bold uppercase tracking-wider ${isConcessionLimitExceeded ? 'text-red-600' : 'text-indigo-500'}`}>
+                                        {formatPercent(results.sellerConcessionsPercent, 2)} / {formatPercent(maxConcessionsPercent, 1)}
+                                    </span>
+                                </div>
+                                <button onClick={() => handleInputChange('showSellerConcessions', !scenario.showSellerConcessions)} className={`w-8 h-4 rounded-full flex items-center transition-colors px-1 ${scenario.showSellerConcessions ? 'bg-indigo-600' : 'bg-slate-300'}`} title="Toggle">
+                                    <div className={`w-2.5 h-2.5 bg-white rounded-full shadow-sm transform transition-transform ${scenario.showSellerConcessions ? 'translate-x-3.5' : ''}`}></div>
+                                </button>
                             </div>
                             
                             {scenario.showSellerConcessions ? (
@@ -2068,18 +2073,19 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 // Simple math: J = D + I
                                 const totalJ = totalD + totalI;
                                 
-                                // Seller concessions and financed closing costs
+                                // Seller concessions, lender credits, and financed closing costs
                                 const sellerConcessionsAmount = (scenario.transactionType === 'Refinance' || !scenario.showSellerConcessions) 
                                     ? 0 
                                     : results.sellerConcessionsAmount;
+                                const lenderCreditsAmount = scenario.showLenderCredits ? results.lenderCreditsAmount : 0;
                                 const financedClosingCosts = results.financedMIP || 0;
                                 
                                 // Closing Costs to be Paid = Total Closing Costs - Financed Closing Costs
                                 // (Seller concessions cannot pay for UFMIP/VA Funding Fee)
                                 const closingCostsToBePaid = totalJ - financedClosingCosts;
                                 
-                                // Net Total Closing Costs = Closing Costs to be Paid - Seller Concessions
-                                const rawNetClosingCosts = closingCostsToBePaid - sellerConcessionsAmount;
+                                // Net Total Closing Costs = Closing Costs to be Paid - Seller Concessions - Lender Credits
+                                const rawNetClosingCosts = closingCostsToBePaid - sellerConcessionsAmount - lenderCreditsAmount;
                                 const netClosingCosts = Math.max(0, rawNetClosingCosts);
                                 
                                 return (
@@ -2109,6 +2115,14 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                             <div className="flex justify-between items-center pt-2 border-t border-slate-300">
                                                 <span className="text-sm font-medium text-emerald-600">Seller Concessions</span>
                                                 <span className="text-base font-bold text-emerald-600">-{formatMoney(sellerConcessionsAmount)}</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Lender Credits - Deducted if applicable */}
+                                        {lenderCreditsAmount > 0 && (
+                                            <div className="flex justify-between items-center pt-2 border-t border-slate-300">
+                                                <span className="text-sm font-medium text-emerald-600">Lender Credits</span>
+                                                <span className="text-base font-bold text-emerald-600">-{formatMoney(lenderCreditsAmount)}</span>
                                             </div>
                                         )}
                                         
@@ -2975,8 +2989,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                          
                          // Calculate exactly as Section J shows
                          const closingCostsToBePaid = sectionJTotal - financedClosingCosts;
+                         const lenderCreditsAmount = scenario.showLenderCredits ? results.lenderCreditsAmount : 0;
                          const sellerConcessionsApplied = Math.min(sellerConcessionsAmount, closingCostsToBePaid);
-                         const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied;
+                         const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied - lenderCreditsAmount;
                          
                          const downPayment = results.downPaymentRequired;
                          const dpa1Amount = scenario.dpa.active ? scenario.dpa.amount : 0;
@@ -3041,6 +3056,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                  </div>
                                              )}
                                          </>
+                                     )}
+                                     {lenderCreditsAmount > 0 && (
+                                         <div className="flex justify-between mb-0.5 mt-0.5 text-emerald-600">
+                                             <span>Less Lender Credits</span>
+                                             <span>-{formatMoney(lenderCreditsAmount)}</span>
+                                         </div>
                                      )}
                                      <div className="flex justify-between border-t border-slate-300 pt-0.5 mt-0.5 bg-indigo-50 rounded-lg px-2 py-1.5 -mx-1">
                                          <span className="font-bold text-indigo-900">Net Closing Costs</span>
@@ -3295,8 +3316,9 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                     
                     // Calculate exactly as Section J shows
                     const closingCostsToBePaid = sectionJTotal - financedClosingCosts;
+                    const lenderCreditsAmount = scenario.showLenderCredits ? results.lenderCreditsAmount : 0;
                     const sellerConcessionsApplied = Math.min(sellerConcessionsAmount, closingCostsToBePaid);
-                    const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied;
+                    const netClosingCosts = closingCostsToBePaid - sellerConcessionsApplied - lenderCreditsAmount;
                     
                     const downPayment = results.downPaymentRequired;
                     const dpa1Amount = scenario.dpa.active ? scenario.dpa.amount : 0;
@@ -3339,6 +3361,12 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                 </div>
                                             )}
                                         </>
+                                    )}
+                                    {lenderCreditsAmount > 0 && (
+                                        <div className="flex justify-between mb-1 mt-1">
+                                            <span className="text-emerald-700">Less Lender Credits:</span>
+                                            <span className="text-emerald-700">-{formatMoney(lenderCreditsAmount)}</span>
+                                        </div>
                                     )}
                                     <div className="flex justify-between border-t border-blue-300 pt-1 mt-1">
                                         <span className="text-blue-900 font-bold">Net Closing Costs:</span>
