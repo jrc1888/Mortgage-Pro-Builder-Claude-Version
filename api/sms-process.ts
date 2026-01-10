@@ -21,7 +21,7 @@ interface ListingData {
 
 interface IngestResult {
   raw_text: string;
-  source: 'direct_fetch' | 'google_search_fallback';
+  source: 'direct_fetch' | 'google_search_fallback' | 'direct_url_construction';
   notes: string;
   needsFallback?: boolean;
   searchProviderUsed?: 'google' | 'none';
@@ -84,6 +84,7 @@ async function googleSearch(query: string): Promise<GoogleSearchResult[]> {
   const cx = process.env.VITE_GOOGLE_SEARCH_ENGINE_ID;
 
   if (!key || !cx) {
+    console.error('Missing Google Search API credentials');
     throw new Error('Missing VITE_GOOGLE_SEARCH_API_KEY or VITE_GOOGLE_SEARCH_ENGINE_ID in server environment variables.');
   }
 
@@ -105,15 +106,19 @@ async function googleSearch(query: string): Promise<GoogleSearchResult[]> {
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
       console.error(`Google Search API error (${response.status}):`, errorText.substring(0, 200));
+      console.error(`Query was: ${query}`);
       throw new Error(`Google Search API returned ${response.status}: ${errorText.substring(0, 200)}`);
     }
 
     const data = await response.json();
 
     if (!data.items || !Array.isArray(data.items)) {
+      console.log(`Google Search returned 0 results for query: ${query}`);
+      console.log(`Response data:`, JSON.stringify(data).substring(0, 200));
       return [];
     }
 
+    console.log(`Google Search returned ${data.items.length} results for query: ${query}`);
     // Return top 5 results
     return data.items.slice(0, 5).map((item: any) => ({
       title: item.title || '',
@@ -122,30 +127,234 @@ async function googleSearch(query: string): Promise<GoogleSearchResult[]> {
     }));
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`Google Search timed out for query: ${query}`);
       throw new Error('Google Search API request timed out after 10 seconds');
     }
+    console.error(`Google Search error for query: ${query}`, error);
     throw error;
   }
 }
 
 /**
- * Convert HTML to plain readable text
- * Removes scripts, styles, and keeps only visible text
+ * Parse address into components with improved regex patterns
+ * Handles formats like:
+ * - "581 W Summerhill Lane, Centerville, UT 84014"
+ * - "123 Main St, Salt Lake City, UT 84101"
+ * - "456 E 100 S, Provo, UT 84601"
+ */
+function parseAddress(address: string): {
+  streetNum: string;
+  streetName: string;
+  city: string;
+  state: string;
+  zip: string;
+} | null {
+  // Clean up the address
+  const cleaned = address.trim();
+  
+  // Try multiple regex patterns to handle different address formats
+  const patterns = [
+    // Pattern 1: Full format with comma separators
+    // "581 W Summerhill Lane, Centerville, UT 84014"
+    /^(\d+)\s+(.+?),\s*(.+?),\s*([A-Z]{2})\s+(\d{5})$/i,
+    
+    // Pattern 2: No comma after street name
+    // "581 W Summerhill Lane Centerville, UT 84014"
+    /^(\d+)\s+(.+?)\s+([A-Za-z\s]+),\s*([A-Z]{2})\s+(\d{5})$/i,
+    
+    // Pattern 3: Minimal commas
+    // "581 W Summerhill Lane Centerville UT 84014"
+    /^(\d+)\s+(.+?)\s+([A-Za-z\s]+)\s+([A-Z]{2})\s+(\d{5})$/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = cleaned.match(pattern);
+    if (match) {
+      let [, streetNum, streetName, city, state, zip] = match;
+      
+      // For pattern 2 and 3, we need to intelligently split streetName and city
+      if (pattern !== patterns[0]) {
+        // The streetName might contain the city at the end
+        // Try to find where the street ends and city begins
+        // Common street types: Lane, Street, Road, Avenue, Drive, etc.
+        const streetTypes = ['lane', 'street', 'road', 'avenue', 'drive', 'way', 'circle', 'court', 'place', 'boulevard', 'parkway', 'terrace'];
+        const streetNameLower = streetName.toLowerCase();
+        
+        let splitIndex = -1;
+        for (const type of streetTypes) {
+          const idx = streetNameLower.indexOf(' ' + type);
+          if (idx > -1) {
+            splitIndex = idx + type.length + 1; // +1 for the space
+            break;
+          }
+        }
+        
+        if (splitIndex > -1 && pattern !== patterns[0]) {
+          // Split at the street type
+          const actualStreetName = streetName.substring(0, splitIndex).trim();
+          const actualCity = streetName.substring(splitIndex).trim() + ' ' + city.trim();
+          streetName = actualStreetName;
+          city = actualCity.trim();
+        }
+      }
+      
+      return {
+        streetNum: streetNum.trim(),
+        streetName: streetName.trim(),
+        city: city.trim(),
+        state: state.trim().toUpperCase(),
+        zip: zip.trim()
+      };
+    }
+  }
+  
+  console.log(`Failed to parse address with all patterns: ${address}`);
+  return null;
+}
+
+/**
+ * Try to construct direct URLs for known working sites and fetch from them
+ * IMPROVED VERSION with better address parsing and more URL variations
+ */
+async function tryDirectUrlConstruction(address: string): Promise<{ listing: ListingData; ingestion: IngestResult } | null> {
+  try {
+    console.log(`\n=== DIRECT URL CONSTRUCTION START ===`);
+    console.log(`Input address: ${address}`);
+    
+    // Parse address components with improved regex
+    const parsed = parseAddress(address);
+    if (!parsed) {
+      console.log('Failed to parse address - skipping direct URL construction');
+      return null;
+    }
+    
+    const { streetNum, streetName, city, state, zip } = parsed;
+    console.log(`Parsed address components:`, parsed);
+    
+    // Normalize components for URL construction
+    const urlSafeStreet = streetName.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+    const urlSafeCity = city.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+    const urlSafeState = state.toLowerCase();
+    
+    console.log(`URL-safe components: street=${urlSafeStreet}, city=${urlSafeCity}, state=${urlSafeState}, zip=${zip}`);
+    
+    // Known working sites - try multiple URL variations for each
+    const urlPatterns = [
+      // UtahRealEstate.com variations
+      `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+      `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${zip}/`,
+      
+      // Redfin variations - format: /STATE/CITY/STREET-ZIP/home/
+      `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-${zip}/home/`,
+      `https://www.redfin.com/${state}/${urlSafeCity}/${urlSafeStreet}-${zip}/home/`,
+      
+      // Homes.com variations - format: /property/STREET-CITY-STATE/
+      `https://www.homes.com/property/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
+      `https://www.homes.com/property/${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
+      
+      // Zillow variations - format: /homedetails/ADDRESS/
+      `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${state}-${zip}/`,
+    ];
+    
+    console.log(`Trying ${urlPatterns.length} URL patterns...`);
+    
+    for (let i = 0; i < urlPatterns.length; i++) {
+      const urlPattern = urlPatterns[i];
+      try {
+        console.log(`[${i + 1}/${urlPatterns.length}] Trying: ${urlPattern}`);
+        
+        const fetchResponse = await fetch(urlPattern, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(8000), // 8 second timeout
+        });
+        
+        console.log(`Response status: ${fetchResponse.status} ${fetchResponse.statusText}`);
+        
+        if (fetchResponse.ok) {
+          const htmlContent = await fetchResponse.text();
+          const plainText = htmlToPlainText(htmlContent);
+          
+          console.log(`Fetched ${plainText.length} characters of plain text`);
+          
+          if (plainText && plainText.trim().length >= 100) {
+            // Found a working URL - extract data
+            console.log(`Attempting extraction from ${urlPattern}...`);
+            const listing = await extractListingWithOpenAISinglePage(urlPattern, plainText, 'direct_url_construction', address);
+            
+            // Validate that we got useful data
+            // Be lenient: if we got price OR (beds AND baths), consider it valid
+            const hasPrice = listing.price !== null && listing.price > 0;
+            const hasBasicData = (listing.beds !== null && listing.beds > 0) || (listing.baths !== null && listing.baths > 0);
+            const hasAddress = listing.address && listing.address.length > 5;
+            
+            console.log(`Extraction results: hasPrice=${hasPrice}, hasBasicData=${hasBasicData}, hasAddress=${hasAddress}`);
+            
+            if (hasPrice || hasBasicData) {
+              // Address matching is lenient - just check if we have SOME address
+              if (hasAddress) {
+                console.log(`✓ Successfully extracted data from ${urlPattern}`);
+                console.log(`  Address: ${listing.address}`);
+                console.log(`  Price: $${listing.price}`);
+                console.log(`  Beds: ${listing.beds}, Baths: ${listing.baths}`);
+                console.log(`=== DIRECT URL CONSTRUCTION SUCCESS ===\n`);
+                
+                return {
+                  listing,
+                  ingestion: {
+                    raw_text: plainText.substring(0, 5000),
+                    source: 'direct_url_construction',
+                    notes: `Successfully fetched from constructed URL: ${urlPattern}`,
+                    searchProviderUsed: 'none',
+                    searchQueryUsed: undefined,
+                    numSearchResultsUsed: undefined
+                  }
+                };
+              } else {
+                console.log(`✗ Extracted data but missing address`);
+              }
+            } else {
+              console.log(`✗ Extracted data doesn't have price or basic info`);
+            }
+          } else {
+            console.log(`✗ Fetched content too short (${plainText.length} chars)`);
+          }
+        } else if (fetchResponse.status === 404) {
+          console.log(`✗ Page not found (404)`);
+        } else if (fetchResponse.status === 403) {
+          console.log(`✗ Access forbidden (403) - site may be blocking automated requests`);
+        } else {
+          console.log(`✗ HTTP error: ${fetchResponse.status}`);
+        }
+      } catch (urlError) {
+        const errorMsg = urlError instanceof Error ? urlError.message : 'Unknown error';
+        console.log(`✗ Fetch failed: ${errorMsg}`);
+        continue;
+      }
+    }
+    
+    console.log(`=== DIRECT URL CONSTRUCTION FAILED - No working URLs found ===\n`);
+    return null; // None of the constructed URLs worked
+  } catch (error) {
+    console.error('Direct URL construction error:', error);
+    return null;
+  }
+}
+
+/**
+ * Convert HTML to plain text for OpenAI extraction
  */
 function htmlToPlainText(html: string): string {
   // Remove script and style tags
-  let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+  let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
   
-  // Preserve line breaks from certain HTML elements that often contain structured data
-  // This helps preserve context for HOA, year built, etc.
-  text = text.replace(/<br\s*\/?>/gi, '\n');
-  text = text.replace(/<\/p>/gi, '\n');
-  text = text.replace(/<\/div>/gi, '\n');
-  text = text.replace(/<\/li>/gi, '\n');
-  text = text.replace(/<\/tr>/gi, '\n');
-  
-  // Remove HTML tags but keep text content
+  // Remove HTML tags
   text = text.replace(/<[^>]+>/g, ' ');
   
   // Decode HTML entities
@@ -155,240 +364,179 @@ function htmlToPlainText(html: string): string {
   text = text.replace(/&gt;/g, '>');
   text = text.replace(/&quot;/g, '"');
   text = text.replace(/&#39;/g, "'");
-  text = text.replace(/&#x27;/g, "'");
-  text = text.replace(/&#x2F;/g, '/');
   
-  // Clean up excessive whitespace but preserve intentional line breaks
-  text = text.replace(/[ \t]+/g, ' '); // Multiple spaces/tabs to single space
-  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n'); // Multiple newlines to double newline
+  // Clean up whitespace
+  text = text.replace(/\s+/g, ' ');
   text = text.trim();
   
   return text;
 }
 
 /**
- * Step A: Best-effort raw text ingestion
- * Tries direct fetch first, falls back to search snippets if blocked
+ * Extract listing data from a single page using OpenAI
  */
-async function ingestListingText(url: string): Promise<IngestResult> {
-  // Validate URL
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    throw new Error('URL must start with http:// or https://');
+async function extractListingWithOpenAISinglePage(
+  url: string,
+  rawText: string,
+  source: string,
+  targetAddress?: string | null
+): Promise<ListingData> {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error('OpenAI API key not configured');
   }
 
-  // Try direct fetch first
+  // Truncate very long text to stay within token limits
+  const maxLength = 100000; // ~25k tokens
+  const truncatedText = rawText.length > maxLength ? rawText.substring(0, maxLength) : rawText;
+
+  const instructions = `You are a real estate data extraction assistant. Extract property listing information from the provided webpage content.
+
+IMPORTANT RULES:
+1. Extract ONLY information that appears in the webpage content. Never guess or invent values.
+2. For missing fields, return null (not 0).
+3. Validate that numbers are reasonable (e.g., price > 10000, beds 1-10, baths 1-10, sqft 100-20000).
+4. Property tax should be ANNUAL amount in dollars.
+5. HOA should be MONTHLY amount in dollars (convert if needed).
+6. If you see "year built" or "built in YYYY", extract as yearBuilt.
+7. Confidence scores should reflect how certain you are (0.0 to 1.0).
+
+${targetAddress ? `TARGET ADDRESS: ${targetAddress}\nValidate that the extracted address matches this target address.` : ''}
+
+Return a JSON object with:
+- address: Full property address (string)
+- price: Listing price in dollars (number or null)
+- beds: Number of bedrooms (number or null)
+- baths: Number of bathrooms (number or null) 
+- sqft: Square footage (number or null)
+- yearBuilt: Year built (number or null)
+- propertyType: Type (e.g. "Single Family", "Condo", "Townhouse")
+- hoa: Monthly HOA fee in dollars (number or null, 0 if explicitly no HOA)
+- propertyTax: Annual property tax in dollars (number or null)
+- lotSqft: Lot size in square feet (number or null)
+- status: Listing status (e.g. "Active", "Pending", "Sold")
+- keyFeatures: Array of key features (max 8)
+- missingFields: Array of field names that were not found
+- confidence: Object with confidence scores for each field (0.0 to 1.0)
+- extractionNotes: Brief note about extraction quality`;
+
+  const input = `URL: ${url}\nSource: ${source}\n\nWebpage content:\n${truncatedText}`;
+
   try {
-    const fetchResponse = await fetch(url, {
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Cache-Control': 'max-age=0',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
       },
-      redirect: 'follow',
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: instructions },
+          { role: 'user', content: input }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 1500
+      })
     });
 
-    if (fetchResponse.ok) {
-      const htmlContent = await fetchResponse.text();
-      const plainText = htmlToPlainText(htmlContent);
-      
-      // CRITICAL: If plain text is empty or very short (< 100 chars), treat as failure
-      // This handles cases where sites return blank pages or JavaScript-only content
-      if (!plainText || plainText.trim().length < 100) {
-        console.log(`Direct fetch returned empty/minimal content (${plainText.length} chars), treating as failure`);
-        throw new Error(`Empty content: ${plainText.length} chars`);
-      }
-      
-      // Truncate to reasonable size (25k chars to control token cost)
-      const truncatedText = plainText.length > 25000 
-        ? plainText.substring(0, 25000) + '... [truncated]'
-        : plainText;
-
-      return {
-        raw_text: truncatedText,
-        source: 'direct_fetch',
-        notes: `Successfully fetched ${htmlContent.length} chars, converted to ${truncatedText.length} chars of plain text`,
-        searchProviderUsed: 'none',
-        searchQueryUsed: undefined,
-        numSearchResultsUsed: undefined
-      };
-    } else if (fetchResponse.status === 403 || fetchResponse.status === 401 || fetchResponse.status === 429) {
-      // Blocked - will try OpenAI web search fallback
-      throw new Error(`Blocked: ${fetchResponse.status} ${fetchResponse.statusText}`);
-    } else {
-      throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
+    if (!openaiResponse.ok) {
+      const errorText = await openaiResponse.text();
+      throw new Error(`OpenAI API error: ${errorText.substring(0, 200)}`);
     }
-  } catch (fetchError) {
-    // Mark that we need fallback - will be handled by OpenAI web search
-    console.log('Direct fetch failed, will use Google Search fallback:', fetchError);
-    throw fetchError;
+
+    const data = await openaiResponse.json();
+    const outputText = data.choices?.[0]?.message?.content;
+
+    if (!outputText) {
+      throw new Error('No response from OpenAI API');
+    }
+
+    // Clean and parse JSON
+    let cleanText = outputText.trim();
+    cleanText = cleanText.replace(/```json\n?/gi, '');
+    cleanText = cleanText.replace(/```\n?/g, '');
+    
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleanText = jsonMatch[0];
+    }
+
+    const listingData: ListingData = JSON.parse(cleanText);
+
+    // Validate and normalize
+    if (!listingData.address && !listingData.price) {
+      throw new Error('Incomplete property data: missing both address and price');
+    }
+
+    // Ensure numeric fields are numbers or null
+    listingData.price = listingData.price !== null && listingData.price !== undefined ? Number(listingData.price) : null;
+    listingData.beds = listingData.beds !== null && listingData.beds !== undefined ? Number(listingData.beds) : null;
+    listingData.baths = listingData.baths !== null && listingData.baths !== undefined ? Number(listingData.baths) : null;
+    listingData.sqft = listingData.sqft !== null && listingData.sqft !== undefined ? Number(listingData.sqft) : null;
+    listingData.yearBuilt = listingData.yearBuilt !== null && listingData.yearBuilt !== undefined ? Number(listingData.yearBuilt) : null;
+    listingData.hoa = listingData.hoa !== null && listingData.hoa !== undefined ? Number(listingData.hoa) : null;
+    listingData.lotSqft = listingData.lotSqft !== null && listingData.lotSqft !== undefined ? Number(listingData.lotSqft) : null;
+    listingData.propertyTax = listingData.propertyTax !== null && listingData.propertyTax !== undefined ? Number(listingData.propertyTax) : null;
+
+    return listingData;
+  } catch (error) {
+    console.error('OpenAI extraction error:', error);
+    throw error;
   }
 }
 
 /**
- * Extract address from URL for search query
- * Properly formats addresses from URL patterns
+ * Extract address from URL patterns
  */
 function extractAddressFromUrl(url: string): string | null {
   try {
-    // Street type abbreviations mapping
-    const streetTypes: Record<string, string> = {
-      'st': 'Street', 'ave': 'Avenue', 'rd': 'Road', 'dr': 'Drive',
-      'ln': 'Lane', 'ct': 'Court', 'pl': 'Place', 'blvd': 'Boulevard', 'way': 'Way',
-      'cir': 'Circle', 'pkwy': 'Parkway', 'trl': 'Trail', 'hwy': 'Highway'
-    };
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
     
-    // Try to extract address from common real estate URL patterns
     // Zillow: /homedetails/581-W-Summerhill-Ln-N-Centerville-UT-84014/450680059_zpid/
-    const zillowMatch = url.match(/homedetails\/([^\/]+)\//);
-    if (zillowMatch) {
-      const parts = zillowMatch[1].split('-');
-      // Format: Number Direction Street StreetType Direction City State Zip
-      // Example: 581-W-Summerhill-Ln-N-Centerville-UT-84014
-      let formatted = '';
-      let i = 0;
-      
-      // Street number
-      if (i < parts.length && /^\d+$/.test(parts[i])) {
-        formatted += parts[i++] + ' ';
+    if (url.includes('zillow.com')) {
+      const match = pathname.match(/\/homedetails\/([^\/]+)/);
+      if (match) {
+        return match[1]
+          .replace(/-/g, ' ')
+          .replace(/(\d{5}).*/, '$1')
+          .replace(/\s+/g, ' ')
+          .trim();
       }
-      
-      // Direction (optional)
-      const directions = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW', 'NORTH', 'SOUTH', 'EAST', 'WEST'];
-      if (i < parts.length && directions.includes(parts[i].toUpperCase())) {
-        formatted += parts[i++] + ' ';
-      }
-      
-      // Street name
-      const streetParts: string[] = [];
-      while (i < parts.length) {
-        const currentPart = parts[i];
-        if (!currentPart) break;
-        
-        const currentPartLower = currentPart.toLowerCase();
-        const isStreetType = streetTypes[currentPartLower];
-        const isDirection = currentPart === 'N' || currentPart === 'S' || currentPart === 'E' || currentPart === 'W';
-        
-        if (isStreetType || isDirection) {
-          break;
-        }
-        
-        if (!directions.includes(currentPart.toUpperCase())) {
-          streetParts.push(currentPart);
-        }
-        i++;
-      }
-      
-      // Street type
-      if (i < parts.length && streetTypes[parts[i]?.toLowerCase()]) {
-        formatted += streetParts.join(' ') + ' ' + streetTypes[parts[i].toLowerCase()] + ' ';
-        i++;
-      } else if (streetParts.length > 0) {
-        formatted += streetParts.join(' ') + ' ';
-      }
-      
-      // Direction after street (optional)
-      if (i < parts.length && directions.includes(parts[i]?.toUpperCase())) {
-        formatted += parts[i++] + ' ';
-      }
-      
-      // City, State, Zip
-      while (i < parts.length) {
-        if (parts[i]?.length === 2 && parts[i] === parts[i].toUpperCase()) {
-          // State
-          formatted += parts[i++] + ' ';
-        } else if (/^\d{5}$/.test(parts[i])) {
-          // Zip
-          formatted += parts[i++];
-        } else {
-          // City
-          formatted += parts[i++] + ' ';
-        }
-      }
-      
-      return formatted.trim();
     }
     
-    // Redfin: /UT/Centerville/581-W-Summerhill-Ln-84014/home/187673696
-    const redfinMatch = url.match(/redfin\.com\/[^\/]+\/([^\/]+)\/home\//);
-    if (redfinMatch) {
-      const addressPart = redfinMatch[1];
-      // Extract state and city from URL path
-      const pathMatch = url.match(/redfin\.com\/([A-Z]{2})\/([^\/]+)\//);
-      if (pathMatch) {
-        const state = pathMatch[1];
-        const city = pathMatch[2];
-        // Format the address part
-        return addressPart.replace(/-/g, ' ') + ', ' + city + ', ' + state;
+    // Redfin: /UT/Centerville/581-W-Summerhill-Ln-84014/home/
+    if (url.includes('redfin.com')) {
+      const match = pathname.match(/\/([A-Z]{2})\/([^\/]+)\/([^\/]+)\/home/);
+      if (match) {
+        const [, state, city, street] = match;
+        return street.replace(/-/g, ' ') + ', ' + city.replace(/-/g, ' ') + ', ' + state;
       }
-      return addressPart.replace(/-/g, ' ');
     }
     
-    // Homes.com: /property/581-w-summerhill-ln-centerville-ut/v24dex912e1nl/
-    const homesMatch = url.match(/homes\.com\/property\/([^\/]+)\//);
-    if (homesMatch) {
-      const addressPart = homesMatch[1];
-      // Format: 581-w-summerhill-ln-centerville-ut
-      // Try to extract components
-      const parts = addressPart.split('-');
-      let formatted = '';
-      let i = 0;
-      
-      // Street number
-      if (i < parts.length && /^\d+$/.test(parts[i])) {
-        formatted += parts[i++] + ' ';
+    // Homes.com: /property/581-w-summerhill-ln-centerville-ut/
+    if (url.includes('homes.com')) {
+      const match = pathname.match(/\/property\/([^\/]+)/);
+      if (match) {
+        return match[1]
+          .replace(/-/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
       }
-      
-      // Street name and type
-      const streetParts: string[] = [];
-      while (i < parts.length) {
-        const currentPart = parts[i];
-        if (!currentPart) break;
-        
-        const currentPartLower = currentPart.toLowerCase();
-        if (streetTypes[currentPartLower]) {
-          // Found street type
-          formatted += streetParts.join(' ') + ' ' + streetTypes[currentPartLower] + ' ';
-          i++;
-          break;
-        }
-        streetParts.push(currentPart);
-        i++;
-      }
-      
-      // City and state
-      while (i < parts.length) {
-        if (parts[i]?.length === 2 && parts[i] === parts[i].toUpperCase()) {
-          // State
-          formatted += parts[i++];
-        } else {
-          // City
-          formatted += (formatted.endsWith(' ') ? '' : ' ') + parts[i++] + ' ';
-        }
-      }
-      
-      return formatted.trim();
     }
     
-    // UtahRealEstate.com: /581-W-SUMMERHILL-LN-Centerville-UT-84014/2107231
-    const utahRealEstateMatch = url.match(/utahrealestate\.com\/([^\/]+)\//);
-    if (utahRealEstateMatch) {
-      const addressPart = utahRealEstateMatch[1];
-      // Format: 581-W-SUMMERHILL-LN-Centerville-UT-84014
-      return addressPart.replace(/-/g, ' ');
-    }
-    
-    // Generic: try to find address-like patterns in URL
-    const addressPattern = /([A-Z0-9\s]+-[A-Z0-9\s]+-[A-Z]{2}-[0-9]{5})/i;
-    const match = url.match(addressPattern);
-    if (match) {
-      return match[1].replace(/-/g, ' ');
+    // UtahRealEstate.com: /581-w-summerhill-lane-centerville-ut-84014/
+    if (url.includes('utahrealestate.com')) {
+      const match = pathname.match(/\/([^\/]+)\/$/);
+      if (match) {
+        return match[1]
+          .replace(/-/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
     }
     
     return null;
@@ -398,1186 +546,281 @@ function extractAddressFromUrl(url: string): string | null {
 }
 
 /**
- * Lookup property tax from county assessor or listing sites
+ * Ingest listing text via direct fetch from URL
  */
-async function lookupPropertyTax(address: string, price: number): Promise<number | null> {
+async function ingestListingText(url: string): Promise<IngestResult> {
   try {
-    // Extract city/county from address for Utah
-    const utahCounties = ['davis', 'salt lake', 'utah', 'weber', 'cache', 'box elder'];
-    const addressLower = address.toLowerCase();
-    const county = utahCounties.find(c => addressLower.includes(c));
-    
-    if (!county) {
-      console.log('Could not determine county from address for tax lookup');
-      return null;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // Search for property tax information
-    const searchQueries = [
-      `"${address}" property tax ${county} county assessor`,
-      `"${address}" annual property tax ${county} county`,
-      `"${address}" site:${county}county.org property tax`,
-      `"${address}" property tax zillow`
-    ];
+    const htmlContent = await response.text();
+    const plainText = htmlToPlainText(htmlContent);
 
-    for (const query of searchQueries) {
-      try {
-        const searchResults = await googleSearch(query);
-        if (searchResults.length > 0) {
-          // Build text from search results
-          let taxText = '';
-          for (const result of searchResults.slice(0, 3)) {
-            taxText += `${result.title}\n${result.snippet}\n${result.link}\n\n`;
-          }
-
-          // Use OpenAI to extract property tax amount
-          const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
-          if (!apiKey) break;
-
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o',
-              messages: [
-                {
-                  role: 'system',
-                  content: 'Extract the annual property tax amount in dollars from the provided text. Return only a number (no commas, no $). If not found, return null.'
-                },
-                {
-                  role: 'user',
-                  content: `Find the annual property tax for: ${address}\n\nSearch results:\n${taxText}\n\nReturn the annual property tax amount as a number (e.g., 6500 for $6,500/year). If not found, return null.`
-                }
-              ],
-              response_format: { type: 'json_object' },
-              temperature: 0.1,
-              max_tokens: 100
-            })
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            const content = data.choices?.[0]?.message?.content;
-            if (content) {
-              const parsed = JSON.parse(content);
-              const taxAmount = parsed.propertyTax || parsed.tax || parsed.amount;
-              if (taxAmount && typeof taxAmount === 'number' && taxAmount > 0) {
-                // Validate against Utah average (0.58% of home value)
-                const utahAvgTax = price * 0.0058;
-                const variance = Math.abs(taxAmount - utahAvgTax) / utahAvgTax;
-                
-                // If within 50% of average, use it; otherwise use average
-                if (variance <= 0.5) {
-                  console.log(`Found property tax: $${taxAmount}/year (validated against Utah average)`);
-                  return taxAmount;
-                } else {
-                  console.log(`Property tax $${taxAmount} seems unusual (${(variance * 100).toFixed(0)}% variance), using Utah average`);
-                  return null; // Will use estimate
-                }
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.log(`Property tax lookup query failed: ${query}`);
-        continue;
-      }
+    if (!plainText || plainText.length < 100) {
+      throw new Error('Fetched content too short or empty');
     }
+
+    return {
+      raw_text: plainText,
+      source: 'direct_fetch',
+      notes: 'Successfully fetched page content directly',
+      searchProviderUsed: 'none'
+    };
   } catch (error) {
-    console.log('Property tax lookup failed:', error);
+    throw new Error(`Direct fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
-  
-  return null; // Will fall back to estimate
 }
 
 /**
- * Check if listing data has critical missing fields
- * Only trigger fallback if 2+ critical fields are missing (to avoid unnecessary fallbacks)
+ * Check if listing has critical missing fields
  */
 function hasCriticalMissingFields(listing: ListingData): boolean {
-  // Check if any critical field is missing (price, beds, baths, or sqft)
-  // Note: We allow null values, so check for null/undefined specifically
-  const missingPrice = listing.price === null || listing.price === undefined;
-  const missingBeds = listing.beds === null || listing.beds === undefined;
-  const missingBaths = listing.baths === null || listing.baths === undefined;
-  const missingSqft = listing.sqft === null || listing.sqft === undefined;
-  
-  // If 2 or more critical fields are missing, use fallback
-  const missingCount = [missingPrice, missingBeds, missingBaths, missingSqft].filter(Boolean).length;
-  return missingCount >= 2;
+  return !listing.price || !listing.beds || !listing.baths || !listing.sqft;
 }
 
 /**
- * Aggregate multiple ListingData results using majority confidence
- * For each field, use the value that appears in the majority of results
- * If there's a tie or no clear majority, use the value with highest confidence
+ * Check if two addresses match (lenient comparison)
  */
+function addressesMatch(addr1: string, addr2: string): boolean {
+  const normalize = (addr: string) => 
+    addr.toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .replace(/\s+/g, '');
+  
+  return normalize(addr1) === normalize(addr2);
+}
+
 /**
- * Normalize address for comparison (remove extra spaces, convert to lowercase, etc.)
+ * Lookup property tax from various sources
  */
-function normalizeAddressForComparison(address: string | null): string {
-  if (!address) return '';
-  return address
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/[.,]/g, '')
-    .trim();
+async function lookupPropertyTax(address: string, price: number): Promise<number | null> {
+  // This is a placeholder - implement actual tax lookup logic
+  // Could use county assessor APIs or estimate based on price
+  return null;
 }
 
 /**
- * Check if two addresses match (allowing for minor variations)
- */
-function addressesMatch(addr1: string | null, addr2: string | null): boolean {
-  if (!addr1 || !addr2) return false;
-  const norm1 = normalizeAddressForComparison(addr1);
-  const norm2 = normalizeAddressForComparison(addr2);
-  
-  // Exact match
-  if (norm1 === norm2) return true;
-  
-  // Extract street number and name for comparison
-  const extractStreet = (addr: string) => {
-    const match = addr.match(/^(\d+)\s+([a-z0-9\s]+)/);
-    return match ? { number: match[1], street: match[2].trim() } : null;
-  };
-  
-  const street1 = extractStreet(norm1);
-  const street2 = extractStreet(norm2);
-  
-  if (!street1 || !street2) return false;
-  
-  // Match if street number and first 10 chars of street name match
-  return street1.number === street2.number && 
-         street1.street.substring(0, 10) === street2.street.substring(0, 10);
-}
-
-function aggregateListingData(results: ListingData[], targetAddress?: string | null): { listing: ListingData; aggregationDetails: any } {
-  if (results.length === 0) {
-    throw new Error('Cannot aggregate empty results');
-  }
-  
-  if (results.length === 1) {
-    return {
-      listing: results[0],
-      aggregationDetails: {
-        totalSources: 1,
-        matchedSources: 1,
-        filteredSources: 0,
-        sources: [{
-          address: results[0].address,
-          price: results[0].price,
-          beds: results[0].beds,
-          baths: results[0].baths,
-          sqft: results[0].sqft,
-          hoa: results[0].hoa,
-          yearBuilt: results[0].yearBuilt
-        }]
-      }
-    };
-  }
-
-  // CRITICAL: Filter results to only include those with matching addresses
-  // If targetAddress is provided, use it; otherwise use the most common address
-  let addressToMatch: string | null = targetAddress || null;
-  
-  if (!addressToMatch) {
-    // Find the most common address
-    const addressCounts = new Map<string, number>();
-    for (const r of results) {
-      if (r.address) {
-        const normalized = normalizeAddressForComparison(r.address);
-        addressCounts.set(normalized, (addressCounts.get(normalized) || 0) + 1);
-      }
-    }
-    
-    let maxCount = 0;
-    for (const [addr, count] of addressCounts.entries()) {
-      if (count > maxCount) {
-        maxCount = count;
-        addressToMatch = addr;
-      }
-    }
-    
-    // Find the original address that matches this normalized one
-    for (const r of results) {
-      if (r.address && normalizeAddressForComparison(r.address) === addressToMatch) {
-        addressToMatch = r.address;
-        break;
-      }
-    }
-  }
-  
-  // Filter to only results with matching addresses
-  const matchedResults = results.filter(r => {
-    if (!r.address || !addressToMatch) return false;
-    return addressesMatch(r.address, addressToMatch);
-  });
-  
-  // If no matches, use all results but log warning
-  const resultsToUse = matchedResults.length > 0 ? matchedResults : results;
-  
-  if (matchedResults.length < results.length) {
-    console.warn(`Address mismatch: Filtered ${results.length - matchedResults.length} results with non-matching addresses. Target: ${addressToMatch}`);
-  }
-
-  // Helper to find majority value for a field
-  const getMajorityValue = <T>(field: keyof ListingData, extractor: (r: ListingData) => T | null): T | null => {
-    const values = resultsToUse
-      .map(r => ({ value: extractor(r), confidence: r.confidence?.[field as string] || 0.5 }))
-      .filter(v => v.value !== null && v.value !== undefined);
-    
-    if (values.length === 0) return null;
-    
-    // Count occurrences of each value
-    const counts = new Map<string | number, { count: number; maxConfidence: number; sources: string[] }>();
-    for (const { value, confidence } of values) {
-      const key = String(value);
-      const existing = counts.get(key) || { count: 0, maxConfidence: 0, sources: [] };
-      counts.set(key, {
-        count: existing.count + 1,
-        maxConfidence: Math.max(existing.maxConfidence, confidence),
-        sources: existing.sources
-      });
-    }
-    
-    // Find value with highest count (majority)
-    let majorityValue: string | number | null = null;
-    let maxCount = 0;
-    let maxConfidence = 0;
-    
-    for (const [value, stats] of counts.entries()) {
-      if (stats.count > maxCount || (stats.count === maxCount && stats.maxConfidence > maxConfidence)) {
-        maxCount = stats.count;
-        maxConfidence = stats.maxConfidence;
-        majorityValue = typeof value === 'string' && !isNaN(Number(value)) ? Number(value) : value;
-      }
-    }
-    
-    return majorityValue as T | null;
-  };
-
-  // Build aggregation details for logging
-  const aggregationDetails = {
-    totalSources: results.length,
-    matchedSources: matchedResults.length,
-    filteredSources: results.length - matchedResults.length,
-    targetAddress: addressToMatch,
-    sources: resultsToUse.map(r => ({
-      address: r.address,
-      price: r.price,
-      beds: r.beds,
-      baths: r.baths,
-      sqft: r.sqft,
-      hoa: r.hoa,
-      yearBuilt: r.yearBuilt,
-      confidence: r.confidence
-    })),
-    fieldVotes: {
-      price: {} as Record<string, number>,
-      beds: {} as Record<string, number>,
-      baths: {} as Record<string, number>,
-      sqft: {} as Record<string, number>,
-      hoa: {} as Record<string, number>,
-      yearBuilt: {} as Record<string, number>
-    }
-  };
-
-  // Track votes for each field
-  for (const r of resultsToUse) {
-    if (r.price !== null) {
-      const key = String(r.price);
-      aggregationDetails.fieldVotes.price[key] = (aggregationDetails.fieldVotes.price[key] || 0) + 1;
-    }
-    if (r.beds !== null) {
-      const key = String(r.beds);
-      aggregationDetails.fieldVotes.beds[key] = (aggregationDetails.fieldVotes.beds[key] || 0) + 1;
-    }
-    if (r.baths !== null) {
-      const key = String(r.baths);
-      aggregationDetails.fieldVotes.baths[key] = (aggregationDetails.fieldVotes.baths[key] || 0) + 1;
-    }
-    if (r.sqft !== null) {
-      const key = String(r.sqft);
-      aggregationDetails.fieldVotes.sqft[key] = (aggregationDetails.fieldVotes.sqft[key] || 0) + 1;
-    }
-    if (r.hoa !== null) {
-      const key = String(r.hoa);
-      aggregationDetails.fieldVotes.hoa[key] = (aggregationDetails.fieldVotes.hoa[key] || 0) + 1;
-    }
-    if (r.yearBuilt !== null) {
-      const key = String(r.yearBuilt);
-      aggregationDetails.fieldVotes.yearBuilt[key] = (aggregationDetails.fieldVotes.yearBuilt[key] || 0) + 1;
-    }
-  }
-
-  // Aggregate each field
-  const aggregated: ListingData = {
-    address: addressToMatch || getMajorityValue('address', r => r.address) || resultsToUse[0].address,
-    price: getMajorityValue('price', r => r.price) as number | null,
-    beds: getMajorityValue('beds', r => r.beds) as number | null,
-    baths: getMajorityValue('baths', r => r.baths) as number | null,
-    sqft: getMajorityValue('sqft', r => r.sqft) as number | null,
-    yearBuilt: getMajorityValue('yearBuilt', r => r.yearBuilt) as number | null,
-    propertyType: getMajorityValue('propertyType', r => r.propertyType) || resultsToUse[0].propertyType,
-    hoa: getMajorityValue('hoa', r => r.hoa) as number | null,
-    propertyTax: getMajorityValue('propertyTax', r => r.propertyTax) as number | null,
-    lotSqft: getMajorityValue('lotSqft', r => r.lotSqft) as number | null,
-    status: getMajorityValue('status', r => r.status) || resultsToUse[0].status,
-    keyFeatures: resultsToUse.flatMap(r => r.keyFeatures || []).filter((v, i, a) => a.indexOf(v) === i).slice(0, 8),
-    missingFields: resultsToUse.flatMap(r => r.missingFields || []).filter((v, i, a) => a.indexOf(v) === i),
-    confidence: {},
-    extractionNotes: `Aggregated from ${resultsToUse.length} sources (${matchedResults.length} matched address) using majority confidence`
-  };
-
-  // Calculate average confidence for each field
-  for (const field of ['address', 'price', 'beds', 'baths', 'sqft', 'yearBuilt', 'hoa', 'propertyTax'] as const) {
-    const confidences = resultsToUse
-      .map(r => r.confidence?.[field] || 0)
-      .filter(c => c > 0);
-    if (confidences.length > 0) {
-      aggregated.confidence![field] = confidences.reduce((a, b) => a + b, 0) / confidences.length;
-    }
-  }
-
-  return { listing: aggregated, aggregationDetails };
-}
-
-/**
- * Try to construct direct URLs for known working sites (homes.com, redfin.com, utahrealestate.com)
- * and fetch from them directly. This is more reliable than Google Search for addresses.
- */
-async function tryDirectUrlConstruction(address: string): Promise<{ listing: ListingData; ingestion: IngestResult } | null> {
-  try {
-    // Parse address components
-    const addressMatch = address.match(/(\d+)\s+(.+?)(?:,\s*)?(.+?)?,\s*([A-Z]{2})\s+(\d{5})/i);
-    if (!addressMatch) {
-      return null;
-    }
-    
-    const [, streetNum, streetName, cityName, state, zip] = addressMatch;
-    const city = cityName || '';
-    
-    // Normalize street name for URL construction
-    const urlSafeStreet = streetName.trim().replace(/\s+/g, '-').toLowerCase();
-    const urlSafeCity = city.trim().replace(/\s+/g, '-').toLowerCase();
-    const urlSafeState = state.toLowerCase();
-    
-    // Known working sites - try these in order
-    const urlPatterns = [
-      // Utah Real Estate
-      `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
-      // Redfin - format: /STATE/CITY/STREET-ZIP/home/
-      `https://www.redfin.com/${urlSafeState.toUpperCase()}/${urlSafeCity}/${urlSafeStreet}-${zip}/home/`,
-      // Homes.com - format: /property/STREET-CITY-STATE/
-      `https://www.homes.com/property/${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
-    ];
-    
-    for (const urlPattern of urlPatterns) {
-      try {
-        console.log(`Trying direct URL: ${urlPattern}`);
-        const fetchResponse = await fetch(urlPattern, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          },
-          redirect: 'follow',
-          signal: AbortSignal.timeout(5000),
-        });
-        
-        if (fetchResponse.ok) {
-          const htmlContent = await fetchResponse.text();
-          const plainText = htmlToPlainText(htmlContent);
-          
-          if (plainText && plainText.trim().length >= 100) {
-            // Found a working URL - extract data
-            const targetAddress = address;
-            const listing = await extractListingWithOpenAISinglePage(urlPattern, plainText, 'direct_url_construction', targetAddress);
-            
-            // Validate that we got the right property - be lenient with address matching
-            // If we got price and address, it's likely the right property even if address format differs slightly
-            if (listing.address && (addressesMatch(listing.address, targetAddress) || listing.price)) {
-              console.log(`Successfully fetched from constructed URL: ${urlPattern}`);
-              return {
-                listing,
-                ingestion: {
-                  raw_text: plainText.substring(0, 5000),
-                  source: 'direct_url_construction',
-                  notes: `Successfully fetched from constructed URL: ${urlPattern}`,
-                  searchProviderUsed: 'none',
-                  searchQueryUsed: undefined,
-                  numSearchResultsUsed: undefined
-                }
-              };
-            } else {
-              console.log(`Extracted data from ${urlPattern} doesn't match address ${targetAddress} or missing price`);
-            }
-          }
-        }
-      } catch (urlError) {
-        console.log(`Failed to fetch from ${urlPattern}:`, urlError instanceof Error ? urlError.message : 'Unknown error');
-        continue;
-      }
-    }
-    
-    return null; // None of the constructed URLs worked
-  } catch (error) {
-    console.log('Direct URL construction failed:', error);
-    return null;
-  }
-}
-
-/**
- * Get listing data using Google Search + OpenAI extraction with multi-site aggregation
- * Always searches for the address across major real estate sites, fetches pages from multiple sites,
- * extracts from each separately, and aggregates using majority confidence
+ * Get listing data using Google Search (SIMPLIFIED VERSION)
  */
 async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, address?: string): Promise<{ listing: ListingData; ingestion: IngestResult }> {
-  // Check both environment variable names for backward compatibility
-  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error('OpenAI API key not configured. Please set OPENAI_API_KEY in Vercel environment variables.');
-  }
-
-  // Build search query from MLS, address, or URL
-  // Priority: address (most specific) > mlsNumber > addressFromUrl > url
-  // Add property listing terms to improve search results
-  let searchQuery: string;
-  let fallbackQueries: string[] = [];
-  
-  if (address) {
-    // Simplified queries - remove "for sale" requirement which is too restrictive
-    // Primary query - search for the exact address on major sites
-    searchQuery = `"${address}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com)`;
-    // Fallback queries - search each major site separately (simpler, more likely to match)
-    fallbackQueries = [
-      `"${address}" site:utahrealestate.com`,
-      `"${address}" site:redfin.com`,
-      `"${address}" site:homes.com`,
-      `"${address}" site:zillow.com`,
-      `"${address}" site:realtor.com`,
-      address, // Just the address without quotes
-      `${address} property`,
-      `${address} listing`
-    ];
-  } else if (mlsNumber) {
-    // Simplified MLS queries - prioritize working sites
-    searchQuery = `"${mlsNumber}" MLS (site:utahrealestate.com OR site:redfin.com OR site:homes.com OR site:zillow.com)`;
-    fallbackQueries = [
-      `"${mlsNumber}" MLS site:utahrealestate.com`,
-      `"${mlsNumber}" MLS site:redfin.com`,
-      `"${mlsNumber}" MLS site:homes.com`,
-      `"${mlsNumber}" MLS site:zillow.com`,
-      `MLS ${mlsNumber} utahrealestate`,
-      `MLS ${mlsNumber} redfin`,
-      `MLS ${mlsNumber}`,
-      mlsNumber
-    ];
-  } else if (url) {
-    // Extract address from URL for better search query
-    const addressFromUrl = extractAddressFromUrl(url);
-    if (addressFromUrl) {
-      // Simplified queries - search for address on major sites without restrictive terms
-      searchQuery = `"${addressFromUrl}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com)`;
-      // Simplified fallback queries - prioritize working sites (utahrealestate, redfin, homes.com)
-      fallbackQueries = [
-        `"${addressFromUrl}" site:utahrealestate.com`,
-        `"${addressFromUrl}" site:redfin.com`,
-        `"${addressFromUrl}" site:homes.com`,
-        `"${addressFromUrl}" site:zillow.com`,
-        `"${addressFromUrl}" site:realtor.com`,
-        addressFromUrl,
-        `${addressFromUrl} property`
-      ];
-    } else {
-      searchQuery = `property ${url}`;
-      fallbackQueries = [url];
-    }
-  } else {
-    throw new Error('No search query available: need URL, address, or MLS number');
-  }
-
-  // Perform Google Search with fallback strategies
-  // Try to get results from multiple sites by trying multiple queries and collecting all results
-  let allSearchResults: GoogleSearchResult[] = [];
-  let queryUsed = searchQuery;
-  
-  // Try primary query first
-  try {
-    const primaryResults = await googleSearch(searchQuery);
-    allSearchResults.push(...primaryResults);
-    queryUsed = searchQuery;
-    console.log(`Primary search found ${primaryResults.length} results`);
-  } catch (error) {
-    console.log(`Primary search failed, trying fallbacks...`);
-  }
-  
-  // Try fallback queries to get more results from different sites
-  // Don't stop at first success - collect results from multiple queries to find multiple sites
-  for (const fallbackQuery of fallbackQueries) {
-    try {
-      const fallbackResults = await googleSearch(fallbackQuery);
-      // Add results that aren't already in allSearchResults (by URL)
-      for (const result of fallbackResults) {
-        if (!allSearchResults.some(r => r.link === result.link)) {
-          allSearchResults.push(result);
-        }
-      }
-      if (fallbackResults.length > 0) {
-        console.log(`Fallback query "${fallbackQuery}" found ${fallbackResults.length} results (${fallbackResults.length - fallbackResults.filter(r => allSearchResults.some(a => a.link === r.link)).length} new)`);
-      }
-      // If we have enough results from multiple sites, we can stop early
-      if (allSearchResults.length >= 15) {
-        break;
-      }
-    } catch (fallbackError) {
-      console.log(`Fallback query failed: ${fallbackQuery}`);
-      continue;
-    }
-  }
-  
-  // Remove duplicates by URL
-  const uniqueResults = Array.from(
-    new Map(allSearchResults.map(r => [r.link, r])).values()
-  );
-  
-  if (uniqueResults.length === 0) {
-    throw new Error(`No search results found from Google Search. Tried queries: ${[searchQuery, ...fallbackQueries].join(', ')}`);
-  }
-  
-  console.log(`Total unique search results: ${uniqueResults.length}`);
-  const searchResults = uniqueResults;
-
-  // NEW APPROACH: Fetch pages from MULTIPLE real estate sites and extract from each separately
-  // Then aggregate using majority confidence
-  const topResults = searchResults.slice(0, 10); // Get more results to find multiple sites
-  
-  // Known real estate sites - prioritize these for aggregation
-  const realEstateDomains = [
-    'zillow.com',
-    'redfin.com', 
-    'realtor.com',
-    'utahrealestate.com',
-    'homes.com',
-    'trulia.com',
-    'century21.com',
-    'remax.com'
-  ];
-  
-  // Track which sites we've fetched from and their results
-  const fetchedPages: Array<{ domain: string; url: string; content: string }> = [];
-  const maxFetches = 5; // Fetch from up to 5 different sites for better aggregation
-  
-  // URLs to exclude (zipcode pages, community pages, builder pages, etc.)
-  const excludePatterns = [
-    /\/zipcode\//,
-    /\/communities/,
-    /\/communities-details/,
-    /\/builders/,
-    /\/new-homes/,
-    /\/search\//,
-    /\/map\//,
-    /symphonyhomes\.com/,
-    /\/city\//,
-    /\/neighborhood\//
-  ];
-  
-  // Step 1: Fetch pages from multiple real estate sites
-  for (const result of topResults) {
-    if (fetchedPages.length >= maxFetches) break;
-    
-    // Skip excluded URLs (zipcode pages, community pages, etc.)
-    const shouldExclude = excludePatterns.some(pattern => pattern.test(result.link));
-    if (shouldExclude) {
-      console.log(`Skipping excluded URL: ${result.link}`);
-      continue;
-    }
-    
-    const matchedDomain = realEstateDomains.find(domain => result.link.includes(domain));
-    if (!matchedDomain) continue;
-    
-    // Skip if we already fetched from this domain
-    if (fetchedPages.some(p => p.domain === matchedDomain)) continue;
-    
-    // For Zillow, Redfin, etc., ensure it's an actual listing page
-    if (matchedDomain === 'zillow.com' && !result.link.includes('/homedetails/')) {
-      console.log(`Skipping non-listing Zillow page: ${result.link}`);
-      continue;
-    }
-    if (matchedDomain === 'redfin.com' && !result.link.includes('/home/')) {
-      console.log(`Skipping non-listing Redfin page: ${result.link}`);
-      continue;
-    }
-    
-    try {
-      const pageResponse = await fetch(result.link, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(8000), // 8 second timeout
-      });
-      
-      if (pageResponse.ok) {
-        const htmlContent = await pageResponse.text();
-        const plainText = htmlToPlainText(htmlContent);
-        const truncatedText = plainText.length > 30000 
-          ? plainText.substring(0, 30000) + '... [truncated]'
-          : plainText;
-        
-        fetchedPages.push({
-          domain: matchedDomain,
-          url: result.link,
-          content: truncatedText
-        });
-        console.log(`Successfully fetched page from ${matchedDomain}: ${result.link}`);
-      }
-    } catch (fetchError) {
-      console.log(`Failed to fetch ${result.link} from ${matchedDomain}:`, fetchError instanceof Error ? fetchError.message : 'Unknown error');
-      continue;
-    }
-  }
-  
-  // If we couldn't fetch any pages, try alternative strategies before falling back to snippets
-  if (fetchedPages.length === 0) {
-    console.log('Warning: Could not fetch full pages from search results, trying alternative strategies...');
-    
-    // Strategy 1: If we have an address, try constructing direct URLs to known real estate sites
-    if (address) {
-      console.log(`Attempting to construct direct URLs for address: ${address}`);
-      const constructedUrls: string[] = [];
-      
-      // Extract components from address for URL construction
-      const addressParts = address.match(/(\d+)\s+(.+?),\s*(.+?),\s*([A-Z]{2})\s+(\d{5})/);
-      if (addressParts) {
-        const [, streetNum, streetName, city, state, zip] = addressParts;
-        const urlSafeStreet = streetName.replace(/\s+/g, '-').toLowerCase();
-        const urlSafeCity = city.toLowerCase();
-        
-        // Try common URL patterns for major sites
-        constructedUrls.push(
-          `https://www.zillow.com/homes/${urlSafeStreet}-${urlSafeCity}-${state}-${zip}_rb/`,
-          `https://www.redfin.com/${state}/${urlSafeCity}/${urlSafeStreet}-${zip}/home/${streetNum}`,
-          `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet.replace(/-/g, '-')}-${urlSafeCity}-${state}-${zip}/`,
-        );
-      }
-      
-      // Try fetching from constructed URLs
-      for (const constructedUrl of constructedUrls) {
-        if (fetchedPages.length >= maxFetches) break;
-        
-        try {
-          const pageResponse = await fetch(constructedUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            },
-            redirect: 'follow',
-            signal: AbortSignal.timeout(8000),
-          });
-          
-          if (pageResponse.ok) {
-            const htmlContent = await pageResponse.text();
-            const plainText = htmlToPlainText(htmlContent);
-            
-            if (plainText && plainText.trim().length >= 100) {
-              const domain = new URL(constructedUrl).hostname;
-              const truncatedText = plainText.length > 30000 
-                ? plainText.substring(0, 30000) + '... [truncated]'
-                : plainText;
-              
-              fetchedPages.push({
-                domain: domain.replace('www.', ''),
-                url: constructedUrl,
-                content: truncatedText
-              });
-              console.log(`Successfully fetched from constructed URL: ${domain}`);
-            }
-          }
-        } catch (constructError) {
-          console.log(`Failed to fetch from constructed URL ${constructedUrl}:`, constructError instanceof Error ? constructError.message : 'Unknown error');
-          continue;
-        }
-      }
-    }
-    
-    // Strategy 2: If still no pages, try fetching from top 10 search results with relaxed filtering
-    if (fetchedPages.length === 0) {
-      console.log('Trying to fetch from top search results with relaxed filtering...');
-      for (const result of searchResults.slice(0, 10)) {
-        if (fetchedPages.length >= maxFetches) break;
-        
-        // Skip only obviously non-listing pages
-        const obviouslyExcluded = /\/zipcode\//.test(result.link) || /\/search\//.test(result.link);
-        if (obviouslyExcluded) continue;
-        
-        // Try any real estate domain
-        const matchedDomain = realEstateDomains.find(domain => result.link.includes(domain));
-        if (!matchedDomain) continue;
-        
-        // Skip if we already have this domain (unless we have 0 pages)
-        if (fetchedPages.length > 0 && fetchedPages.some(p => p.domain === matchedDomain)) continue;
-        
-        try {
-          const pageResponse = await fetch(result.link, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            },
-            redirect: 'follow',
-            signal: AbortSignal.timeout(8000),
-          });
-          
-          if (pageResponse.ok) {
-            const htmlContent = await pageResponse.text();
-            const plainText = htmlToPlainText(htmlContent);
-            
-            if (plainText && plainText.trim().length >= 100) {
-              const truncatedText = plainText.length > 30000 
-                ? plainText.substring(0, 30000) + '... [truncated]'
-                : plainText;
-              
-              fetchedPages.push({
-                domain: matchedDomain,
-                url: result.link,
-                content: truncatedText
-              });
-              console.log(`Successfully fetched from relaxed filter: ${matchedDomain}`);
-            }
-          }
-        } catch (relaxedError) {
-          continue;
-        }
-      }
-    }
-    
-    // Strategy 3: If STILL no pages, use snippets but try harder with more results
-    if (fetchedPages.length === 0) {
-      console.log('Warning: Could not fetch full pages even with alternative strategies, using enhanced snippets');
-      let rawText = '';
-      
-      // Use top 10 results (instead of 5) for better snippet coverage
-      for (const result of topResults.slice(0, 10)) {
-        rawText += `Title: ${result.title}\n`;
-        rawText += `Snippet: ${result.snippet}\n`;
-        rawText += `Link: ${result.link}\n\n`;
-      }
-      
-      // Also try searching for price-specific queries if we have an address
-      if (address) {
-        try {
-          const priceQuery = `"${address}" price property listing`;
-          const priceResults = await googleSearch(priceQuery);
-          if (priceResults.length > 0) {
-            rawText += '\n--- Price Search Results ---\n';
-            for (const result of priceResults.slice(0, 5)) {
-              rawText += `Title: ${result.title}\n`;
-              rawText += `Snippet: ${result.snippet}\n`;
-              rawText += `Link: ${result.link}\n\n`;
-            }
-          }
-        } catch (priceSearchError) {
-          console.log('Price-specific search failed, continuing with snippets');
-        }
-      }
-      
-      const listing = await extractListingWithOpenAI(url || address || 'unknown', rawText, 'google_search_snippets');
-      return {
-        listing,
-        ingestion: {
-          raw_text: rawText,
-          source: 'google_search_fallback',
-          notes: `Used Google Search snippets with enhanced coverage (could not fetch full pages). Query: "${queryUsed}"`,
-          searchProviderUsed: 'google',
-          searchQueryUsed: queryUsed,
-          numSearchResultsUsed: topResults.length
-        }
-      };
-    }
-  }
-  
-  console.log(`Fetched pages from ${fetchedPages.length} sites: ${fetchedPages.map(p => p.domain).join(', ')}`);
-  
-  // Step 2: Extract data from EACH page separately with detailed logging
-  // Determine target address for validation
-  const targetAddress = address || (url ? extractAddressFromUrl(url) : null);
-  
-  const extractionResults: Array<{ listing: ListingData; source: string; url: string }> = [];
-  for (const page of fetchedPages) {
-    try {
-      const extracted = await extractListingWithOpenAISinglePage(page.url, page.content, `google_search_${page.domain}`, targetAddress);
-      
-      // Additional validation: if target address provided, check if extracted address matches
-      if (targetAddress && extracted.address) {
-        if (!addressesMatch(extracted.address, targetAddress)) {
-          console.log(`Skipping ${page.domain}: extracted address "${extracted.address}" does not match target "${targetAddress}"`);
-          continue; // Skip this extraction
-        }
-      }
-      
-      extractionResults.push({
-        listing: extracted,
-        source: page.domain,
-        url: page.url
-      });
-      console.log(`Extracted from ${page.domain}: address="${extracted.address}", price=${extracted.price}, beds=${extracted.beds}, baths=${extracted.baths}, sqft=${extracted.sqft}, hoa=${extracted.hoa}, yearBuilt=${extracted.yearBuilt}`);
-    } catch (extractError) {
-      console.log(`Failed to extract from ${page.domain}:`, extractError instanceof Error ? extractError.message : 'Unknown error');
-      // Continue with other extractions
-    }
-  }
-  
-  if (extractionResults.length === 0) {
-    throw new Error('Failed to extract data from any fetched pages');
-  }
-  
-  // Step 3: Aggregate results using majority confidence with address validation
-  const { listing: aggregatedListing, aggregationDetails } = aggregateListingData(
-    extractionResults.map(r => r.listing),
-    targetAddress
-  );
-  
-  // Build detailed extraction log
-  const extractionLog = extractionResults.map(r => ({
-    source: r.source,
-    url: r.url,
-    extracted: {
-      address: r.listing.address,
-      price: r.listing.price,
-      beds: r.listing.beds,
-      baths: r.listing.baths,
-      sqft: r.listing.sqft,
-      hoa: r.listing.hoa,
-      yearBuilt: r.listing.yearBuilt,
-      confidence: r.listing.confidence
-    }
-  }));
-  
-  // Build combined raw text for ingestion metadata
-  const combinedRawText = fetchedPages.map(p => `=== ${p.domain}: ${p.url} ===\n${p.content.substring(0, 5000)}...\n\n`).join('\n');
-
-  // Return aggregated result with detailed logging
-  return {
-    listing: aggregatedListing,
-    ingestion: {
-      raw_text: combinedRawText,
-      source: 'google_search_fallback',
-      notes: `Aggregated data from ${extractionResults.length} sources (${fetchedPages.map(p => p.domain).join(', ')}) using majority confidence. Query: "${queryUsed}". ${aggregationDetails.filteredSources > 0 ? `Filtered ${aggregationDetails.filteredSources} results with non-matching addresses.` : ''}`,
-      searchProviderUsed: 'google',
-      searchQueryUsed: queryUsed,
-      numSearchResultsUsed: fetchedPages.length,
-      extractionDetails: {
-        extractionLog,
-        aggregationDetails
-      }
-    }
-  };
-}
-
-/**
- * Extract listing data from a single page using OpenAI
- * This is used internally by getListingDataFromGoogleSearch for multi-site extraction
- * @param targetAddress - The expected address to validate against (optional but recommended)
- */
-async function extractListingWithOpenAISinglePage(url: string, rawText: string, source: string, targetAddress?: string | null): Promise<ListingData> {
   const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
   
   if (!apiKey) {
     throw new Error('OpenAI API key not configured');
   }
 
-  const targetAddressNote = targetAddress ? `\n\nCRITICAL ADDRESS VALIDATION: The expected property address is "${targetAddress}". You MUST extract data ONLY if the address in the text matches this address. If the extracted address does not match "${targetAddress}", return null for ALL fields (price, beds, baths, sqft, HOA, yearBuilt, etc.) - only return the address you found.` : '';
+  console.log(`\n=== GOOGLE SEARCH FALLBACK START ===`);
+  console.log(`Input: url=${url}, mlsNumber=${mlsNumber}, address=${address}`);
 
-  // Special handling for snippet extraction (Google Search snippets often contain price in title/snippet)
-  const isSnippetSource = source === 'google_search_snippets';
-  const snippetGuidance = isSnippetSource ? `\n\nSPECIAL INSTRUCTIONS FOR SNIPPET EXTRACTION: You are extracting from Google Search snippets (titles and snippets from search results). Snippets often contain price information in the title or snippet text (e.g., "$1,099,900" or "Price: $1,099,900"). Be VERY attentive to price information in titles and snippets - it is often prominently displayed. Look for price patterns like "$1,099,900", "Price: $1,099,900", "$1M", "$1.1M", "Asking: $1,099,900" in BOTH titles and snippets.` : '';
-
-  const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be EXTREMELY thorough and look for ALL fields including HOA fees and year built. HOA is often displayed as "$20/mo" or "$20 monthly" - look very carefully. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.${snippetGuidance}
-
-CRITICAL: The address you extract MUST match the property being described. If the text describes multiple properties or you're unsure which property the data refers to, return null for all fields except the address. Only extract data that clearly belongs to the same property as the address.${targetAddressNote}`;
-
-  const userPrompt = `Extract property listing data from the following text. The text was obtained from: ${url} (source: ${source})${targetAddressNote}
-
-CRITICAL - EXTRACT ONLY DATA FOR THE EXACT PROPERTY DESCRIBED:
-- The address field is the MOST IMPORTANT - extract the FULL, COMPLETE address (street number, street name, city, state, zip)
-- ONLY extract price, beds, baths, sqft, HOA, yearBuilt, etc. if they CLEARLY belong to the SAME property as the address
-- If the text shows multiple properties or you're unsure, return null for all fields except address
-- If the address doesn't match what you're extracting, return null for that field
-${targetAddress ? `- EXPECTED ADDRESS: "${targetAddress}" - ONLY extract data if the address in the text matches this address exactly or very closely` : ''}
-
-CRITICAL - LOOK VERY CAREFULLY FOR THESE FIELDS:
-
-- HOA (MOST CRITICAL - LOOK EVERYWHERE IN THE TEXT):
-  * Search the ENTIRE text for any mention of HOA, homeowners association, or monthly fees
-  * Look for "$20/mo", "$20 monthly", "$20/mo HOA", "$20 monthly HOA"
-  * Look for "HOA fee", "HOA dues", "homeowners association fee"
-  * Look for patterns like "$/mo" or "$/month" near words like "HOA", "association", "fee"
-  * On Zillow: HOA often appears as "$20/mo" in property details or facts section
-  * Extract ONLY the dollar amount (e.g., "$20/mo" = 20, "$150/month" = 150)
-  * If explicitly "$0" or "No HOA" = 0
-  * If not found anywhere = null (NOT 0)
-
-- Year Built (CRITICAL for insurance calculation):
-  * Look for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025"
-  * Look for "Built:" followed by a year (e.g., "Built: 2025")
-  * Look for 4-digit years (2020-2030) near construction/built keywords
-  * This is CRITICAL - insurance rates depend on this value
-
-- Property Tax: Look for "property tax", "annual tax", "taxes", "$X/year" or "$X annually"
-- Price (CRITICAL${isSnippetSource ? ' - OFTEN IN SNIPPET TITLES' : ''}): Look VERY CAREFULLY for price in:
-  ${isSnippetSource ? '  * TITLES: "$1,099,900", "Price: $1,099,900", "$1M", "$1.1M"\n  * SNIPPETS: "Price: $1,099,900", "Asking: $1,099,900", "Listed at $1,099,900"\n  ' : '  '}* Full page text: "$1,099,900", "price", "list price", "asking price", "$1M", "$1.1M"
-  ${isSnippetSource ? '  * When extracting from snippets, the PRICE is often the most visible field - look in titles first!\n  ' : ''}* Price can appear with or without commas: "$1,099,900" or "$1099900" = 1099900
-- Beds: Look for "4 beds", "4 bed", "4 bedrooms", "4 BR"
-- Baths: Look for "3 baths", "3 bath", "3 bathrooms", "3 BA"
-- Sqft: Look for "3,695 sqft", "3695 sq ft", "square feet"
-
-Raw text content:
-${rawText}
-
-Extract and return a JSON object with this EXACT structure:
-{
-  "address": "full street address with city, state, zip",
-  "price": 425000,
-  "beds": 3,
-  "baths": 2,
-  "sqft": 1850,
-  "yearBuilt": 2015,
-  "propertyType": "Single Family",
-  "hoa": 20,
-  "propertyTax": null,
-  "lotSqft": null,
-  "status": "For Sale",
-  "keyFeatures": ["feature1", "feature2"],
-  "missingFields": ["field1", "field2"],
-  "confidence": {
-    "address": 0.95,
-    "price": 0.90,
-    "beds": 0.85
-  },
-  "extractionNotes": "Brief notes about extraction quality"
-}
-
-RULES:
-- address: Full address if found, otherwise null
-- price: List price as number (no commas, no $)
-- beds: Number of bedrooms (integer)
-- baths: Number of bathrooms (can be decimal like 2.5)
-- sqft: Square footage (integer)
-- yearBuilt: Year built (integer) - look carefully for "Built in 2025", "Built 2025", "Year built: 2025", "constructed in 2025", or "Built:" followed by a year. Return null if not found
-- propertyType: "Single Family", "Condo", "Townhouse", etc. or null
-- hoa: Monthly HOA amount in dollars. CRITICAL: Look very carefully for HOA fees. Common patterns:
-  * "$20/mo HOA" = 20
-  * "$20 monthly HOA" = 20  
-  * "$150/month HOA" = 150
-  * "HOA: $20/mo" = 20
-  * "$20/mo" near "HOA" or "association" = 20
-  * If explicitly "$0" or "No HOA" = 0
-  * If not found anywhere = null (NOT 0)
-- propertyTax: Annual property tax (number) or null if not found
-- lotSqft: Lot size in square feet (number) or null
-- status: "For Sale", "Sold", "Pending", etc. or null
-- keyFeatures: Array of up to 8 key features (strings) or empty array
-- missingFields: Array of field names that were not found in the text
-- confidence: Object mapping each extracted field to a confidence score (0.0 to 1.0)
-- extractionNotes: Brief explanation of what was found and any issues
-
-IMPORTANT:
-- Only extract values that are explicitly stated in the text
-- If a field is not found, set it to null (or [] for arrays)
-- Include all fields in missingFields that were not found
-- Set confidence scores based on how clearly the data appears in the text
-- Return ONLY valid JSON, no markdown, no code blocks, no explanations`;
-
-  // Retry logic for rate limits
-  let openaiResponse;
-  let lastError;
-  const maxRetries = 3;
+  // Build SIMPLE search queries - no complex operators
+  let searchQueries: string[] = [];
   
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    if (attempt > 0) {
-      const waitTime = Math.pow(2, attempt - 1) * 1000;
-      console.log(`Rate limited, retrying in ${waitTime}ms (attempt ${attempt + 1}/${maxRetries})`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+  if (address) {
+    console.log(`Building queries for address: ${address}`);
+    searchQueries = [
+      // Very simple queries without site restrictions
+      address,
+      `${address} property listing`,
+      `${address} for sale`,
+      // Then try specific sites
+      `${address} site:utahrealestate.com`,
+      `${address} site:redfin.com`,
+      `${address} site:homes.com`,
+      `${address} site:zillow.com`,
+    ];
+  } else if (mlsNumber) {
+    console.log(`Building queries for MLS: ${mlsNumber}`);
+    searchQueries = [
+      `MLS ${mlsNumber}`,
+      `${mlsNumber} MLS listing`,
+      `MLS ${mlsNumber} site:utahrealestate.com`,
+      `MLS ${mlsNumber} site:redfin.com`,
+    ];
+  } else if (url) {
+    const addressFromUrl = extractAddressFromUrl(url);
+    if (addressFromUrl) {
+      console.log(`Extracted address from URL: ${addressFromUrl}`);
+      searchQueries = [
+        addressFromUrl,
+        `${addressFromUrl} property listing`,
+        `${addressFromUrl} site:utahrealestate.com`,
+        `${addressFromUrl} site:redfin.com`,
+      ];
+    } else {
+      console.log(`Could not extract address from URL, searching URL directly`);
+      searchQueries = [url];
     }
-
-    const model = attempt === 0 ? 'gpt-4o' : 'gpt-4o-mini';
-
-    openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-        max_tokens: 2000
-      })
-    });
-
-    if (openaiResponse.ok) {
-      break;
-    }
-
-    const errorText = await openaiResponse.text();
-    lastError = errorText;
-    
-    if (openaiResponse.status !== 429) {
-      // Not a rate limit error, don't retry
-      break;
-    }
-  }
-
-  if (!openaiResponse || !openaiResponse.ok) {
-    let errorMessage = 'OpenAI API error';
-    try {
-      const errorText = lastError || await openaiResponse!.text();
-      const errorData = JSON.parse(errorText);
-      errorMessage = errorData.error?.message || errorText.substring(0, 200);
-      if (openaiResponse!.status === 429) {
-        errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
-      }
-    } catch {
-      errorMessage = lastError?.substring(0, 200) || 'Unknown error';
-    }
-    throw new Error(errorMessage);
-  }
-
-  const data = await openaiResponse.json();
-  
-  // Extract content from Chat Completions response
-  let outputText: string;
-  if (data.choices && data.choices[0]?.message?.content) {
-    outputText = data.choices[0].message.content;
   } else {
-    throw new Error('No response content found in OpenAI API response');
+    throw new Error('No search query available: need URL, address, or MLS number');
   }
 
-  if (!outputText) {
-    throw new Error('No response from OpenAI API');
-  }
+  console.log(`Will try ${searchQueries.length} search queries...`);
 
-  // Clean JSON from response (remove markdown code blocks if present)
-  let cleanText = outputText.trim();
-  cleanText = cleanText.replace(/```json\n?/gi, '');
-  cleanText = cleanText.replace(/```\n?/g, '');
+  // Try each query and collect ALL results
+  let allSearchResults: GoogleSearchResult[] = [];
   
-  const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    cleanText = jsonMatch[0];
+  for (let i = 0; i < searchQueries.length; i++) {
+    const query = searchQueries[i];
+    try {
+      console.log(`[${i + 1}/${searchQueries.length}] Trying query: "${query}"`);
+      const results = await googleSearch(query);
+      console.log(`  → Got ${results.length} results`);
+      
+      // Add unique results
+      for (const result of results) {
+        if (!allSearchResults.some(r => r.link === result.link)) {
+          allSearchResults.push(result);
+        }
+      }
+      
+      // If we have enough results, stop early
+      if (allSearchResults.length >= 10) {
+        console.log(`Collected ${allSearchResults.length} total results, stopping early`);
+        break;
+      }
+    } catch (error) {
+      console.log(`  ✗ Query failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      continue;
+    }
   }
 
-  // Parse JSON
-  let listingData: ListingData;
-  try {
-    listingData = JSON.parse(cleanText);
-  } catch (parseError) {
-    console.error('JSON Parse Error:', parseError);
-    console.error('Raw response:', cleanText);
-    throw new Error('Failed to parse property data from OpenAI response');
+  if (allSearchResults.length === 0) {
+    console.log(`=== GOOGLE SEARCH FAILED - Zero results from all queries ===\n`);
+    throw new Error(`No search results found. Tried queries: ${searchQueries.join(', ')}`);
   }
 
-  // Validate and normalize the data
-  if (!listingData.address && !listingData.price) {
-    throw new Error('Incomplete property data: missing both address and price');
+  console.log(`Total search results collected: ${allSearchResults.length}`);
+
+  // Try to fetch and extract from the top results
+  const topResults = allSearchResults.slice(0, 5);
+  console.log(`Attempting to fetch top ${topResults.length} results...`);
+
+  for (let i = 0; i < topResults.length; i++) {
+    const result = topResults[i];
+    try {
+      console.log(`[${i + 1}/${topResults.length}] Fetching: ${result.link}`);
+      
+      const fetchResponse = await fetch(result.link, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (fetchResponse.ok) {
+        const htmlContent = await fetchResponse.text();
+        const plainText = htmlToPlainText(htmlContent);
+        
+        if (plainText && plainText.length >= 100) {
+          console.log(`  → Fetched ${plainText.length} chars, attempting extraction...`);
+          
+          const listing = await extractListingWithOpenAISinglePage(
+            result.link,
+            plainText,
+            'google_search_fallback',
+            address
+          );
+
+          // Check if we got useful data
+          if (listing.price || (listing.beds && listing.baths)) {
+            console.log(`  ✓ Successfully extracted data from ${result.link}`);
+            console.log(`=== GOOGLE SEARCH SUCCESS ===\n`);
+            
+            return {
+              listing,
+              ingestion: {
+                raw_text: plainText.substring(0, 5000),
+                source: 'google_search_fallback',
+                notes: `Found via Google Search and extracted from ${result.link}`,
+                searchProviderUsed: 'google',
+                searchQueryUsed: searchQueries[0],
+                numSearchResultsUsed: allSearchResults.length
+              }
+            };
+          } else {
+            console.log(`  ✗ Extraction failed - missing critical data`);
+          }
+        } else {
+          console.log(`  ✗ Content too short`);
+        }
+      } else {
+        console.log(`  ✗ HTTP ${fetchResponse.status}`);
+      }
+    } catch (error) {
+      console.log(`  ✗ Error: ${error instanceof Error ? error.message : 'Unknown'}`);
+      continue;
+    }
   }
 
-  // Ensure numeric fields are numbers or null (NOT 0 for missing)
-  listingData.price = listingData.price !== null && listingData.price !== undefined ? Number(listingData.price) : null;
-  listingData.beds = listingData.beds !== null && listingData.beds !== undefined ? Number(listingData.beds) : null;
-  listingData.baths = listingData.baths !== null && listingData.baths !== undefined ? Number(listingData.baths) : null;
-  listingData.sqft = listingData.sqft !== null && listingData.sqft !== undefined ? Number(listingData.sqft) : null;
-  listingData.yearBuilt = listingData.yearBuilt !== null && listingData.yearBuilt !== undefined ? Number(listingData.yearBuilt) : null;
-  listingData.hoa = listingData.hoa !== null && listingData.hoa !== undefined ? Number(listingData.hoa) : null;
-  listingData.lotSqft = listingData.lotSqft !== null && listingData.lotSqft !== undefined ? Number(listingData.lotSqft) : null;
-  
-  // Property tax: keep as provided (annual)
-  if (listingData.propertyTax !== null && listingData.propertyTax !== undefined) {
-    listingData.propertyTax = Number(listingData.propertyTax);
-  }
-
-  return listingData;
+  console.log(`=== GOOGLE SEARCH FAILED - Could not extract data from any result ===\n`);
+  throw new Error('Could not extract property data from any search result');
 }
-
-/**
- * Legacy function - kept for backward compatibility but now uses multi-site aggregation
- */
-async function extractListingWithOpenAI(url: string, rawText: string, source: string, targetAddress?: string | null): Promise<ListingData> {
-  // This is now just a wrapper that calls the single-page extraction
-  return extractListingWithOpenAISinglePage(url, rawText, source, targetAddress);
-}
-
-/**
- * OLD FUNCTION - Removed, replaced by multi-site aggregation approach above
- */
 
 /**
  * Main function: Get listing data from URL
+ * IMPROVED VERSION with proper fallback chain
  */
 async function getListingDataFromUrl(url: string): Promise<{ listing: ListingData; ingestion: IngestResult }> {
-  let ingestion: IngestResult;
-  let listing: ListingData;
-  
+  console.log(`\n======================================`);
+  console.log(`PROCESSING URL: ${url}`);
+  console.log(`======================================\n`);
+
+  // STEP 1: Try direct fetch
   try {
-    // Step 1: Try to ingest raw text via direct fetch
-    ingestion = await ingestListingText(url);
-    
-    // Step 2: Extract with OpenAI from fetched text
-    // Extract target address from URL for validation
+    console.log(`STEP 1: Attempting direct fetch...`);
+    const ingestion = await ingestListingText(url);
     const targetAddress = extractAddressFromUrl(url);
-    listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source, targetAddress);
+    const listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source, targetAddress);
     
-    // Step 2.5: If property tax is missing but we have address and price, try to lookup
-    if ((listing.propertyTax === null || listing.propertyTax === undefined) && listing.address && listing.price) {
-      console.log('Property tax missing, attempting lookup from county/listing sites...');
-      const lookedUpTax = await lookupPropertyTax(listing.address, listing.price);
-      if (lookedUpTax !== null) {
-        listing.propertyTax = lookedUpTax;
-        console.log(`Found property tax via lookup: $${lookedUpTax}/year`);
-      }
+    // Check if we got critical fields
+    if (!hasCriticalMissingFields(listing)) {
+      console.log(`✓ Direct fetch SUCCESS - got all critical fields`);
+      return { listing, ingestion };
+    } else {
+      console.log(`✗ Direct fetch got partial data, missing critical fields`);
     }
-    
-    // Step 3: Check if critical fields are missing - if so, use Google Search fallback
-    if (hasCriticalMissingFields(listing)) {
-      console.log('Critical fields missing, using Google Search fallback');
-      const fallbackResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
-      listing = fallbackResult.listing;
-      ingestion = fallbackResult.ingestion;
-      
-      // Try property tax lookup for fallback result too
-      if ((listing.propertyTax === null || listing.propertyTax === undefined) && listing.address && listing.price) {
-        const lookedUpTax = await lookupPropertyTax(listing.address, listing.price);
-        if (lookedUpTax !== null) {
-          listing.propertyTax = lookedUpTax;
-        }
-      }
-    }
-  } catch (fetchError) {
-    // Direct fetch failed (403/429/etc) - use Google Search fallback
-    console.log('Direct fetch failed, using Google Search fallback:', fetchError);
-    const fallbackResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
-    listing = fallbackResult.listing;
-    ingestion = fallbackResult.ingestion;
-    
-    // Try property tax lookup for fallback result too
-    if ((listing.propertyTax === null || listing.propertyTax === undefined) && listing.address && listing.price) {
-      const lookedUpTax = await lookupPropertyTax(listing.address, listing.price);
-      if (lookedUpTax !== null) {
-        listing.propertyTax = lookedUpTax;
-      }
-    }
+  } catch (error) {
+    console.log(`✗ Direct fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
-  
-  return { listing, ingestion };
+
+  // STEP 2: Extract address and try direct URL construction
+  const addressFromUrl = extractAddressFromUrl(url);
+  if (addressFromUrl) {
+    console.log(`\nSTEP 2: Trying direct URL construction with address: ${addressFromUrl}`);
+    const directUrlResult = await tryDirectUrlConstruction(addressFromUrl);
+    if (directUrlResult) {
+      console.log(`✓ Direct URL construction SUCCESS`);
+      return directUrlResult;
+    } else {
+      console.log(`✗ Direct URL construction failed`);
+    }
+  } else {
+    console.log(`\nSTEP 2: Skipped - could not extract address from URL`);
+  }
+
+  // STEP 3: Fall back to Google Search
+  console.log(`\nSTEP 3: Falling back to Google Search...`);
+  return await getListingDataFromGoogleSearch(url, undefined, addressFromUrl || undefined);
+}
+
+/**
+ * Wrapper for backward compatibility
+ */
+async function extractListingWithOpenAI(url: string, rawText: string, source: string, targetAddress?: string | null): Promise<ListingData> {
+  return extractListingWithOpenAISinglePage(url, rawText, source, targetAddress);
 }
 
 // API Handler
@@ -1615,107 +858,69 @@ export default async function handler(
       }
     }
 
-    // APPROACH: For Zillow URLs and known problematic sites, skip direct fetch and use Google Search aggregation
-    // For other URLs: Try direct fetch first, then fallback to Google Search
-    // For addresses/MLS, go straight to Google Search aggregation
-    
     let searchResult: { listing: ListingData; ingestion: IngestResult };
     
     if (url) {
-      // For URLs: Try direct fetch first, then Google Search fallback
-      try {
-        searchResult = await getListingDataFromUrl(url);
-      } catch (error) {
-        // If direct fetch fails, extract address and use Google Search
-        const addressFromUrl = extractAddressFromUrl(url);
-        if (addressFromUrl) {
-          console.log(`Direct fetch failed, using Google Search for address: ${addressFromUrl}`);
-          searchResult = await getListingDataFromGoogleSearch(undefined, undefined, addressFromUrl);
-        } else {
-          // Last resort: try Google Search with the URL itself
-          console.log('Could not extract address from URL, trying Google Search with URL');
-          searchResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
-        }
-      }
+      // For URLs: Use improved fallback chain
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`NEW REQUEST: URL`);
+      console.log(`${'='.repeat(60)}`);
+      searchResult = await getListingDataFromUrl(url);
     } else if (address) {
-      // For addresses: Try constructing direct URLs to known working sites first
-      console.log(`Searching for address: ${address}`);
+      // For addresses: Try direct URL construction first, then Google Search
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`NEW REQUEST: ADDRESS`);
+      console.log(`Address: ${address}`);
+      console.log(`${'='.repeat(60)}`);
       
-      // Try direct URL construction for known working sites (homes.com, redfin.com, utahrealestate.com)
-      const workingSites = await tryDirectUrlConstruction(address);
-      if (workingSites) {
-        searchResult = workingSites;
+      // PRIORITY 1: Try direct URL construction
+      console.log(`\nPRIORITY 1: Trying direct URL construction...`);
+      const directUrlResult = await tryDirectUrlConstruction(address);
+      
+      if (directUrlResult) {
+        console.log(`✓ Direct URL construction SUCCESS`);
+        searchResult = directUrlResult;
       } else {
-        // Fallback to Google Search if direct URL construction fails
+        // PRIORITY 2: Fall back to Google Search
+        console.log(`✗ Direct URL construction failed`);
+        console.log(`\nPRIORITY 2: Falling back to Google Search...`);
         searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
       }
     } else {
-      return response.status(400).json({ error: 'URL or address is required' });
+      throw new Error('No URL or address provided');
     }
-    const listing = searchResult.listing;
-    const ingestion = searchResult.ingestion;
 
-    // Convert to format expected by frontend (maintain backward compatibility)
-    // Note: Keep null values as null (don't convert to 0) so frontend can show "Unknown"
-    const propertyData = {
-      address: listing.address || null,
-      price: listing.price, // Can be null
-      beds: listing.beds, // Can be null
-      baths: listing.baths, // Can be null
-      sqft: listing.sqft, // Can be null
-      yearBuilt: listing.yearBuilt,
-      propertyType: listing.propertyType || null,
-      hoa: listing.hoa, // Can be null (use 0 only if explicitly $0)
-      propertyTax: listing.propertyTax ? (listing.propertyTax > 1000 ? listing.propertyTax / 12 : listing.propertyTax) : null,
-      // Include additional metadata
-        _metadata: {
-        source: ingestion.source,
-        notes: ingestion.notes,
-        extractionNotes: listing.extractionNotes,
-        missingFields: listing.missingFields || [],
-        confidence: listing.confidence || {},
-        searchProviderUsed: ingestion.searchProviderUsed || 'none',
-        searchQueryUsed: ingestion.searchQueryUsed,
-        numSearchResultsUsed: ingestion.numSearchResultsUsed
+    // Try property tax lookup if missing
+    if (!searchResult.listing.propertyTax && searchResult.listing.address && searchResult.listing.price) {
+      const lookedUpTax = await lookupPropertyTax(searchResult.listing.address, searchResult.listing.price);
+      if (lookedUpTax !== null) {
+        searchResult.listing.propertyTax = lookedUpTax;
       }
-    };
+    }
 
     // Set CORS headers
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.setHeader('Content-Type', 'application/json');
 
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`REQUEST COMPLETE - SUCCESS`);
+    console.log(`${'='.repeat(60)}\n`);
+
     return response.status(200).json({
       success: true,
-      propertyData,
-      ingestion: {
-        source: ingestion.source,
-        notes: ingestion.notes,
-        searchProviderUsed: ingestion.searchProviderUsed,
-        searchQueryUsed: ingestion.searchQueryUsed,
-        numSearchResultsUsed: ingestion.numSearchResultsUsed,
-        extractionDetails: ingestion.extractionDetails
-      }
+      listing: searchResult.listing,
+      ingestion: searchResult.ingestion
     });
 
   } catch (error) {
-    console.error('SMS Process Error:', error);
+    console.error('\n❌ REQUEST FAILED:', error);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`REQUEST COMPLETE - ERROR`);
+    console.log(`${'='.repeat(60)}\n`);
     
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    
-    // Provide helpful error messages
-    if (errorMessage.includes('Blocked') || errorMessage.includes('403')) {
-      return response.status(200).json({
-        success: false,
-        error: 'The property listing website blocked our request. We attempted to use alternative methods, but limited data may be available.',
-        details: errorMessage,
-        suggestion: 'Try a different property listing URL or check if the listing is publicly accessible.'
-      });
-    }
-    
-    return response.status(500).json({ 
-      error: errorMessage
+    return response.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      success: false
     });
   }
 }

@@ -15,6 +15,7 @@ async function googleSearch(query: string): Promise<GoogleSearchResult[]> {
   const cx = process.env.VITE_GOOGLE_SEARCH_ENGINE_ID;
 
   if (!key || !cx) {
+    console.error('Missing Google Search API credentials');
     throw new Error('Missing VITE_GOOGLE_SEARCH_API_KEY or VITE_GOOGLE_SEARCH_ENGINE_ID in server environment variables.');
   }
 
@@ -36,15 +37,19 @@ async function googleSearch(query: string): Promise<GoogleSearchResult[]> {
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
       console.error(`Google Search API error (${response.status}):`, errorText.substring(0, 200));
+      console.error(`Query was: ${query}`);
       throw new Error(`Google Search API returned ${response.status}: ${errorText.substring(0, 200)}`);
     }
 
     const data = await response.json();
 
     if (!data.items || !Array.isArray(data.items)) {
+      console.log(`Google Search returned 0 results for query: ${query}`);
+      console.log(`Response data:`, JSON.stringify(data).substring(0, 200));
       return [];
     }
 
+    console.log(`Google Search returned ${data.items.length} results for query: ${query}`);
     // Return top 5 results
     return data.items.slice(0, 5).map((item: any) => ({
       title: item.title || '',
@@ -53,8 +58,10 @@ async function googleSearch(query: string): Promise<GoogleSearchResult[]> {
     }));
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`Google Search timed out for query: ${query}`);
       throw new Error('Google Search API request timed out after 10 seconds');
     }
+    console.error(`Google Search error for query: ${query}`, error);
     throw error;
   }
 }
@@ -83,47 +90,76 @@ export default async function handler(
       return response.status(400).json({ error: 'MLS number is required' });
     }
 
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`MLS LOOKUP REQUEST`);
+    console.log(`MLS Number: ${mlsNumber}`);
+    console.log(`${'='.repeat(60)}\n`);
+
     // Check both environment variable names for backward compatibility
     const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
     if (!apiKey) {
       return response.status(500).json({ error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in Vercel environment variables.' });
     }
 
-    // Step 1: Use Google Search to find MLS listing with fallback strategies
-    // Prioritize known working sites (utahrealestate.com, redfin.com)
+    // Step 1: Use Google Search to find MLS listing with SIMPLIFIED queries
+    // MUCH simpler approach - no complex operators
     const searchQueries = [
-      `"${mlsNumber}" MLS site:utahrealestate.com`,
-      `"${mlsNumber}" MLS site:redfin.com`,
+      // Super simple queries first
+      `MLS ${mlsNumber}`,
+      `${mlsNumber} MLS`,
+      `MLS ${mlsNumber} Utah`,
+      `${mlsNumber} property listing`,
+      // Then try specific sites with simple format
       `MLS ${mlsNumber} site:utahrealestate.com`,
       `MLS ${mlsNumber} site:redfin.com`,
-      `"${mlsNumber}" MLS`,
-      `MLS ${mlsNumber}`,
+      `MLS ${mlsNumber} site:homes.com`,
+      `MLS ${mlsNumber} site:zillow.com`,
+      // Last resort - just the number
       mlsNumber
     ];
     
-    let searchResults: GoogleSearchResult[] = [];
-    let queryUsed = searchQueries[0];
+    console.log(`Will try ${searchQueries.length} search queries...`);
     
-    for (const query of searchQueries) {
+    let allSearchResults: GoogleSearchResult[] = [];
+    
+    for (let i = 0; i < searchQueries.length; i++) {
+      const query = searchQueries[i];
       try {
-        searchResults = await googleSearch(query);
-        if (searchResults.length > 0) {
-          queryUsed = query;
-          console.log(`MLS search succeeded with query: ${query}`);
+        console.log(`[${i + 1}/${searchQueries.length}] Trying query: "${query}"`);
+        const results = await googleSearch(query);
+        console.log(`  → Got ${results.length} results`);
+        
+        // Add unique results
+        for (const result of results) {
+          if (!allSearchResults.some(r => r.link === result.link)) {
+            allSearchResults.push(result);
+          }
+        }
+        
+        // If we have enough results, stop early
+        if (allSearchResults.length >= 10) {
+          console.log(`Collected ${allSearchResults.length} total results, stopping early`);
           break;
         }
       } catch (error) {
-        console.log(`MLS search query failed: ${query}`);
+        console.log(`  ✗ Query failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         continue;
       }
     }
     
-    if (searchResults.length === 0) {
-      return response.status(404).json({ error: `Address not found from MLS search results. Tried queries: ${searchQueries.join(', ')}` });
+    if (allSearchResults.length === 0) {
+      console.log(`\n❌ MLS LOOKUP FAILED - Zero results from all queries`);
+      return response.status(404).json({ 
+        error: `Address not found from MLS search results. Tried ${searchQueries.length} queries. Google Search may be misconfigured or rate limited.`,
+        searchQueries: searchQueries,
+        googleSearchWorking: false
+      });
     }
 
+    console.log(`\nTotal search results collected: ${allSearchResults.length}`);
+
     // Step 2: Build raw_text from search results
-    const topResults = searchResults.slice(0, 3);
+    const topResults = allSearchResults.slice(0, 5);
     let rawText = '';
     for (const result of topResults) {
       rawText += `Title: ${result.title}\n`;
@@ -131,8 +167,10 @@ export default async function handler(
       rawText += `Link: ${result.link}\n\n`;
     }
 
+    console.log(`\nBuilt search results text (${rawText.length} chars)`);
+
     // Step 3: Use OpenAI to extract address from search results
-    const instructions = `You are a real estate assistant. Extract the property address from the provided search results.
+    const instructions = `You are a real estate assistant. Extract the property address from the provided search results for MLS number ${mlsNumber}.
 
 IMPORTANT RULES:
 1. Extract ONLY the address that appears in the search results. Never guess or invent values.
@@ -152,6 +190,8 @@ ${rawText}
 Return the complete property address in the format: [Street Number] [Street Name], [City], [State] [Zip Code]
 
 If you cannot find the address in the search results, return null for the address field.`;
+
+    console.log(`\nCalling OpenAI to extract address...`);
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -180,6 +220,7 @@ If you cannot find the address in the search results, return null for the addres
       } catch {
         errorMessage = errorText.substring(0, 200);
       }
+      console.error(`\n❌ OpenAI API error:`, errorMessage);
       return response.status(500).json({ error: errorMessage });
     }
 
@@ -190,6 +231,7 @@ If you cannot find the address in the search results, return null for the addres
     if (data.choices && data.choices[0]?.message?.content) {
       outputText = data.choices[0].message.content;
     } else {
+      console.error(`\n❌ No response content from OpenAI`);
       return response.status(500).json({ error: 'No response content found in OpenAI API response' });
     }
     
@@ -215,26 +257,38 @@ If you cannot find the address in the search results, return null for the addres
     const address = result.address?.trim() || null;
 
     if (!address || address.toLowerCase() === 'null') {
-      return response.status(404).json({ error: 'Address not found from MLS search results' });
+      console.log(`\n❌ MLS LOOKUP FAILED - Address not found in search results`);
+      console.log(`OpenAI notes: ${result.notes}`);
+      return response.status(404).json({ 
+        error: 'Address not found from MLS search results. OpenAI could not extract an address from the search results.',
+        notes: result.notes,
+        searchResultsFound: allSearchResults.length
+      });
     }
 
     // Set CORS headers
     response.setHeader('Access-Control-Allow-Origin', '*');
     response.setHeader('Content-Type', 'application/json');
 
+    console.log(`\n✓ MLS LOOKUP SUCCESS`);
+    console.log(`Found address: ${address}`);
+    console.log(`Confidence: ${result.confidence}`);
+    console.log(`${'='.repeat(60)}\n`);
+
     return response.status(200).json({
       success: true,
       address: address,
       mlsNumber: mlsNumber,
       confidence: result.confidence,
-      notes: result.notes
+      notes: result.notes,
+      searchResultsFound: allSearchResults.length
     });
 
   } catch (error) {
-    console.error('Error finding address from MLS:', error);
+    console.error('\n❌ MLS LOOKUP ERROR:', error);
+    console.log(`${'='.repeat(60)}\n`);
     return response.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error occurred'
     });
   }
 }
-
