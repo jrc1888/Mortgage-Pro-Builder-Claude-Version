@@ -240,20 +240,31 @@ async function tryDirectUrlConstruction(address: string): Promise<{ listing: Lis
     
     // Known working sites - try multiple URL variations for each
     const urlPatterns = [
-      // UtahRealEstate.com variations
       `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+      `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet.toUpperCase()}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+      `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity.toUpperCase()}-${urlSafeState.toUpperCase()}-${zip}/`,
       `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${zip}/`,
-      
-      // Redfin variations - format: /STATE/CITY/STREET-ZIP/home/
+      `https://www.utahrealestate.com/${streetNum}-W-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+      `https://www.utahrealestate.com/${streetNum}-N-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+      `https://www.utahrealestate.com/${streetNum}-E-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+      `https://www.utahrealestate.com/${streetNum}-S-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
       `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-${zip}/home/`,
+      `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-N-${zip}/home/`,
+      `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-W-${zip}/home/`,
+      `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-E-${zip}/home/`,
+      `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-S-${zip}/home/`,
       `https://www.redfin.com/${state}/${urlSafeCity}/${urlSafeStreet}-${zip}/home/`,
-      
-      // Homes.com variations - format: /property/STREET-CITY-STATE/
-      `https://www.homes.com/property/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
-      `https://www.homes.com/property/${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
-      
-      // Zillow variations - format: /homedetails/ADDRESS/
       `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${state}-${zip}/`,
+      `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-N-${urlSafeCity}-${state}-${zip}/`,
+      `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-W-${urlSafeCity}-${state}-${zip}/`,
+      `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-E-${urlSafeCity}-${state}-${zip}/`,
+      `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-S-${urlSafeCity}-${state}-${zip}/`,
+      `https://www.homes.com/property/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
+      `https://www.homes.com/property/${streetNum}-${urlSafeStreet}-n-${urlSafeCity}-${urlSafeState}/`,
+      `https://www.homes.com/property/${streetNum}-${urlSafeStreet}-w-${urlSafeCity}-${urlSafeState}/`,
+      `https://www.homes.com/property/${streetNum}-${urlSafeStreet}-e-${urlSafeCity}-${urlSafeState}/`,
+      `https://www.homes.com/property/${streetNum}-${urlSafeStreet}-s-${urlSafeCity}-${urlSafeState}/`,
+      `https://www.homes.com/property/${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
     ];
     
     console.log(`Trying ${urlPatterns.length} URL patterns...`);
