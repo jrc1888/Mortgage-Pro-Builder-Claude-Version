@@ -3,10 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import ScenarioBuilder from './components/ScenarioBuilder';
 import { Home } from './components/Home';
-import { Updates } from './components/Updates';
 import { Auth } from './components/Auth';
 import { Modal } from './components/Modal';
 import { SMSDemo } from './components/SMSDemo';
+import { ClientUpdates } from './components/ClientUpdates';
 import { Scenario, ScenarioDefaults } from './types';
 import { DEFAULT_SCENARIO } from './constants';
 import { scenarioTypeToTransactionType, migrateScenarioType } from './utils/scenarioTypeHelpers';
@@ -20,7 +20,7 @@ import { Session } from '@supabase/supabase-js';
 import { ToastProvider } from './hooks/useToast';
 import { ToastContainer } from './components/Toast';
 
-type ViewType = 'home' | 'scenario-builder' | 'builder' | 'updates' | 'sms-demo';
+type ViewType = 'home' | 'scenario-builder' | 'builder' | 'sms-demo' | 'client-updates';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
@@ -32,10 +32,10 @@ const App: React.FC = () => {
       const starredApp = localStorage.getItem('mortgagepro_starred_app');
       if (starredApp === 'scenario-builder') {
         return 'scenario-builder';
-      } else if (starredApp === 'updates') {
-        return 'updates';
       } else if (starredApp === 'sms-demo') {
         return 'sms-demo';
+      } else if (starredApp === 'client-updates') {
+        return 'client-updates';
       }
     }
     return 'home';
@@ -105,10 +105,10 @@ const App: React.FC = () => {
       const starredApp = localStorage.getItem('mortgagepro_starred_app');
       if (starredApp === 'scenario-builder') {
         setView('scenario-builder');
-      } else if (starredApp === 'updates') {
-        setView('updates');
       } else if (starredApp === 'sms-demo') {
         setView('sms-demo');
+      } else if (starredApp === 'client-updates') {
+        setView('client-updates');
       }
     }
   }, [loadingSession, session, view]);
@@ -205,8 +205,6 @@ const App: React.FC = () => {
         ...DEFAULT_SCENARIO,
         ...userDefaults,
         downPaymentAmount: userDefaults.purchasePrice * (userDefaults.downPaymentPercent / 100),
-        // Ensure DPA defaults are preserved (3.5% and 360 months) - explicitly set after userDefaults spread
-        dpa: DEFAULT_SCENARIO.dpa,
         id: crypto.randomUUID(),
         dateCreated: now,
         lastUpdated: now,
@@ -232,10 +230,10 @@ const App: React.FC = () => {
   const handleNavigate = (appId: string) => {
     if (appId === 'scenario-builder') {
       setView('scenario-builder');
-    } else if (appId === 'updates') {
-      setView('updates');
     } else if (appId === 'sms-demo') {
       setView('sms-demo');
+    } else if (appId === 'client-updates') {
+      setView('client-updates');
     }
   };
 
@@ -389,13 +387,13 @@ const App: React.FC = () => {
               userEmail={session?.user?.email}
               onNavigateHome={handleNavigateHome}
           />
-        ) : view === 'updates' ? (
-          <Updates 
+        ) : view === 'sms-demo' ? (
+          <SMSDemo 
             onNavigateHome={handleNavigateHome}
             userEmail={session?.user?.email}
           />
-        ) : view === 'sms-demo' ? (
-          <SMSDemo 
+        ) : view === 'client-updates' ? (
+          <ClientUpdates 
             onNavigateHome={handleNavigateHome}
             userEmail={session?.user?.email}
           />

@@ -1194,11 +1194,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                     <div className={inputGroupClass}>
                                         <div className={symbolClass}>$</div>
                                         <FormattedNumberInput 
-                                            value={scenario.refinanceLoanAmount || results?.totalLoanAmount || 0} 
+                                            value={Math.round((scenario.refinanceLoanAmount || results?.totalLoanAmount || 0) * 100) / 100} 
                                             onChangeValue={(val) => {
                                                 // For refinances, loan amount is a manual input
                                                 // We'll work backwards to calculate cash out or cash needed
-                                                handleInputChange('refinanceLoanAmount', val);
+                                                // Ensure value is rounded to 2 decimal places
+                                                const roundedVal = Math.round(val * 100) / 100;
+                                                handleInputChange('refinanceLoanAmount', roundedVal);
                                             }} 
                                             className="h-full px-4 text-sm text-slate-900 font-medium" 
                                         />
@@ -3069,91 +3071,130 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                          );
                      })() : (
                          <>
-                             {results.refinanceDetails && (
-                                 <>
-                                     {/* Loan Payoffs */}
-                                     <div className="flex justify-between text-slate-600">
-                                         <span>Loan Payoffs</span>
-                                         <span className="font-bold text-slate-900">{formatMoney(results.refinanceDetails.totalPayoff || 0)}</span>
-                                     </div>
-                                     
-                                     {/* Total Closing Costs */}
-                                     <div className="flex justify-between text-slate-600">
-                                         <span>Total Closing Costs</span>
-                                         <span className="font-bold text-slate-900">{formatMoney(results.totalClosingCosts || 0)}</span>
-                                     </div>
-                                     
-                                     {/* Cash Back (if any) */}
-                                     {(() => {
-                                         const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
-                                             - (results.refinanceDetails.totalPayoff || 0) 
-                                             - (results.refinanceDetails.financedClosingCosts || 0);
-                                         if (equity > 0) {
-                                             return (
-                                                 <div className="flex justify-between text-slate-600">
-                                                     <span>Cash Back</span>
-                                                     <span className="font-bold text-emerald-600">
-                                                         {formatMoney(equity)}
-                                                     </span>
-                                                 </div>
-                                             );
-                                         }
-                                         return null;
-                                     })()}
-                                     
-                                     {/* Total */}
-                                     {(() => {
-                                         const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
-                                             - (results.refinanceDetails.totalPayoff || 0) 
-                                             - (results.refinanceDetails.financedClosingCosts || 0);
-                                         const total = (results.refinanceDetails.totalPayoff || 0) 
-                                             + (results.totalClosingCosts || 0) 
-                                             + Math.max(0, equity);
-                                         return (
-                                             <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
-                                                 <span className="font-bold">Total</span>
-                                                 <span className="font-bold text-slate-900">{formatMoney(total)}</span>
-                                             </div>
+                             {results.refinanceDetails && (() => {
+                                 // Calculate Section J (D + I) to match the Costs tab EXACTLY
+                                 const sectionA = costGroups.find(g => g.category === 'A. Origination Charges');
+                                 const sectionB = costGroups.find(g => g.category === 'B. Services You Cannot Shop For');
+                                 const sectionC = costGroups.find(g => g.category === 'C. Services You Can Shop For');
+                                 const sectionE = costGroups.find(g => g.category === 'E. Taxes and Other Government Fees');
+                                 const sectionF = costGroups.find(g => g.category === 'F. Prepaids');
+                                 const sectionG = costGroups.find(g => g.category === 'G. Initial Escrow Payment at Closing');
+                                 const sectionH = costGroups.find(g => g.category === 'H. Other');
+                                 
+                                 const calcLoanCostsTotal = (group: typeof sectionA) => {
+                                     if (!group) return 0;
+                                     return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                         const itemCost = calculateItemCost(
+                                             cost,
+                                             {
+                                                 settlementDate: scenario.settlementDate,
+                                                 purchasePrice: scenario.purchasePrice,
+                                                 homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                                 propertyTaxYearly: scenario.propertyTaxYearly,
+                                                 hoaMonthly: scenario.hoaMonthly,
+                                                 interestRate: scenario.interestRate
+                                             },
+                                             {
+                                                 totalLoanAmount: results.totalLoanAmount,
+                                                 prepaidInterest: results.prepaidInterest,
+                                                 prepaidInterestDays: results.prepaidInterestDays,
+                                                 financedMIP: results.financedMIP,
+                                                 buydownCost: results.buydownCost
+                                             }
                                          );
-                                     })()}
-                                     
-                                     {/* Minus New Loan Amount */}
-                                     <div className="flex justify-between text-slate-600">
-                                         <span>New Loan Amount</span>
-                                         <span className="font-bold text-slate-900">-{formatMoney(results.totalLoanAmount || 0)}</span>
-                                     </div>
-                                     
-                                     {/* Result: Cash Out or Cash Required */}
-                                     {(() => {
-                                         const equity = (results.refinanceDetails.baseLoanAmountBeforeUFMIP || 0) 
-                                             - (results.refinanceDetails.totalPayoff || 0) 
-                                             - (results.refinanceDetails.financedClosingCosts || 0);
-                                         const total = (results.refinanceDetails.totalPayoff || 0) 
-                                             + (results.totalClosingCosts || 0) 
-                                             + Math.max(0, equity);
-                                         const result = total - (results.totalLoanAmount || 0);
+                                         return sum + itemCost;
+                                     }, 0);
+                                 };
+                                 
+                                 const calcOtherCostsTotal = (group: typeof sectionE) => {
+                                     if (!group) return 0;
+                                     return group.items.filter(cost => cost && cost.id).reduce((sum, cost) => {
+                                         const itemCost = calculateItemCost(
+                                             cost,
+                                             {
+                                                 settlementDate: scenario.settlementDate,
+                                                 purchasePrice: scenario.purchasePrice,
+                                                 homeInsuranceYearly: scenario.homeInsuranceYearly,
+                                                 propertyTaxYearly: scenario.propertyTaxYearly,
+                                                 hoaMonthly: scenario.hoaMonthly,
+                                                 interestRate: scenario.interestRate
+                                             },
+                                             {
+                                                 totalLoanAmount: results.totalLoanAmount,
+                                                 prepaidInterest: results.prepaidInterest,
+                                                 prepaidInterestDays: results.prepaidInterestDays,
+                                                 financedMIP: results.financedMIP,
+                                                 buydownCost: results.buydownCost
+                                             }
+                                         );
+                                         return sum + itemCost;
+                                     }, 0);
+                                 };
+                                 
+                                 const totalA = calcLoanCostsTotal(sectionA);
+                                 const totalB = calcLoanCostsTotal(sectionB);
+                                 const totalC = calcLoanCostsTotal(sectionC);
+                                 const totalD = totalA + totalB + totalC;
+                                 
+                                 const totalE = calcOtherCostsTotal(sectionE);
+                                 const totalF = calcOtherCostsTotal(sectionF);
+                                 const totalG = calcOtherCostsTotal(sectionG);
+                                 const totalH = calcOtherCostsTotal(sectionH);
+                                 const totalI = totalE + totalF + totalG + totalH;
+                                 
+                                 // Section J Total = D + I (matches Costs tab)
+                                 const sectionJTotal = totalD + totalI;
+                                 
+                                 // Calculate cash required/back: Loan Payoff + Total Closing Costs - New Loan Amount
+                                 const loanPayoff = results.refinanceDetails.totalPayoff || 0;
+                                 const totalClosingCosts = sectionJTotal; // Use Section J total to match Costs tab
+                                 const newLoanAmount = results.totalLoanAmount || 0;
+                                 const netResult = loanPayoff + totalClosingCosts - newLoanAmount;
+                                 
+                                 return (
+                                     <>
+                                         {/* Loan Payoff */}
+                                         <div className="flex justify-between text-slate-600">
+                                             <span>Loan Payoff</span>
+                                             <span className="font-bold text-slate-900">{formatMoney(loanPayoff)}</span>
+                                         </div>
                                          
-                                         if (result > 0) {
-                                             // Positive = Shortfall = Cash Required to Close
-                                             return (
-                                                 <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
-                                                     <span className="font-bold">Cash Required to Close</span>
-                                                     <span className="font-bold text-slate-900">{formatMoney(result)}</span>
-                                                 </div>
-                                             );
-                                         } else if (result < 0) {
-                                             // Negative = Excess = Cash Out (available equity)
-                                             return (
-                                                 <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-2 mt-2">
-                                                     <span className="font-bold">Cash Out</span>
-                                                     <span className="font-bold text-emerald-600">{formatMoney(Math.abs(result))}</span>
-                                                 </div>
-                                             );
-                                         }
-                                         return null;
-                                     })()}
-                                 </>
-                             )}
+                                         {/* Total Closing Costs (Section J) */}
+                                         <div className="flex justify-between text-slate-600">
+                                             <span>Total Closing Costs</span>
+                                             <span className="font-bold text-slate-900">{formatMoney(totalClosingCosts)}</span>
+                                         </div>
+                                         
+                                         {/* Subtotal */}
+                                         <div className="flex justify-between text-slate-600 border-t border-slate-300 pt-1.5 mt-1.5 bg-indigo-50 rounded-lg px-2 py-1.5 -mx-1">
+                                             <span className="font-bold text-indigo-900">Subtotal</span>
+                                             <span className="font-bold text-indigo-900">{formatMoney(loanPayoff + totalClosingCosts)}</span>
+                                         </div>
+                                         
+                                         {/* New Loan Amount */}
+                                         <div className="flex justify-between text-slate-600 pt-1.5">
+                                             <span>New Loan Amount</span>
+                                             <span className="font-bold text-slate-900">-{formatMoney(newLoanAmount)}</span>
+                                         </div>
+                                         
+                                         {/* Result: Cash Required OR Cash Back */}
+                                         <div className="border-t-2 border-slate-400 pt-2 mt-2 bg-indigo-50 rounded-lg p-2.5 -mx-1">
+                                             <div className="flex justify-between items-center gap-4 min-w-0">
+                                                 <span className={`text-base font-black uppercase flex-1 min-w-0 pr-4 tracking-wide ${
+                                                     netResult >= 0 ? 'text-indigo-900' : 'text-emerald-700'
+                                                 }`}>
+                                                     {netResult >= 0 ? 'Cash Required to Close' : 'Cash Back to Borrower'}
+                                                 </span>
+                                                 <span className={`text-3xl font-black tracking-tight text-right shrink-0 ${
+                                                     netResult >= 0 ? 'text-indigo-900' : 'text-emerald-600'
+                                                 }`}>
+                                                     {formatMoney(Math.abs(netResult))}
+                                                 </span>
+                                             </div>
+                                         </div>
+                                     </>
+                                 );
+                             })()}
                          </>
                      )}
                 </div>

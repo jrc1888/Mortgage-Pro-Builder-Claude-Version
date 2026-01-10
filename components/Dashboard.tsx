@@ -4,7 +4,6 @@ import { Plus, Folder, Trash2, Calendar, MapPin, BarChart2, Copy, Search, ArrowR
 import { Scenario, ScenarioDefaults } from '../types';
 import { FormattedNumberInput, LiveDecimalInput } from './CommonInputs';
 import { Modal } from './Modal';
-import { SharedHeader } from './SharedHeader';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { DEFAULT_SCENARIO } from '../constants';
 import { DEFAULT_VALIDATION_THRESHOLDS } from '../services/validation';
@@ -28,10 +27,9 @@ interface Props {
   onSync: () => void;
   isSyncing: boolean;
   userEmail?: string | null;
-  onNavigateHome: () => void;
 }
 
-const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, onDelete, onDeleteClient, onDuplicate, onPin, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing, userEmail, onNavigateHome }) => {
+const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, onDelete, onDeleteClient, onDuplicate, onPin, initialClient, userDefaults, onUpdateDefaults, onLogout, onSync, isSyncing, userEmail }) => {
   const [isComparing, setIsComparing] = useState(false);
   const [selectedClient, setSelectedClient] = useState<string | null>(initialClient || null);
   const [selectedForComparison, setSelectedForComparison] = useState<string[]>([]);
@@ -399,74 +397,62 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
   };
   
   const renderEmptyState = () => (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-fadeIn opacity-100">
-          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 text-slate-200 shadow-sm border border-slate-100">
-              <Folder size={48} strokeWidth={1.5} />
+      <div className="flex flex-col h-full bg-slate-50">
+          <header className="bg-slate-950 border-b border-slate-800 h-[5.5rem] px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
+                {/* Decorative Background Icon */}
+                <div className="absolute right-32 top-1/2 -translate-y-1/2 text-slate-900/80 pointer-events-none transform group-hover:scale-105 transition-transform duration-1000">
+                    <Target size={200} strokeWidth={0.5} />
+                </div>
+
+                <div className="flex items-center gap-6 relative z-10 h-full max-w-4xl flex-1">
+                    <div className="w-14 h-14 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl flex items-center justify-center shadow-2xl shadow-black/50 shrink-0">
+                        <Home size={28} className="text-indigo-400" />
+                    </div>
+                    
+                    <div className="flex flex-col justify-center h-full">
+                        <h2 className="text-4xl font-black text-white tracking-tight leading-none shadow-sm pb-1">Dashboard</h2>
+                    </div>
+                </div>
+          </header>
+
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-fadeIn opacity-100">
+              <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 text-slate-200 shadow-sm border border-slate-100">
+                  <Folder size={48} strokeWidth={1.5} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-800 mb-2">Client Folder Organizer</h3>
+              <p className="text-slate-400 font-medium max-w-md">Select a client folder from the sidebar to manage scenarios, or create a new client profile to get started.</p>
+              <button 
+                 onClick={() => onCreateNew()}
+                 className="mt-8 bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-emerald-900/20 transition-transform transform hover:-translate-y-0.5 flex items-center gap-2 text-sm uppercase tracking-wide border border-emerald-500/50"
+              >
+                 <Plus size={18} /> Create First Client
+              </button>
           </div>
-          <h3 className="text-2xl font-bold text-slate-800 mb-2">Client Folder Organizer</h3>
-          <p className="text-slate-400 font-medium max-w-md">Select a client folder from the sidebar to manage scenarios, or create a new client profile to get started.</p>
-          <button 
-             onClick={() => onCreateNew()}
-             className="mt-8 bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-emerald-900/20 transition-transform transform hover:-translate-y-0.5 flex items-center gap-2 text-sm uppercase tracking-wide border border-emerald-500/50"
-          >
-             <Plus size={18} /> Create First Client
-          </button>
+
+          <footer className="bg-white border-t border-slate-300 py-1.5 px-8 flex justify-between items-center shrink-0">
+              <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">MortgagePro © 2025</p>
+              <p className="text-[10px] text-slate-300 font-medium">v1.0.5</p>
+          </footer>
       </div>
   );
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 overflow-hidden relative">
-        {/* Header - Full Width Above Sidebar and Content */}
-        {selectedClient ? (
-          <SharedHeader 
-            onNavigateHome={onNavigateHome}
-            title={selectedClient || undefined}
-            userEmail={userEmail}
-            variant="dark"
-            rightActions={
-              <>
-                {selectedForComparison.length > 0 && (
-                  <button 
-                    onClick={() => setIsComparing(true)}
-                    className="flex items-center gap-2 px-4 py-3 text-indigo-300 hover:text-indigo-200 hover:bg-indigo-900/30 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
-                  >
-                    <GitCompare size={16} />
-                    <span className="hidden xl:inline">Compare ({selectedForComparison.length})</span>
-                  </button>
-                )}
-                <button 
-                  onClick={requestDeleteFolder}
-                  className="flex items-center gap-2 px-4 py-3 text-slate-500 hover:text-red-400 hover:bg-slate-900 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide group/del"
-                >
-                  <Trash2 size={16} className="text-slate-600 group-hover/del:text-red-500 transition-colors" />
-                  <span className="hidden xl:inline">Delete</span>
-                </button>
-                {/* New Scenario Button */}
-                <button 
-                  onClick={() => onCreateNew(selectedClient!)}
-                  className="flex items-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 shadow-lg shadow-indigo-900/40 hover:shadow-indigo-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-indigo-500/50 transform hover:-translate-y-0.5"
-                >
-                  <Plus size={18} strokeWidth={3} /> New Scenario
-                </button>
-              </>
-            }
-          />
-        ) : (
-          <SharedHeader 
-            onNavigateHome={onNavigateHome}
-            title="Scenario Builder"
-            userEmail={userEmail}
-            variant="dark"
-          />
-        )}
-        
-        {/* Sidebar and Main Content Container */}
-        <div className="flex-1 flex overflow-hidden relative">
+    <div className="h-full flex bg-slate-50 overflow-hidden relative">
         {/* Dark Sidebar */}
-        <div className="w-72 bg-slate-950 border-r border-slate-900 flex flex-col shrink-0 z-20 shadow-xl relative">
+        <div className="w-72 bg-slate-950 border-r border-slate-900 flex flex-col h-full shrink-0 z-20 shadow-xl relative">
           
-          {/* Sidebar Content - Search and Sort */}
-          <div className="p-5 space-y-5">
+          {/* Sidebar Header */}
+          <div className="p-5 border-b border-slate-900 space-y-5">
+               <div className="flex items-center justify-between text-white font-bold text-xl mb-2 tracking-tight">
+                   <div className="flex items-center gap-3">
+                       <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-900/50">
+                           <BarChart2 size={18} className="text-white" />
+                       </div>
+                       MortgagePro
+                   </div>
+                   {isSyncing && <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>}
+               </div>
+
               <div className="relative">
                   <Search size={14} className="absolute left-3 top-3.5 text-slate-500" />
                   <input 
@@ -576,6 +562,52 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
         <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
             {selectedClient ? (
                 <>
+                    {/* Dark Header Strip */}
+                    <header className="bg-slate-950 border-b border-slate-800 h-28 px-8 flex items-center justify-between shrink-0 relative z-20 overflow-hidden group">
+                         {/* Decorative Background Icon */}
+                         <div className="absolute right-32 top-1/2 -translate-y-1/2 text-slate-900/80 pointer-events-none transform group-hover:scale-105 transition-transform duration-1000">
+                             <FolderOpen size={240} strokeWidth={0.5} />
+                         </div>
+
+                         <div className="flex items-center gap-6 relative z-10 h-full max-w-4xl flex-1">
+                             {/* Large Icon Box */}
+                             <div className="w-16 h-16 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl flex items-center justify-center shadow-2xl shadow-black/50 shrink-0">
+                                 <Briefcase size={32} className="text-indigo-400" />
+                             </div>
+                             
+                             <div className="flex flex-col justify-center h-full overflow-hidden">
+                                 <h2 className="text-5xl font-black text-white tracking-tight leading-none shadow-sm truncate pb-1">{selectedClient}</h2>
+                             </div>
+                         </div>
+
+                         <div className="flex items-center gap-4 relative z-10 shrink-0 ml-4 pl-8 border-l border-slate-800/50">
+                             {selectedForComparison.length > 0 && (
+                                 <button 
+                                    onClick={() => setIsComparing(true)}
+                                    className="flex items-center gap-2 px-4 py-3 text-indigo-300 hover:text-indigo-200 hover:bg-indigo-900/30 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide border border-indigo-500/30"
+                                 >
+                                     <GitCompare size={16} />
+                                     <span className="hidden xl:inline">Compare ({selectedForComparison.length})</span>
+                                 </button>
+                             )}
+                             <button 
+                                onClick={requestDeleteFolder}
+                                className="flex items-center gap-2 px-4 py-3 text-slate-500 hover:text-red-400 hover:bg-slate-900 rounded-lg transition-colors text-xs font-bold uppercase tracking-wide group/del"
+                             >
+                                 <Trash2 size={16} className="text-slate-600 group-hover/del:text-red-500 transition-colors" />
+                                 <span className="hidden xl:inline">Delete</span>
+                             </button>
+                             
+                            {/* New Scenario Button */}
+                            <button 
+                               onClick={() => onCreateNew(selectedClient!)}
+                               className="flex items-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 shadow-lg shadow-indigo-900/40 hover:shadow-indigo-900/60 transition-all font-bold text-xs uppercase tracking-wide border border-indigo-500/50 transform hover:-translate-y-0.5"
+                           >
+                               <Plus size={18} strokeWidth={3} /> New Scenario
+                           </button>
+                         </div>
+                    </header>
+
                     {/* Scrollable Grid */}
                     <div className="flex-1 overflow-y-auto scrollbar-custom">
                          {isComparing ? (
@@ -598,11 +630,9 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
             ) : (
                 renderEmptyState()
             )}
-        </div>
-        </div>
-        
-        {/* Delete Confirmation Modal */}
-        <Modal
+             
+             {/* Delete Confirmation Modal */}
+             <Modal
                 isOpen={!!deleteConfirmation}
                 onClose={() => setDeleteConfirmation(null)}
                 title={deleteConfirmation?.type === 'folder' ? 'Delete Folder?' : 'Delete Scenario?'}
@@ -1020,15 +1050,16 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
                          );
                      })()}
                  </div>
-        )}
-        
-        {/* Click outside to close context menu */}
-        {contextMenu && (
-            <div 
-                className="fixed inset-0 z-40"
-                onClick={() => setContextMenu(null)}
-            />
-        )}
+             )}
+             
+             {/* Click outside to close context menu */}
+             {contextMenu && (
+                 <div 
+                     className="fixed inset-0 z-40"
+                     onClick={() => setContextMenu(null)}
+                 />
+             )}
+        </div>
     </div>
   );
 };

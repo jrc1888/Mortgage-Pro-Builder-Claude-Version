@@ -43,19 +43,19 @@ export const Home: React.FC<Props> = ({ onNavigate, onLogout, userEmail }) => {
       available: true
     },
     {
-      id: 'updates',
-      name: 'Client Updates',
-      description: 'Send text and email updates to clients as loans progress',
-      icon: <MessageSquare className="w-12 h-12" />,
-      route: 'updates',
-      available: true
-    },
-    {
       id: 'sms-demo',
       name: 'SMS Demo Interface',
       description: 'Demo SMS interface for property analysis via text messages',
       icon: <MessageSquare className="w-12 h-12" />,
       route: 'sms-demo',
+      available: true
+    },
+    {
+      id: 'client-updates',
+      name: 'ClientUpdates',
+      description: 'Manage and track client updates and communications',
+      icon: <Users className="w-12 h-12" />,
+      route: 'client-updates',
       available: true
     },
     {
