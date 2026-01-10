@@ -1676,8 +1676,23 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                 <div className="mt-auto">
                                     <div className="flex-shrink-0" style={{ width: '200px' }}>
                                         <CompactTypeToggleInput 
-                                            value={scenario.sellerConcessions}
-                                            onChange={(val) => handleInputChange('sellerConcessions', val)}
+                                            value={
+                                                (scenario.sellerConcessionsMode || 'fixed') === 'percent' && scenario.purchasePrice > 0
+                                                    ? (scenario.sellerConcessions / scenario.purchasePrice) * 100
+                                                    : scenario.sellerConcessions
+                                            }
+                                            onChange={(val) => {
+                                                if ((scenario.sellerConcessionsMode || 'fixed') === 'percent') {
+                                                    // In percent mode: convert percentage to dollar amount based on purchase price
+                                                    const dollarAmount = scenario.purchasePrice > 0 
+                                                        ? (val / 100) * scenario.purchasePrice 
+                                                        : 0;
+                                                    handleInputChange('sellerConcessions', dollarAmount);
+                                                } else {
+                                                    // In fixed mode: use dollar amount directly
+                                                    handleInputChange('sellerConcessions', val);
+                                                }
+                                            }}
                                             isFixed={(scenario.sellerConcessionsMode || 'fixed') === 'fixed'}
                                             onToggle={toggleSellerConcessionsMode}
                                         />
@@ -3165,10 +3180,11 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                  
                                  // Section J Total = D + I (matches Costs tab)
                                  const sectionJTotal = totalD + totalI;
+                                 const lenderCreditsAmount = scenario.showLenderCredits ? results.lenderCreditsAmount : 0;
                                  
                                  // Calculate cash required/back: Loan Payoff + Total Closing Costs - New Loan Amount
                                  const loanPayoff = results.refinanceDetails.totalPayoff || 0;
-                                 const totalClosingCosts = sectionJTotal; // Use Section J total to match Costs tab
+                                 const totalClosingCosts = sectionJTotal - lenderCreditsAmount; // Section J minus lender credits
                                  const newLoanAmount = results.totalLoanAmount || 0;
                                  const netResult = loanPayoff + totalClosingCosts - newLoanAmount;
                                  
