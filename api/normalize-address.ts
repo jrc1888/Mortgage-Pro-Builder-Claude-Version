@@ -36,10 +36,19 @@ export default async function handler(
 
 "${address}"
 
-Return ONLY the normalized address in this format:
-[Street Number] [Street Name], [City], [State] [Zip Code]
+CRITICAL INSTRUCTIONS:
+- Preserve the EXACT street type (Lane, Drive, Street, Avenue, etc.) from the input if it's clear
+- Do NOT change "Lane" to "Drive" or vice versa
+- Do NOT change "Street" to "St" or "Avenue" to "Ave" - use full words
+- If the input says "Lane" or "Ln", use "Lane" in the output
+- If the input says "Drive" or "Dr", use "Drive" in the output
+- Preserve directional indicators (N, S, E, W, North, South, etc.)
 
-Example: "626 W Cottle Ln, Farmington, UT 84025"
+Return ONLY the normalized address in this format:
+[Street Number] [Direction] [Street Name] [Street Type], [City], [State] [Zip Code]
+
+Example: "626 W Cottle Lane, Farmington, UT 84025"
+Example: "581 W Summerhill Lane N, Centerville, UT 84014"
 
 If you cannot determine certain parts (like zip code), include what you can determine. Return ONLY the address, no explanations, no markdown, no code blocks.`;
 

@@ -323,6 +323,60 @@ function extractAddressFromUrl(url: string): string | null {
       return addressPart.replace(/-/g, ' ');
     }
     
+    // Homes.com: /property/581-w-summerhill-ln-centerville-ut/v24dex912e1nl/
+    const homesMatch = url.match(/homes\.com\/property\/([^\/]+)\//);
+    if (homesMatch) {
+      const addressPart = homesMatch[1];
+      // Format: 581-w-summerhill-ln-centerville-ut
+      // Try to extract components
+      const parts = addressPart.split('-');
+      let formatted = '';
+      let i = 0;
+      
+      // Street number
+      if (i < parts.length && /^\d+$/.test(parts[i])) {
+        formatted += parts[i++] + ' ';
+      }
+      
+      // Street name and type
+      const streetParts: string[] = [];
+      while (i < parts.length) {
+        const currentPart = parts[i];
+        if (!currentPart) break;
+        
+        const currentPartLower = currentPart.toLowerCase();
+        if (streetTypes[currentPartLower]) {
+          // Found street type
+          formatted += streetParts.join(' ') + ' ' + streetTypes[currentPartLower] + ' ';
+          i++;
+          break;
+        }
+        streetParts.push(currentPart);
+        i++;
+      }
+      
+      // City and state
+      while (i < parts.length) {
+        if (parts[i]?.length === 2 && parts[i] === parts[i].toUpperCase()) {
+          // State
+          formatted += parts[i++];
+        } else {
+          // City
+          formatted += (formatted.endsWith(' ') ? '' : ' ') + parts[i++] + ' ';
+        }
+      }
+      
+      return formatted.trim();
+    }
+    
+    // UtahRealEstate.com: /581-W-SUMMERHILL-LN-Centerville-UT-84014/2107231
+    const utahRealEstateMatch = url.match(/utahrealestate\.com\/([^\/]+)\//);
+    if (utahRealEstateMatch) {
+      const addressPart = utahRealEstateMatch[1];
+      // Format: 581-W-SUMMERHILL-LN-Centerville-UT-84014
+      return addressPart.replace(/-/g, ' ');
+    }
+    
     // Generic: try to find address-like patterns in URL
     const addressPattern = /([A-Z0-9\s]+-[A-Z0-9\s]+-[A-Z]{2}-[0-9]{5})/i;
     const match = url.match(addressPattern);
@@ -704,18 +758,21 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   let fallbackQueries: string[] = [];
   
   if (address) {
-    // Primary query - search for the exact address across all sites
-    // Use a more specific query that should find the property
-    searchQuery = `"${address}" property listing for sale`;
-    // Fallback queries - search each major site separately for better results
+    // Primary query - search for the exact address with listing-specific terms
+    // Exclude builder/community pages by including "for sale" or "listing"
+    searchQuery = `"${address}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com) "for sale"`;
+    // Fallback queries - search each major site separately with listing-specific terms
     fallbackQueries = [
-      `"${address}" site:zillow.com`,
-      `"${address}" site:redfin.com`,
-      `"${address}" site:utahrealestate.com`,
-      `"${address}" site:realtor.com`,
-      `"${address}" site:homes.com`,
-      `"${address}" zillow`,
-      `"${address}" redfin`,
+      `"${address}" site:zillow.com "for sale"`,
+      `"${address}" site:redfin.com "for sale"`,
+      `"${address}" site:utahrealestate.com "for sale"`,
+      `"${address}" site:realtor.com "for sale"`,
+      `"${address}" site:homes.com "for sale"`,
+      `"${address}" site:zillow.com homedetails`,
+      `"${address}" site:redfin.com home`,
+      `"${address}" zillow listing`,
+      `"${address}" redfin listing`,
+      `"${address}" property listing for sale`,
       `"${address}" property listing`,
       address // Just the address without quotes
     ];
@@ -736,31 +793,49 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     // Extract address from URL for better search query
     const addressFromUrl = extractAddressFromUrl(url);
     if (addressFromUrl) {
-      // Search for the exact address
-      searchQuery = `"${addressFromUrl}" property listing`;
-      // If it's a specific site URL, prioritize that site
+      // Search for the exact address with listing-specific terms
+      searchQuery = `"${addressFromUrl}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com) "for sale"`;
+      // If it's a specific site URL, prioritize that site but also search others
       if (url.includes('zillow.com')) {
         fallbackQueries = [
-          `"${addressFromUrl}" site:zillow.com`,
-          `"${addressFromUrl}" site:redfin.com`,
-          `"${addressFromUrl}" site:utahrealestate.com`,
-          `"${addressFromUrl}" zillow`,
+          `"${addressFromUrl}" site:zillow.com "for sale"`,
+          `"${addressFromUrl}" site:zillow.com homedetails`,
+          `"${addressFromUrl}" site:redfin.com "for sale"`,
+          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
+          `"${addressFromUrl}" site:realtor.com "for sale"`,
+          `"${addressFromUrl}" site:homes.com "for sale"`,
+          `"${addressFromUrl}" zillow listing`,
           addressFromUrl
         ];
       } else if (url.includes('redfin.com')) {
         fallbackQueries = [
-          `"${addressFromUrl}" site:redfin.com`,
-          `"${addressFromUrl}" site:zillow.com`,
-          `"${addressFromUrl}" site:utahrealestate.com`,
-          `"${addressFromUrl}" redfin`,
+          `"${addressFromUrl}" site:redfin.com "for sale"`,
+          `"${addressFromUrl}" site:redfin.com home`,
+          `"${addressFromUrl}" site:zillow.com "for sale"`,
+          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
+          `"${addressFromUrl}" site:realtor.com "for sale"`,
+          `"${addressFromUrl}" site:homes.com "for sale"`,
+          `"${addressFromUrl}" redfin listing`,
+          addressFromUrl
+        ];
+      } else if (url.includes('homes.com')) {
+        fallbackQueries = [
+          `"${addressFromUrl}" site:homes.com "for sale"`,
+          `"${addressFromUrl}" site:zillow.com "for sale"`,
+          `"${addressFromUrl}" site:redfin.com "for sale"`,
+          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
+          `"${addressFromUrl}" site:realtor.com "for sale"`,
+          `"${addressFromUrl}" property listing for sale`,
           addressFromUrl
         ];
       } else {
         fallbackQueries = [
-          `"${addressFromUrl}" site:zillow.com`,
-          `"${addressFromUrl}" site:redfin.com`,
-          `"${addressFromUrl}" site:utahrealestate.com`,
-          `"${addressFromUrl}" property listing`,
+          `"${addressFromUrl}" site:zillow.com "for sale"`,
+          `"${addressFromUrl}" site:redfin.com "for sale"`,
+          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
+          `"${addressFromUrl}" site:realtor.com "for sale"`,
+          `"${addressFromUrl}" site:homes.com "for sale"`,
+          `"${addressFromUrl}" property listing for sale`,
           addressFromUrl
         ];
       }
@@ -824,15 +899,46 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   const fetchedPages: Array<{ domain: string; url: string; content: string }> = [];
   const maxFetches = 5; // Fetch from up to 5 different sites for better aggregation
   
+  // URLs to exclude (zipcode pages, community pages, builder pages, etc.)
+  const excludePatterns = [
+    /\/zipcode\//,
+    /\/communities/,
+    /\/communities-details/,
+    /\/builders/,
+    /\/new-homes/,
+    /\/search\//,
+    /\/map\//,
+    /symphonyhomes\.com/,
+    /\/city\//,
+    /\/neighborhood\//
+  ];
+  
   // Step 1: Fetch pages from multiple real estate sites
   for (const result of topResults) {
     if (fetchedPages.length >= maxFetches) break;
+    
+    // Skip excluded URLs (zipcode pages, community pages, etc.)
+    const shouldExclude = excludePatterns.some(pattern => pattern.test(result.link));
+    if (shouldExclude) {
+      console.log(`Skipping excluded URL: ${result.link}`);
+      continue;
+    }
     
     const matchedDomain = realEstateDomains.find(domain => result.link.includes(domain));
     if (!matchedDomain) continue;
     
     // Skip if we already fetched from this domain
     if (fetchedPages.some(p => p.domain === matchedDomain)) continue;
+    
+    // For Zillow, Redfin, etc., ensure it's an actual listing page
+    if (matchedDomain === 'zillow.com' && !result.link.includes('/homedetails/')) {
+      console.log(`Skipping non-listing Zillow page: ${result.link}`);
+      continue;
+    }
+    if (matchedDomain === 'redfin.com' && !result.link.includes('/home/')) {
+      console.log(`Skipping non-listing Redfin page: ${result.link}`);
+      continue;
+    }
     
     try {
       const pageResponse = await fetch(result.link, {
@@ -856,7 +962,7 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
           url: result.link,
           content: truncatedText
         });
-        console.log(`Successfully fetched page from ${matchedDomain}`);
+        console.log(`Successfully fetched page from ${matchedDomain}: ${result.link}`);
       }
     } catch (fetchError) {
       console.log(`Failed to fetch ${result.link} from ${matchedDomain}:`, fetchError instanceof Error ? fetchError.message : 'Unknown error');
