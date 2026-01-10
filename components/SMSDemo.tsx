@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Edit2 } from 'lucide-react';
+import { Send, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, Edit2, Copy, Check } from 'lucide-react';
 import { SharedHeader } from './SharedHeader';
 import { LiveDecimalInput, FormattedNumberInput } from './CommonInputs';
 
@@ -157,6 +157,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     timestamp: Date 
   }>>([]);
   const [pendingConfirmation, setPendingConfirmation] = useState<{ type: 'mls' | 'address'; value: string } | null>(null);
+  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stepsEndRef = useRef<HTMLDivElement>(null);
@@ -213,6 +214,116 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     setProcessingSteps(prev => prev.map(step => 
       step.id === id ? { ...step, expanded: !step.expanded } : step
     ));
+  };
+
+  const copyBackendLogToClipboard = async () => {
+    try {
+      let logText = '=== BACKEND PROCESSING LOG ===\n\n';
+      
+      // Add history items
+      processingHistory.forEach((historyItem, historyIdx) => {
+        logText += `\n${'='.repeat(80)}\n`;
+        logText += `SEARCH SESSION #${historyIdx + 1} - ${formatTime(historyItem.timestamp)}\n`;
+        logText += `${'='.repeat(80)}\n\n`;
+        
+        // User Input
+        logText += `👤 USER INPUT:\n`;
+        logText += `${historyItem.userInput}\n\n`;
+        
+        // Processing Steps
+        logText += `📋 PROCESSING STEPS:\n`;
+        logText += `${'-'.repeat(80)}\n`;
+        historyItem.steps.forEach((step, stepIdx) => {
+          logText += `\n[${stepIdx + 1}] ${step.label}\n`;
+          logText += `Status: ${step.status.toUpperCase()}\n`;
+          if (step.details) {
+            logText += `Details:\n${step.details}\n`;
+          }
+          if (step.rawData) {
+            logText += `Raw Data:\n${JSON.stringify(step.rawData, null, 2)}\n`;
+          }
+          logText += `\n`;
+        });
+        
+        // System Response
+        if (historyItem.systemResponse) {
+          logText += `\n💬 SYSTEM RESPONSE:\n`;
+          logText += `${'-'.repeat(80)}\n`;
+          logText += `${historyItem.systemResponse}\n\n`;
+        }
+        
+        logText += `\n${'='.repeat(80)}\n\n`;
+      });
+      
+      // Add current processing steps
+      if (processingSteps.length > 0) {
+        logText += `\n${'='.repeat(80)}\n`;
+        logText += `CURRENT PROCESSING (IN PROGRESS)\n`;
+        logText += `${'='.repeat(80)}\n\n`;
+        
+        processingSteps.forEach((step, stepIdx) => {
+          logText += `\n[${stepIdx + 1}] ${step.label}\n`;
+          logText += `Status: ${step.status.toUpperCase()}\n`;
+          if (step.details) {
+            logText += `Details:\n${step.details}\n`;
+          }
+          if (step.rawData) {
+            logText += `Raw Data:\n${JSON.stringify(step.rawData, null, 2)}\n`;
+          }
+          logText += `\n`;
+        });
+      }
+      
+      // Copy to clipboard
+      await navigator.clipboard.writeText(logText);
+      setCopiedToClipboard(true);
+      setTimeout(() => setCopiedToClipboard(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      // Fallback: create a temporary textarea element
+      let fallbackLogText = '=== BACKEND PROCESSING LOG ===\n\n';
+      
+      processingHistory.forEach((historyItem, historyIdx) => {
+        fallbackLogText += `\n${'='.repeat(80)}\n`;
+        fallbackLogText += `SEARCH SESSION #${historyIdx + 1} - ${formatTime(historyItem.timestamp)}\n`;
+        fallbackLogText += `${'='.repeat(80)}\n\n`;
+        fallbackLogText += `👤 USER INPUT:\n${historyItem.userInput}\n\n`;
+        fallbackLogText += `📋 PROCESSING STEPS:\n${'-'.repeat(80)}\n`;
+        historyItem.steps.forEach((step, stepIdx) => {
+          fallbackLogText += `\n[${stepIdx + 1}] ${step.label}\nStatus: ${step.status.toUpperCase()}\n`;
+          if (step.details) fallbackLogText += `Details:\n${step.details}\n`;
+          if (step.rawData) fallbackLogText += `Raw Data:\n${JSON.stringify(step.rawData, null, 2)}\n`;
+          fallbackLogText += `\n`;
+        });
+        if (historyItem.systemResponse) {
+          fallbackLogText += `\n💬 SYSTEM RESPONSE:\n${'-'.repeat(80)}\n${historyItem.systemResponse}\n\n`;
+        }
+        fallbackLogText += `\n${'='.repeat(80)}\n\n`;
+      });
+      
+      if (processingSteps.length > 0) {
+        fallbackLogText += `\n${'='.repeat(80)}\nCURRENT PROCESSING (IN PROGRESS)\n${'='.repeat(80)}\n\n`;
+        processingSteps.forEach((step, stepIdx) => {
+          fallbackLogText += `\n[${stepIdx + 1}] ${step.label}\nStatus: ${step.status.toUpperCase()}\n`;
+          if (step.details) fallbackLogText += `Details:\n${step.details}\n`;
+          if (step.rawData) fallbackLogText += `Raw Data:\n${JSON.stringify(step.rawData, null, 2)}\n`;
+          fallbackLogText += `\n`;
+        });
+      }
+      
+      const textArea = document.createElement('textarea');
+      textArea.value = fallbackLogText;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedToClipboard(true);
+        setTimeout(() => setCopiedToClipboard(false), 2000);
+      } catch (fallbackError) {
+        console.error('Fallback copy also failed:', fallbackError);
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const detectURL = (text: string): string | null => {
@@ -1231,11 +1342,30 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         {/* Middle: Backend Processing Log */}
         <div className="w-1/3 border-r-2 border-emerald-200 bg-gradient-to-b from-white to-slate-50 flex flex-col shadow-lg">
           <div className="px-6 py-5 border-b-2 border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                <Loader2 className="w-5 h-5 text-white" />
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900">Backend Processing Log</h2>
               </div>
-              <h2 className="text-xl font-bold text-slate-900">Backend Processing Log</h2>
+              <button
+                onClick={copyBackendLogToClipboard}
+                className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm hover:shadow-md"
+                title="Copy entire backend log to clipboard"
+              >
+                {copiedToClipboard ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Copy Log</span>
+                  </>
+                )}
+              </button>
             </div>
             <p className="text-sm text-slate-600 ml-10">Real-time processing steps</p>
           </div>
