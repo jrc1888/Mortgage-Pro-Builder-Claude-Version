@@ -3192,6 +3192,22 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
                                                  </span>
                                              </div>
                                          </div>
+                                         
+                                         {/* Note about additional potential credits/benefits - Only for Refinances */}
+                                         {scenario.transactionType === 'Refinance' && (
+                                             <div className="mt-3 pt-3 border-t border-slate-200">
+                                                 <div className="text-[10px] text-slate-600 leading-relaxed space-y-1">
+                                                     <p className="font-semibold text-slate-700">Note: Borrower may also:</p>
+                                                     <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                                         <li>Potentially skip a mortgage payment</li>
+                                                         <li>Receive a refund of escrows from current lender</li>
+                                                         {scenario.currentLoan?.loanType === LoanType.FHA && (
+                                                             <li>Receive credit from current upfront mortgage insurance to offset new upfront mortgage insurance</li>
+                                                         )}
+                                                     </ul>
+                                                 </div>
+                                             </div>
+                                         )}
                                      </>
                                  );
                              })()}

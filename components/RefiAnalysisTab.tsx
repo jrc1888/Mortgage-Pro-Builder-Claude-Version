@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Scenario, CalculatedResults } from '../types';
+import { Scenario, CalculatedResults, LoanType } from '../types';
 import { FormattedNumberInput, LiveDecimalInput, CustomCheckbox } from './CommonInputs';
 import { formatMoney, formatPercent, formatDate } from '../utils/formatting';
 import { Modal } from './Modal';
@@ -13,7 +13,7 @@ import {
 } from '../services/refinanceCalculations';
 import { calculatePMT } from '../services/loanMath';
 import { generateRefinancePDF, generateRefinancePDFPreview } from '../services/refinancePDF';
-import { TrendingUp, DollarSign, Clock, Calculator, FileText, Download, Info } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, Calculator, FileText, Download, Info, ChevronDown } from 'lucide-react';
 
 interface Props {
   scenario: Scenario;
@@ -46,6 +46,8 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
     originalRate: 0,
     fundingDate: new Date().toISOString(),
     originalTerm: 360,
+    loanType: LoanType.CONVENTIONAL,
+    isDSCRLoan: false,
     currentMonthlyPayment: undefined,
     useManualOverride: false
   };
@@ -302,7 +304,7 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
     };
   }, [desiredPayoffTermMonths, results, scenario.interestRate, newFullPayment]);
 
-  const handleCurrentLoanUpdate = (field: keyof typeof currentLoan | 'manualOverride' | 'originalPaymentBreakdown', value: any) => {
+  const handleCurrentLoanUpdate = (field: keyof typeof currentLoan | 'manualOverride' | 'originalPaymentBreakdown' | 'loanType' | 'isDSCRLoan', value: any) => {
     if (field === 'manualOverride') {
       onUpdateScenario({
         currentLoan: {
@@ -350,9 +352,39 @@ export const RefiAnalysisTab: React.FC<Props> = ({ scenario, results, onUpdateSc
       {/* Section 1: Current Loan Details */}
       <div className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm">
         <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
-          <h3 className="flex items-center gap-2 text-slate-900 font-bold text-sm uppercase tracking-wide">
-            <DollarSign size={16} className="text-slate-400" /> Current Loan Info
-          </h3>
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <h3 className="flex items-center gap-2 text-slate-900 font-bold text-sm uppercase tracking-wide shrink-0">
+              <DollarSign size={16} className="text-slate-400" /> Current Loan Info
+            </h3>
+            {/* Loan Type Dropdown - Only for Current Loan, not New Loan */}
+            <div className="flex items-center gap-2 shrink-0">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Loan Type</label>
+              <div className="relative">
+                <select
+                  value={currentLoan.isDSCRLoan ? 'DSCR' : (currentLoan.loanType || LoanType.CONVENTIONAL)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === 'DSCR') {
+                      handleCurrentLoanUpdate('isDSCRLoan', true);
+                      handleCurrentLoanUpdate('loanType', LoanType.CONVENTIONAL); // DSCR typically uses conventional as base
+                    } else {
+                      handleCurrentLoanUpdate('isDSCRLoan', false);
+                      handleCurrentLoanUpdate('loanType', value as LoanType);
+                    }
+                  }}
+                  className="appearance-none bg-white border border-slate-200 rounded-lg px-3 py-1.5 pr-8 text-xs font-semibold text-slate-900 hover:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-pointer"
+                >
+                  <option value={LoanType.CONVENTIONAL}>Conventional</option>
+                  <option value={LoanType.FHA}>FHA</option>
+                  <option value={LoanType.USDA}>USDA</option>
+                  <option value={LoanType.VA}>VA</option>
+                  <option value={LoanType.JUMBO}>Jumbo</option>
+                  <option value="DSCR">DSCR</option>
+                </select>
+                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+          </div>
           <CustomCheckbox 
             checked={!useManualOverride} 
             onChange={(checked) => handleCurrentLoanUpdate('useManualOverride', !checked)} 

@@ -4,7 +4,8 @@ export enum LoanType {
   CONVENTIONAL = 'Conventional',
   FHA = 'FHA',
   VA = 'VA',
-  JUMBO = 'Jumbo'
+  JUMBO = 'Jumbo',
+  USDA = 'USDA'
 }
 
 export interface BuydownConfig {
@@ -147,6 +148,8 @@ export interface Scenario {
     originalRate: number;
     fundingDate: string; // ISO date string
     originalTerm: number; // Loan term in months (e.g., 360 for 30-year)
+    loanType?: LoanType; // Loan type of the current/old loan being refinanced
+    isDSCRLoan?: boolean; // Whether the current loan is DSCR (for reference only)
     currentMonthlyPayment?: number; // Optional override for monthly P&I payment
     newLoanPaymentOverride?: number; // Optional override for new loan monthly P&I payment (PI only)
     useManualOverride?: boolean; // Checkbox to toggle between original loan info and manual override
