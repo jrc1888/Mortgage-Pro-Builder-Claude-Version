@@ -444,13 +444,27 @@ const Dashboard: React.FC<Props> = ({ scenarios, onCreateNew, onSelect, onSave, 
           
           {/* Sidebar Header */}
           <div className="p-5 border-b border-slate-900 space-y-5">
-               <div className="flex items-center justify-between text-white font-bold text-xl mb-2 tracking-tight">
-                   <div className="flex items-center gap-3">
-                       <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-900/50">
-                           <BarChart2 size={18} className="text-white" />
+               <div className="flex items-center justify-between mb-2">
+                   {onNavigateHome ? (
+                       <button 
+                           onClick={onNavigateHome}
+                           className="flex items-center gap-3 px-4 py-2 rounded-lg transition-colors group shrink-0 w-72 hover:bg-slate-900"
+                       >
+                           <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
+                               <Home className="w-7 h-7 text-white" />
+                           </div>
+                           <span className="text-2xl font-bold text-white group-hover:text-indigo-400 transition-colors">
+                               MortgagePro
+                           </span>
+                       </button>
+                   ) : (
+                       <div className="flex items-center gap-3 text-white font-bold text-xl tracking-tight">
+                           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-900/50">
+                               <BarChart2 size={18} className="text-white" />
+                           </div>
+                           MortgagePro
                        </div>
-                       MortgagePro
-                   </div>
+                   )}
                    {isSyncing && <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>}
                </div>
 
