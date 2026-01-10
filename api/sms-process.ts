@@ -176,6 +176,12 @@ async function ingestListingText(url: string): Promise<IngestResult> {
     throw new Error('URL must start with http:// or https://');
   }
 
+  // Skip direct fetch for Zillow URLs - they block bots and return empty/JS-rendered content
+  // Always use Google Search aggregation for Zillow instead
+  if (url.includes('zillow.com')) {
+    throw new Error('Zillow URLs require Google Search aggregation (bot blocking detected)');
+  }
+
   // Try direct fetch first
   try {
     const fetchResponse = await fetch(url, {
@@ -198,6 +204,13 @@ async function ingestListingText(url: string): Promise<IngestResult> {
       const htmlContent = await fetchResponse.text();
       const plainText = htmlToPlainText(htmlContent);
       
+      // CRITICAL: If plain text is empty or very short (< 100 chars), treat as failure
+      // This handles cases where sites return blank pages or JavaScript-only content
+      if (!plainText || plainText.trim().length < 100) {
+        console.log(`Direct fetch returned empty/minimal content (${plainText.length} chars), treating as failure`);
+        throw new Error(`Empty content: ${plainText.length} chars`);
+      }
+      
       // Truncate to reasonable size (25k chars to control token cost)
       const truncatedText = plainText.length > 25000 
         ? plainText.substring(0, 25000) + '... [truncated]'
@@ -219,7 +232,7 @@ async function ingestListingText(url: string): Promise<IngestResult> {
     }
   } catch (fetchError) {
     // Mark that we need fallback - will be handled by OpenAI web search
-    console.log('Direct fetch failed, will use OpenAI web search fallback:', fetchError);
+    console.log('Direct fetch failed, will use Google Search fallback:', fetchError);
     throw fetchError;
   }
 }
@@ -989,27 +1002,162 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     }
   }
   
+  // If we couldn't fetch any pages, try alternative strategies before falling back to snippets
   if (fetchedPages.length === 0) {
-    // Fallback: use snippets if we couldn't fetch any pages
-    console.log('Warning: Could not fetch full pages, using snippets');
-    let rawText = '';
-    for (const result of topResults.slice(0, 5)) {
-      rawText += `Title: ${result.title}\n`;
-      rawText += `Snippet: ${result.snippet}\n`;
-      rawText += `Link: ${result.link}\n\n`;
-    }
-    const listing = await extractListingWithOpenAI(url || address || 'unknown', rawText, 'google_search_snippets');
-    return {
-      listing,
-      ingestion: {
-        raw_text: rawText,
-        source: 'google_search_fallback',
-        notes: `Used Google Search snippets (could not fetch full pages). Query: "${queryUsed}"`,
-        searchProviderUsed: 'google',
-        searchQueryUsed: queryUsed,
-        numSearchResultsUsed: topResults.length
+    console.log('Warning: Could not fetch full pages from search results, trying alternative strategies...');
+    
+    // Strategy 1: If we have an address, try constructing direct URLs to known real estate sites
+    if (address) {
+      console.log(`Attempting to construct direct URLs for address: ${address}`);
+      const constructedUrls: string[] = [];
+      
+      // Extract components from address for URL construction
+      const addressParts = address.match(/(\d+)\s+(.+?),\s*(.+?),\s*([A-Z]{2})\s+(\d{5})/);
+      if (addressParts) {
+        const [, streetNum, streetName, city, state, zip] = addressParts;
+        const urlSafeStreet = streetName.replace(/\s+/g, '-').toLowerCase();
+        const urlSafeCity = city.toLowerCase();
+        
+        // Try common URL patterns for major sites
+        constructedUrls.push(
+          `https://www.zillow.com/homes/${urlSafeStreet}-${urlSafeCity}-${state}-${zip}_rb/`,
+          `https://www.redfin.com/${state}/${urlSafeCity}/${urlSafeStreet}-${zip}/home/${streetNum}`,
+          `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet.replace(/-/g, '-')}-${urlSafeCity}-${state}-${zip}/`,
+        );
       }
-    };
+      
+      // Try fetching from constructed URLs
+      for (const constructedUrl of constructedUrls) {
+        if (fetchedPages.length >= maxFetches) break;
+        
+        try {
+          const pageResponse = await fetch(constructedUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(8000),
+          });
+          
+          if (pageResponse.ok) {
+            const htmlContent = await pageResponse.text();
+            const plainText = htmlToPlainText(htmlContent);
+            
+            if (plainText && plainText.trim().length >= 100) {
+              const domain = new URL(constructedUrl).hostname;
+              const truncatedText = plainText.length > 30000 
+                ? plainText.substring(0, 30000) + '... [truncated]'
+                : plainText;
+              
+              fetchedPages.push({
+                domain: domain.replace('www.', ''),
+                url: constructedUrl,
+                content: truncatedText
+              });
+              console.log(`Successfully fetched from constructed URL: ${domain}`);
+            }
+          }
+        } catch (constructError) {
+          console.log(`Failed to fetch from constructed URL ${constructedUrl}:`, constructError instanceof Error ? constructError.message : 'Unknown error');
+          continue;
+        }
+      }
+    }
+    
+    // Strategy 2: If still no pages, try fetching from top 10 search results with relaxed filtering
+    if (fetchedPages.length === 0) {
+      console.log('Trying to fetch from top search results with relaxed filtering...');
+      for (const result of searchResults.slice(0, 10)) {
+        if (fetchedPages.length >= maxFetches) break;
+        
+        // Skip only obviously non-listing pages
+        const obviouslyExcluded = /\/zipcode\//.test(result.link) || /\/search\//.test(result.link);
+        if (obviouslyExcluded) continue;
+        
+        // Try any real estate domain
+        const matchedDomain = realEstateDomains.find(domain => result.link.includes(domain));
+        if (!matchedDomain) continue;
+        
+        // Skip if we already have this domain (unless we have 0 pages)
+        if (fetchedPages.length > 0 && fetchedPages.some(p => p.domain === matchedDomain)) continue;
+        
+        try {
+          const pageResponse = await fetch(result.link, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(8000),
+          });
+          
+          if (pageResponse.ok) {
+            const htmlContent = await pageResponse.text();
+            const plainText = htmlToPlainText(htmlContent);
+            
+            if (plainText && plainText.trim().length >= 100) {
+              const truncatedText = plainText.length > 30000 
+                ? plainText.substring(0, 30000) + '... [truncated]'
+                : plainText;
+              
+              fetchedPages.push({
+                domain: matchedDomain,
+                url: result.link,
+                content: truncatedText
+              });
+              console.log(`Successfully fetched from relaxed filter: ${matchedDomain}`);
+            }
+          }
+        } catch (relaxedError) {
+          continue;
+        }
+      }
+    }
+    
+    // Strategy 3: If STILL no pages, use snippets but try harder with more results
+    if (fetchedPages.length === 0) {
+      console.log('Warning: Could not fetch full pages even with alternative strategies, using enhanced snippets');
+      let rawText = '';
+      
+      // Use top 10 results (instead of 5) for better snippet coverage
+      for (const result of topResults.slice(0, 10)) {
+        rawText += `Title: ${result.title}\n`;
+        rawText += `Snippet: ${result.snippet}\n`;
+        rawText += `Link: ${result.link}\n\n`;
+      }
+      
+      // Also try searching for price-specific queries if we have an address
+      if (address) {
+        try {
+          const priceQuery = `"${address}" price property listing`;
+          const priceResults = await googleSearch(priceQuery);
+          if (priceResults.length > 0) {
+            rawText += '\n--- Price Search Results ---\n';
+            for (const result of priceResults.slice(0, 5)) {
+              rawText += `Title: ${result.title}\n`;
+              rawText += `Snippet: ${result.snippet}\n`;
+              rawText += `Link: ${result.link}\n\n`;
+            }
+          }
+        } catch (priceSearchError) {
+          console.log('Price-specific search failed, continuing with snippets');
+        }
+      }
+      
+      const listing = await extractListingWithOpenAI(url || address || 'unknown', rawText, 'google_search_snippets');
+      return {
+        listing,
+        ingestion: {
+          raw_text: rawText,
+          source: 'google_search_fallback',
+          notes: `Used Google Search snippets with enhanced coverage (could not fetch full pages). Query: "${queryUsed}"`,
+          searchProviderUsed: 'google',
+          searchQueryUsed: queryUsed,
+          numSearchResultsUsed: topResults.length
+        }
+      };
+    }
   }
   
   console.log(`Fetched pages from ${fetchedPages.length} sites: ${fetchedPages.map(p => p.domain).join(', ')}`);
@@ -1104,7 +1252,11 @@ async function extractListingWithOpenAISinglePage(url: string, rawText: string, 
 
   const targetAddressNote = targetAddress ? `\n\nCRITICAL ADDRESS VALIDATION: The expected property address is "${targetAddress}". You MUST extract data ONLY if the address in the text matches this address. If the extracted address does not match "${targetAddress}", return null for ALL fields (price, beds, baths, sqft, HOA, yearBuilt, etc.) - only return the address you found.` : '';
 
-  const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be EXTREMELY thorough and look for ALL fields including HOA fees and year built. HOA is often displayed as "$20/mo" or "$20 monthly" - look very carefully. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.
+  // Special handling for snippet extraction (Google Search snippets often contain price in title/snippet)
+  const isSnippetSource = source === 'google_search_snippets';
+  const snippetGuidance = isSnippetSource ? `\n\nSPECIAL INSTRUCTIONS FOR SNIPPET EXTRACTION: You are extracting from Google Search snippets (titles and snippets from search results). Snippets often contain price information in the title or snippet text (e.g., "$1,099,900" or "Price: $1,099,900"). Be VERY attentive to price information in titles and snippets - it is often prominently displayed. Look for price patterns like "$1,099,900", "Price: $1,099,900", "$1M", "$1.1M", "Asking: $1,099,900" in BOTH titles and snippets.` : '';
+
+  const systemPrompt = `You are a real estate data extraction assistant. Extract COMPLETE property listing information from the provided text. Be EXTREMELY thorough and look for ALL fields including HOA fees and year built. HOA is often displayed as "$20/mo" or "$20 monthly" - look very carefully. Extract ONLY what is explicitly stated in the text. Never guess or invent values. If a field is not found, return null for that field. Output must match the JSON schema exactly.${snippetGuidance}
 
 CRITICAL: The address you extract MUST match the property being described. If the text describes multiple properties or you're unsure which property the data refers to, return null for all fields except the address. Only extract data that clearly belongs to the same property as the address.${targetAddressNote}`;
 
@@ -1136,7 +1288,9 @@ CRITICAL - LOOK VERY CAREFULLY FOR THESE FIELDS:
   * This is CRITICAL - insurance rates depend on this value
 
 - Property Tax: Look for "property tax", "annual tax", "taxes", "$X/year" or "$X annually"
-- Price: Look for "$1,099,900", "price", "list price", "asking price"
+- Price (CRITICAL${isSnippetSource ? ' - OFTEN IN SNIPPET TITLES' : ''}): Look VERY CAREFULLY for price in:
+  ${isSnippetSource ? '  * TITLES: "$1,099,900", "Price: $1,099,900", "$1M", "$1.1M"\n  * SNIPPETS: "Price: $1,099,900", "Asking: $1,099,900", "Listed at $1,099,900"\n  ' : '  '}* Full page text: "$1,099,900", "price", "list price", "asking price", "$1M", "$1.1M"
+  ${isSnippetSource ? '  * When extracting from snippets, the PRICE is often the most visible field - look in titles first!\n  ' : ''}* Price can appear with or without commas: "$1,099,900" or "$1099900" = 1099900
 - Beds: Look for "4 beds", "4 bed", "4 bedrooms", "4 BR"
 - Baths: Look for "3 baths", "3 bath", "3 bathrooms", "3 BA"
 - Sqft: Look for "3,695 sqft", "3695 sq ft", "square feet"
@@ -1421,23 +1575,39 @@ export default async function handler(
       }
     }
 
-    // APPROACH: Try direct fetch first for URLs, then fallback to Google Search
+    // APPROACH: For Zillow URLs and known problematic sites, skip direct fetch and use Google Search aggregation
+    // For other URLs: Try direct fetch first, then fallback to Google Search
     // For addresses/MLS, go straight to Google Search aggregation
     
     let searchResult: { listing: ListingData; ingestion: IngestResult };
     
     if (url) {
-      // For URLs: Try direct fetch first, then Google Search fallback
-      try {
-        searchResult = await getListingDataFromUrl(url);
-      } catch (error) {
-        // If direct fetch fails completely, extract address and use Google Search
+      // CRITICAL: Skip direct fetch for Zillow URLs - they block bots and return empty content
+      // Always use Google Search aggregation for Zillow to get multi-site data
+      if (url.includes('zillow.com')) {
+        console.log('Zillow URL detected, skipping direct fetch and using Google Search aggregation');
         const addressFromUrl = extractAddressFromUrl(url);
         if (addressFromUrl) {
-          console.log(`Direct fetch failed, using Google Search for address: ${addressFromUrl}`);
           searchResult = await getListingDataFromGoogleSearch(undefined, undefined, addressFromUrl);
         } else {
-          throw new Error('Could not extract address from URL and direct fetch failed');
+          // If we can't extract address, still try Google Search with the URL
+          searchResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
+        }
+      } else {
+        // For other URLs: Try direct fetch first, then Google Search fallback
+        try {
+          searchResult = await getListingDataFromUrl(url);
+        } catch (error) {
+          // If direct fetch fails completely, extract address and use Google Search
+          const addressFromUrl = extractAddressFromUrl(url);
+          if (addressFromUrl) {
+            console.log(`Direct fetch failed, using Google Search for address: ${addressFromUrl}`);
+            searchResult = await getListingDataFromGoogleSearch(undefined, undefined, addressFromUrl);
+          } else {
+            // Last resort: try Google Search with the URL itself
+            console.log('Could not extract address from URL, trying Google Search with URL');
+            searchResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
+          }
         }
       }
     } else if (address) {
