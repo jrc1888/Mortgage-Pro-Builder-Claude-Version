@@ -90,11 +90,14 @@ export default async function handler(
     }
 
     // Step 1: Use Google Search to find MLS listing with fallback strategies
+    // Prioritize known working sites (utahrealestate.com, redfin.com)
     const searchQueries = [
-      `"${mlsNumber}" MLS real estate listing address`,
-      `MLS ${mlsNumber} property address`,
-      `"${mlsNumber}" real estate address`,
-      `MLS ${mlsNumber} address`,
+      `"${mlsNumber}" MLS site:utahrealestate.com`,
+      `"${mlsNumber}" MLS site:redfin.com`,
+      `MLS ${mlsNumber} site:utahrealestate.com`,
+      `MLS ${mlsNumber} site:redfin.com`,
+      `"${mlsNumber}" MLS`,
+      `MLS ${mlsNumber}`,
       mlsNumber
     ];
     

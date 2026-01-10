@@ -176,12 +176,6 @@ async function ingestListingText(url: string): Promise<IngestResult> {
     throw new Error('URL must start with http:// or https://');
   }
 
-  // Skip direct fetch for Zillow URLs - they block bots and return empty/JS-rendered content
-  // Always use Google Search aggregation for Zillow instead
-  if (url.includes('zillow.com')) {
-    throw new Error('Zillow URLs require Google Search aggregation (bot blocking detected)');
-  }
-
   // Try direct fetch first
   try {
     const fetchResponse = await fetch(url, {
@@ -752,6 +746,90 @@ function aggregateListingData(results: ListingData[], targetAddress?: string | n
 }
 
 /**
+ * Try to construct direct URLs for known working sites (homes.com, redfin.com, utahrealestate.com)
+ * and fetch from them directly. This is more reliable than Google Search for addresses.
+ */
+async function tryDirectUrlConstruction(address: string): Promise<{ listing: ListingData; ingestion: IngestResult } | null> {
+  try {
+    // Parse address components
+    const addressMatch = address.match(/(\d+)\s+(.+?)(?:,\s*)?(.+?)?,\s*([A-Z]{2})\s+(\d{5})/i);
+    if (!addressMatch) {
+      return null;
+    }
+    
+    const [, streetNum, streetName, cityName, state, zip] = addressMatch;
+    const city = cityName || '';
+    
+    // Normalize street name for URL construction
+    const urlSafeStreet = streetName.trim().replace(/\s+/g, '-').toLowerCase();
+    const urlSafeCity = city.trim().replace(/\s+/g, '-').toLowerCase();
+    const urlSafeState = state.toLowerCase();
+    
+    // Known working sites - try these in order
+    const urlPatterns = [
+      // Utah Real Estate
+      `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+      // Redfin - format: /STATE/CITY/STREET-ZIP/home/
+      `https://www.redfin.com/${urlSafeState.toUpperCase()}/${urlSafeCity}/${urlSafeStreet}-${zip}/home/`,
+      // Homes.com - format: /property/STREET-CITY-STATE/
+      `https://www.homes.com/property/${urlSafeStreet}-${urlSafeCity}-${urlSafeState}/`,
+    ];
+    
+    for (const urlPattern of urlPatterns) {
+      try {
+        console.log(`Trying direct URL: ${urlPattern}`);
+        const fetchResponse = await fetch(urlPattern, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(5000),
+        });
+        
+        if (fetchResponse.ok) {
+          const htmlContent = await fetchResponse.text();
+          const plainText = htmlToPlainText(htmlContent);
+          
+          if (plainText && plainText.trim().length >= 100) {
+            // Found a working URL - extract data
+            const targetAddress = address;
+            const listing = await extractListingWithOpenAISinglePage(urlPattern, plainText, 'direct_url_construction', targetAddress);
+            
+            // Validate that we got the right property - be lenient with address matching
+            // If we got price and address, it's likely the right property even if address format differs slightly
+            if (listing.address && (addressesMatch(listing.address, targetAddress) || listing.price)) {
+              console.log(`Successfully fetched from constructed URL: ${urlPattern}`);
+              return {
+                listing,
+                ingestion: {
+                  raw_text: plainText.substring(0, 5000),
+                  source: 'direct_url_construction',
+                  notes: `Successfully fetched from constructed URL: ${urlPattern}`,
+                  searchProviderUsed: 'none',
+                  searchQueryUsed: undefined,
+                  numSearchResultsUsed: undefined
+                }
+              };
+            } else {
+              console.log(`Extracted data from ${urlPattern} doesn't match address ${targetAddress} or missing price`);
+            }
+          }
+        }
+      } catch (urlError) {
+        console.log(`Failed to fetch from ${urlPattern}:`, urlError instanceof Error ? urlError.message : 'Unknown error');
+        continue;
+      }
+    }
+    
+    return null; // None of the constructed URLs worked
+  } catch (error) {
+    console.log('Direct URL construction failed:', error);
+    return null;
+  }
+}
+
+/**
  * Get listing data using Google Search + OpenAI extraction with multi-site aggregation
  * Always searches for the address across major real estate sites, fetches pages from multiple sites,
  * extracts from each separately, and aggregates using majority confidence
@@ -771,89 +849,51 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   let fallbackQueries: string[] = [];
   
   if (address) {
-    // Primary query - search for the exact address with listing-specific terms
-    // Exclude builder/community pages by including "for sale" or "listing"
-    searchQuery = `"${address}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com) "for sale"`;
-    // Fallback queries - search each major site separately with listing-specific terms
+    // Simplified queries - remove "for sale" requirement which is too restrictive
+    // Primary query - search for the exact address on major sites
+    searchQuery = `"${address}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com)`;
+    // Fallback queries - search each major site separately (simpler, more likely to match)
     fallbackQueries = [
-      `"${address}" site:zillow.com "for sale"`,
-      `"${address}" site:redfin.com "for sale"`,
-      `"${address}" site:utahrealestate.com "for sale"`,
-      `"${address}" site:realtor.com "for sale"`,
-      `"${address}" site:homes.com "for sale"`,
-      `"${address}" site:zillow.com homedetails`,
-      `"${address}" site:redfin.com home`,
-      `"${address}" zillow listing`,
-      `"${address}" redfin listing`,
-      `"${address}" property listing for sale`,
-      `"${address}" property listing`,
-      address // Just the address without quotes
+      `"${address}" site:utahrealestate.com`,
+      `"${address}" site:redfin.com`,
+      `"${address}" site:homes.com`,
+      `"${address}" site:zillow.com`,
+      `"${address}" site:realtor.com`,
+      address, // Just the address without quotes
+      `${address} property`,
+      `${address} listing`
     ];
   } else if (mlsNumber) {
-    searchQuery = `"${mlsNumber}" MLS property listing`;
+    // Simplified MLS queries - prioritize working sites
+    searchQuery = `"${mlsNumber}" MLS (site:utahrealestate.com OR site:redfin.com OR site:homes.com OR site:zillow.com)`;
     fallbackQueries = [
-      `"${mlsNumber}" MLS site:zillow.com`,
-      `"${mlsNumber}" MLS site:redfin.com`,
       `"${mlsNumber}" MLS site:utahrealestate.com`,
-      `"${mlsNumber}" MLS site:realtor.com`,
-      `MLS ${mlsNumber} zillow`,
+      `"${mlsNumber}" MLS site:redfin.com`,
+      `"${mlsNumber}" MLS site:homes.com`,
+      `"${mlsNumber}" MLS site:zillow.com`,
+      `MLS ${mlsNumber} utahrealestate`,
       `MLS ${mlsNumber} redfin`,
-      `MLS ${mlsNumber} property listing`,
-      `MLS ${mlsNumber} real estate`,
+      `MLS ${mlsNumber}`,
       mlsNumber
     ];
   } else if (url) {
     // Extract address from URL for better search query
     const addressFromUrl = extractAddressFromUrl(url);
     if (addressFromUrl) {
-      // Search for the exact address with listing-specific terms
-      searchQuery = `"${addressFromUrl}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com) "for sale"`;
-      // If it's a specific site URL, prioritize that site but also search others
-      if (url.includes('zillow.com')) {
-        fallbackQueries = [
-          `"${addressFromUrl}" site:zillow.com "for sale"`,
-          `"${addressFromUrl}" site:zillow.com homedetails`,
-          `"${addressFromUrl}" site:redfin.com "for sale"`,
-          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
-          `"${addressFromUrl}" site:realtor.com "for sale"`,
-          `"${addressFromUrl}" site:homes.com "for sale"`,
-          `"${addressFromUrl}" zillow listing`,
-          addressFromUrl
-        ];
-      } else if (url.includes('redfin.com')) {
-        fallbackQueries = [
-          `"${addressFromUrl}" site:redfin.com "for sale"`,
-          `"${addressFromUrl}" site:redfin.com home`,
-          `"${addressFromUrl}" site:zillow.com "for sale"`,
-          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
-          `"${addressFromUrl}" site:realtor.com "for sale"`,
-          `"${addressFromUrl}" site:homes.com "for sale"`,
-          `"${addressFromUrl}" redfin listing`,
-          addressFromUrl
-        ];
-      } else if (url.includes('homes.com')) {
-        fallbackQueries = [
-          `"${addressFromUrl}" site:homes.com "for sale"`,
-          `"${addressFromUrl}" site:zillow.com "for sale"`,
-          `"${addressFromUrl}" site:redfin.com "for sale"`,
-          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
-          `"${addressFromUrl}" site:realtor.com "for sale"`,
-          `"${addressFromUrl}" property listing for sale`,
-          addressFromUrl
-        ];
-      } else {
-        fallbackQueries = [
-          `"${addressFromUrl}" site:zillow.com "for sale"`,
-          `"${addressFromUrl}" site:redfin.com "for sale"`,
-          `"${addressFromUrl}" site:utahrealestate.com "for sale"`,
-          `"${addressFromUrl}" site:realtor.com "for sale"`,
-          `"${addressFromUrl}" site:homes.com "for sale"`,
-          `"${addressFromUrl}" property listing for sale`,
-          addressFromUrl
-        ];
-      }
+      // Simplified queries - search for address on major sites without restrictive terms
+      searchQuery = `"${addressFromUrl}" (site:zillow.com OR site:redfin.com OR site:utahrealestate.com OR site:realtor.com OR site:homes.com)`;
+      // Simplified fallback queries - prioritize working sites (utahrealestate, redfin, homes.com)
+      fallbackQueries = [
+        `"${addressFromUrl}" site:utahrealestate.com`,
+        `"${addressFromUrl}" site:redfin.com`,
+        `"${addressFromUrl}" site:homes.com`,
+        `"${addressFromUrl}" site:zillow.com`,
+        `"${addressFromUrl}" site:realtor.com`,
+        addressFromUrl,
+        `${addressFromUrl} property`
+      ];
     } else {
-      searchQuery = `property listing ${url}`;
+      searchQuery = `property ${url}`;
       fallbackQueries = [url];
     }
   } else {
@@ -1582,38 +1622,33 @@ export default async function handler(
     let searchResult: { listing: ListingData; ingestion: IngestResult };
     
     if (url) {
-      // CRITICAL: Skip direct fetch for Zillow URLs - they block bots and return empty content
-      // Always use Google Search aggregation for Zillow to get multi-site data
-      if (url.includes('zillow.com')) {
-        console.log('Zillow URL detected, skipping direct fetch and using Google Search aggregation');
+      // For URLs: Try direct fetch first, then Google Search fallback
+      try {
+        searchResult = await getListingDataFromUrl(url);
+      } catch (error) {
+        // If direct fetch fails, extract address and use Google Search
         const addressFromUrl = extractAddressFromUrl(url);
         if (addressFromUrl) {
+          console.log(`Direct fetch failed, using Google Search for address: ${addressFromUrl}`);
           searchResult = await getListingDataFromGoogleSearch(undefined, undefined, addressFromUrl);
         } else {
-          // If we can't extract address, still try Google Search with the URL
+          // Last resort: try Google Search with the URL itself
+          console.log('Could not extract address from URL, trying Google Search with URL');
           searchResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
-        }
-      } else {
-        // For other URLs: Try direct fetch first, then Google Search fallback
-        try {
-          searchResult = await getListingDataFromUrl(url);
-        } catch (error) {
-          // If direct fetch fails completely, extract address and use Google Search
-          const addressFromUrl = extractAddressFromUrl(url);
-          if (addressFromUrl) {
-            console.log(`Direct fetch failed, using Google Search for address: ${addressFromUrl}`);
-            searchResult = await getListingDataFromGoogleSearch(undefined, undefined, addressFromUrl);
-          } else {
-            // Last resort: try Google Search with the URL itself
-            console.log('Could not extract address from URL, trying Google Search with URL');
-            searchResult = await getListingDataFromGoogleSearch(url, undefined, undefined);
-          }
         }
       }
     } else if (address) {
-      // For addresses: Use Google Search aggregation directly
+      // For addresses: Try constructing direct URLs to known working sites first
       console.log(`Searching for address: ${address}`);
-      searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
+      
+      // Try direct URL construction for known working sites (homes.com, redfin.com, utahrealestate.com)
+      const workingSites = await tryDirectUrlConstruction(address);
+      if (workingSites) {
+        searchResult = workingSites;
+      } else {
+        // Fallback to Google Search if direct URL construction fails
+        searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
+      }
     } else {
       return response.status(400).json({ error: 'URL or address is required' });
     }
