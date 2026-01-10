@@ -754,20 +754,13 @@ const ScenarioBuilder: React.FC<Props> = ({ initialScenario, onSave, onBack, val
   const toggleSellerConcessionsMode = () => {
       const currentMode = scenario.sellerConcessionsMode || 'fixed';
       const isCurrentlyFixed = currentMode === 'fixed';
-      let newAmount = 0;
       
-      if (isCurrentlyFixed) {
-          if (scenario.purchasePrice > 0) {
-             newAmount = (scenario.sellerConcessions / scenario.purchasePrice) * 100;
-          }
-      } else {
-          newAmount = scenario.purchasePrice * (scenario.sellerConcessions / 100);
-      }
-      
+      // Only toggle the mode - don't recalculate the value
+      // The value is always stored as a dollar amount, and display is calculated based on mode
       setScenario(prev => ({
           ...prev,
-          sellerConcessionsMode: isCurrentlyFixed ? 'percent' : 'fixed',
-          sellerConcessions: Number(newAmount.toFixed(4))
+          sellerConcessionsMode: isCurrentlyFixed ? 'percent' : 'fixed'
+          // sellerConcessions remains unchanged - it's always stored as dollar amount
       }));
   };
 
