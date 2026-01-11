@@ -679,74 +679,114 @@ async function findPropertyUrlViaGoogle(
   siteDomain: string
 ): Promise<string | null> {
   console.log(`🔍 Searching Google for ${sourceName} listing...`);
-  console.log(`   Query: "${address} site:${siteDomain}"`);
   
-  try {
-    const searchQuery = `${address} site:${siteDomain}`;
-    const searchResults = await googleSearch(searchQuery);
-    
-    if (!searchResults || searchResults.length === 0) {
-      console.log(`   ✗ No results found`);
-      return null;
-    }
-    
-    console.log(`   Found ${searchResults.length} results, filtering for property pages...`);
-    
-    // BAD URL PATTERNS - These are aggregate pages, not individual property listings
-    const badPatterns = [
-      /\/zipcode\//i,           // ZIP code pages
-      /\/city\//i,              // City pages
-      /\/roster\//i,            // Office roster pages
-      /\/office\//i,            // Office pages
-      /\/agent\//i,             // Agent pages
-      /\/search/i,              // Search results pages
-      /\/browse/i,              // Browse pages
-      /\/find/i,                // Find pages
-      /listings\.report/i       // Listing report pages (multi-property)
+  // Parse address to extract components
+  const parsed = parseAddress(address);
+  if (!parsed) {
+    console.log(`   ✗ Could not parse address: ${address}`);
+    return null;
+  }
+  
+  const { streetNum, streetName, city, state, zip } = parsed;
+  
+  // Build multiple search query variations to maximize chances of finding the page
+  let searchQueries: string[] = [];
+  
+  if (sourceName === 'redfin') {
+    searchQueries = [
+      // Most specific - full address with path hint
+      `"${streetNum} ${streetName}" "${zip}" site:redfin.com/${state}/${city}`,
+      // Street name and zip with home path
+      `"${streetName}" "${zip}" site:redfin.com/home`,
+      // Street number and key words from street name
+      `${streetNum} ${streetName.split(' ')[0]} ${city} site:redfin.com/${state}`,
+      // Simple address with site
+      `${address} site:redfin.com`,
+      // Just street and city for broader match
+      `"${streetName}" ${city} ${state} site:redfin.com`
     ];
+  } else if (sourceName === 'utahrealestate') {
+    searchQueries = [
+      // Most specific with pid pattern
+      `"${streetNum} ${streetName}" "${zip}" site:utahrealestate.com/pid`,
+      // Full address
+      `${address} site:utahrealestate.com`,
+      // Street name and ZIP
+      `"${streetName}" "${zip}" site:utahrealestate.com`,
+      // City and street
+      `"${streetName}" ${city} site:utahrealestate.com`
+    ];
+  }
+  
+  // BAD URL PATTERNS - These are aggregate pages, not individual property listings
+  const badPatterns = [
+    /\/zipcode\//i,           // ZIP code pages
+    /\/city\//i,              // City pages
+    /\/roster\//i,            // Office roster pages
+    /\/office\//i,            // Office pages
+    /\/agent\//i,             // Agent pages
+    /\/search/i,              // Search results pages
+    /\/browse/i,              // Browse pages
+    /\/find/i,                // Find pages
+    /listings\.report/i       // Listing report pages (multi-property)
+  ];
+  
+  // Try each query variation
+  for (let i = 0; i < searchQueries.length; i++) {
+    const searchQuery = searchQueries[i];
+    console.log(`   [${i + 1}/${searchQueries.length}] Query: "${searchQuery}"`);
     
-    // Filter results to find the best property page URL
-    for (const item of searchResults) {
-      const url = item.link;
+    try {
+      const searchResults = await googleSearch(searchQuery);
       
-      // Skip if URL matches any bad pattern
-      if (badPatterns.some(pattern => pattern.test(url))) {
-        console.log(`   ✗ Skipping (aggregate page): ${url}`);
+      if (!searchResults || searchResults.length === 0) {
+        console.log(`   ✗ No results found`);
         continue;
       }
       
-      // For Redfin: Look for the pattern /home/[propertyId]
-      if (sourceName === 'redfin') {
-        if (url.includes('/home/') && /\/\d+\/?$/.test(url)) {
-          console.log(`   ✓ Found property page: ${url}`);
-          return url;
-        }
-      }
+      console.log(`   Found ${searchResults.length} results, filtering...`);
       
-      // For UtahRealEstate: Look for URLs with address patterns
-      if (sourceName === 'utahrealestate') {
-        // Check if URL contains address parts (street number, zip)
-        const addressParts = address.toLowerCase().match(/\d{3,5}/g) || []; // Extract numbers
-        const hasAddressMarkers = addressParts.some(part => url.toLowerCase().includes(part));
-        const hasPropertyPattern = /pid\.\d+|mls.*\d+/i.test(url);
+      // Filter results to find the best property page URL
+      for (const item of searchResults) {
+        const url = item.link;
         
-        if (hasAddressMarkers && (hasPropertyPattern || url.includes('-84014'))) {
-          console.log(`   ✓ Found property page: ${url}`);
-          return url;
+        // Skip if URL matches any bad pattern
+        if (badPatterns.some(pattern => pattern.test(url))) {
+          console.log(`   ✗ Skipping (aggregate): ${url}`);
+          continue;
+        }
+        
+        // For Redfin: Look for the pattern /home/[propertyId]
+        if (sourceName === 'redfin') {
+          if (url.includes('/home/') && /\/\d+\/?$/.test(url)) {
+            console.log(`   ✓ Found property page: ${url}`);
+            return url;
+          }
+        }
+        
+        // For UtahRealEstate: Look for URLs with address patterns
+        if (sourceName === 'utahrealestate') {
+          const hasStreetNum = url.toLowerCase().includes(streetNum);
+          const hasZip = url.includes(zip);
+          const hasPropertyPattern = /pid\.\d+|mls.*\d+/i.test(url);
+          
+          if ((hasStreetNum || hasZip) && hasPropertyPattern) {
+            console.log(`   ✓ Found property page: ${url}`);
+            return url;
+          }
         }
       }
       
-      console.log(`   ? Uncertain: ${url}`);
+      console.log(`   No property page in these results, trying next query...`);
+      
+    } catch (error) {
+      console.log(`   ✗ Search error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      continue;
     }
-    
-    console.log(`   ⚠️  No high-confidence property pages found`);
-    console.log(`   📋 Trying first result as fallback: ${searchResults[0].link}`);
-    return searchResults[0].link;
-    
-  } catch (error) {
-    console.log(`   ✗ Search error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    return null;
   }
+  
+  console.log(`   ⚠️  All search queries exhausted, no property page found`);
+  return null;
 }
 
 /**
