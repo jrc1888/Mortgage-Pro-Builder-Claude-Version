@@ -736,14 +736,38 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
 
   console.log(`Total search results collected: ${allSearchResults.length}`);
 
-  // Try to fetch and extract from the top results
-  const topResults = allSearchResults.slice(0, 5);
-  console.log(`Attempting to fetch top ${topResults.length} results...`);
+  // Filter out bad sources (symphonyhomes.com never has price data)
+  const filteredResults = allSearchResults.filter(result => 
+    !result.link.includes('symphonyhomes.com')
+  );
+  console.log(`After filtering out symphonyhomes.com: ${filteredResults.length} results`);
 
-  for (let i = 0; i < topResults.length; i++) {
-    const result = topResults[i];
+  // Prioritize known good sources (redfin, utahrealestate, zillow, realtor)
+  const priorityResults = filteredResults.filter(result => {
+    const link = result.link.toLowerCase();
+    return link.includes('redfin.com') || 
+           link.includes('utahrealestate.com') || 
+           link.includes('zillow.com') || 
+           link.includes('realtor.com');
+  });
+  
+  const otherResults = filteredResults.filter(result => {
+    const link = result.link.toLowerCase();
+    return !link.includes('redfin.com') && 
+           !link.includes('utahrealestate.com') && 
+           !link.includes('zillow.com') && 
+           !link.includes('realtor.com');
+  });
+
+  // Combine: priority URLs first, then others, limit to 10 total
+  const urlsToTry = [...priorityResults, ...otherResults].slice(0, 10);
+  console.log(`Prioritized ${priorityResults.length} good sources, ${otherResults.length} other sources`);
+  console.log(`Attempting to fetch top ${urlsToTry.length} URLs (prioritizing good sources first)...`);
+
+  for (let i = 0; i < urlsToTry.length; i++) {
+    const result = urlsToTry[i];
     try {
-      console.log(`[${i + 1}/${topResults.length}] Fetching: ${result.link}`);
+      console.log(`[${i + 1}/${urlsToTry.length}] Fetching: ${result.link}`);
       
       const fetchResponse = await fetch(result.link, {
         headers: {
@@ -768,9 +792,9 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
             address
           );
 
-          // Check if we got useful data
-          if (listing.price || (listing.beds && listing.baths)) {
-            console.log(`  ✓ Successfully extracted data from ${result.link}`);
+          // Stop immediately when we find price data (complete property data)
+          if (listing.price && listing.price > 0) {
+            console.log(`  ✓ Successfully extracted COMPLETE data from ${result.link} (has price: $${listing.price.toLocaleString()})`);
             console.log(`=== GOOGLE SEARCH SUCCESS ===\n`);
             
             return {
@@ -785,7 +809,7 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
               }
             };
           } else {
-            console.log(`  ✗ Extraction failed - missing critical data`);
+            console.log(`  ✗ Extraction failed - missing price data (price: ${listing.price}), continuing to next URL...`);
           }
         } else {
           console.log(`  ✗ Content too short`);
