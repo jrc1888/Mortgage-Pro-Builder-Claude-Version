@@ -1226,41 +1226,87 @@ export default async function handler(
 
     // STEP: Cross-source enrichment (fill in missing critical fields)
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`CROSS-SOURCE ENRICHMENT`);
+    console.log(`CROSS-SOURCE ENRICHMENT - STARTING`);
     console.log(`${'='.repeat(60)}`);
-    
-    const enrichmentResult = await enrichPropertyData(
-      searchResult.listing,
-      searchResult.listing.address
-    );
-    
-    // Comprehensive debug logging
-    console.log('🔍 ENRICHMENT DEBUG:', {
-      wasCalled: true,
-      hadMissingFields: enrichmentResult.enrichmentLog.length > 0 ? 'unknown' : 'check logs above',
-      missingFieldsList: 'check logs above',
-      sourcesAttempted: enrichmentResult.enrichmentLog.length,
-      fieldsFound: enrichmentResult.enrichmentLog.flatMap(entry => entry.fieldsFound),
-      finalListing: {
-        hoa: enrichmentResult.enrichedListing.hoa,
-        yearBuilt: enrichmentResult.enrichedListing.yearBuilt,
-        propertyTax: enrichmentResult.enrichedListing.propertyTax,
-        lotSqft: enrichmentResult.enrichedListing.lotSqft
-      }
+    console.log(`📋 BEFORE ENRICHMENT - Current listing state:`, {
+      address: searchResult.listing.address,
+      price: searchResult.listing.price,
+      hoa: searchResult.listing.hoa,
+      yearBuilt: searchResult.listing.yearBuilt,
+      propertyTax: searchResult.listing.propertyTax,
+      lotSqft: searchResult.listing.lotSqft
     });
+    console.log(`🔍 About to call enrichPropertyData()...`);
     
-    // Update searchResult with enriched data
-    searchResult.listing = enrichmentResult.enrichedListing;
-    
-    // Log enrichment results
-    if (enrichmentResult.enrichmentLog.length > 0) {
-      console.log(`Enrichment successful: ${enrichmentResult.enrichmentLog.length} source(s) provided data`);
-      for (const logEntry of enrichmentResult.enrichmentLog) {
-        console.log(`  - ${logEntry.source}: Found ${logEntry.fieldsFound.join(', ')}`);
+    let enrichmentResult;
+    try {
+      console.log(`✅ enrichPropertyData() call initiated`);
+      enrichmentResult = await enrichPropertyData(
+        searchResult.listing,
+        searchResult.listing.address
+      );
+      console.log(`✅ enrichPropertyData() call completed successfully`);
+      
+      // Comprehensive debug logging
+      console.log('🔍 ENRICHMENT DEBUG:', {
+        wasCalled: true,
+        hadMissingFields: enrichmentResult.enrichmentLog.length > 0 ? 'unknown' : 'check logs above',
+        missingFieldsList: 'check logs above',
+        sourcesAttempted: enrichmentResult.enrichmentLog.length,
+        fieldsFound: enrichmentResult.enrichmentLog.flatMap(entry => entry.fieldsFound),
+        finalListing: {
+          hoa: enrichmentResult.enrichedListing.hoa,
+          yearBuilt: enrichmentResult.enrichedListing.yearBuilt,
+          propertyTax: enrichmentResult.enrichedListing.propertyTax,
+          lotSqft: enrichmentResult.enrichedListing.lotSqft
+        }
+      });
+      
+      // Update searchResult with enriched data
+      searchResult.listing = enrichmentResult.enrichedListing;
+      
+      // Log enrichment results
+      if (enrichmentResult.enrichmentLog.length > 0) {
+        console.log(`✅ Enrichment successful: ${enrichmentResult.enrichmentLog.length} source(s) provided data`);
+        for (const logEntry of enrichmentResult.enrichmentLog) {
+          console.log(`  - ${logEntry.source}: Found ${logEntry.fieldsFound.join(', ')}`);
+        }
+      } else {
+        console.log(`⚠️  Enrichment skipped or no additional data found`);
       }
-    } else {
-      console.log(`Enrichment skipped or no additional data found`);
+      
+      console.log(`📋 AFTER ENRICHMENT - Updated listing state:`, {
+        address: searchResult.listing.address,
+        price: searchResult.listing.price,
+        hoa: searchResult.listing.hoa,
+        yearBuilt: searchResult.listing.yearBuilt,
+        propertyTax: searchResult.listing.propertyTax,
+        lotSqft: searchResult.listing.lotSqft
+      });
+      
+    } catch (enrichmentError) {
+      console.error(`\n❌❌❌ ENRICHMENT ERROR - enrichPropertyData() CRASHED ❌❌❌`);
+      console.error(`Error type: ${enrichmentError instanceof Error ? enrichmentError.constructor.name : typeof enrichmentError}`);
+      console.error(`Error message: ${enrichmentError instanceof Error ? enrichmentError.message : String(enrichmentError)}`);
+      console.error(`Error stack:`, enrichmentError instanceof Error ? enrichmentError.stack : 'No stack trace available');
+      console.error(`Full error object:`, enrichmentError);
+      console.error(`\n⚠️  Continuing with original (non-enriched) listing data due to enrichment failure`);
+      
+      // Continue with original data if enrichment fails
+      // searchResult.listing remains unchanged (already has original data)
+      console.log(`📋 Using original listing data (enrichment failed):`, {
+        address: searchResult.listing.address,
+        price: searchResult.listing.price,
+        hoa: searchResult.listing.hoa,
+        yearBuilt: searchResult.listing.yearBuilt,
+        propertyTax: searchResult.listing.propertyTax,
+        lotSqft: searchResult.listing.lotSqft
+      });
     }
+    
+    console.log(`${'='.repeat(60)}`);
+    console.log(`CROSS-SOURCE ENRICHMENT - COMPLETE`);
+    console.log(`${'='.repeat(60)}\n`);
 
     // Try property tax lookup if still missing (legacy fallback)
     if (!searchResult.listing.propertyTax && searchResult.listing.address && searchResult.listing.price) {
