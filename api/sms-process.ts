@@ -645,6 +645,249 @@ async function lookupPropertyTax(address: string, price: number): Promise<number
 }
 
 /**
+ * Enrichment Configuration
+ */
+const ENRICHMENT_CONFIG = {
+  criticalFields: ['hoa', 'yearBuilt', 'propertyTax', 'lotSqft'] as const,
+  minMissingFieldsToTrigger: 2, // Only enrich if 2+ fields are missing
+  maxEnrichmentAttempts: 2, // Maximum 2 source attempts
+  sources: [
+    {
+      name: 'redfin',
+      priority: 1,
+      description: 'Redfin (has actual property tax from county records)',
+      urlBuilder: (address: string, mls?: string) => buildRedfinUrl(address)
+    },
+    {
+      name: 'utahrealestate',
+      priority: 2,
+      description: 'UtahRealEstate (has HOA, year built, lot size from MLS)',
+      urlBuilder: (address: string, mls?: string) => buildUtahRealEstateUrl(address)
+    }
+  ] as const
+};
+
+/**
+ * Build Redfin URL from address
+ */
+function buildRedfinUrl(address: string): string[] {
+  const parsed = parseAddress(address);
+  if (!parsed) return [];
+  
+  const { streetNum, streetName, city, state, zip } = parsed;
+  const urlSafeStreet = streetName.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  const urlSafeCity = city.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  
+  // Try multiple Redfin URL patterns (similar to tryDirectUrlConstruction)
+  return [
+    `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-${zip}/home/`,
+    `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-N-${zip}/home/`,
+    `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-W-${zip}/home/`,
+    `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-E-${zip}/home/`,
+    `https://www.redfin.com/${state}/${urlSafeCity}/${streetNum}-${urlSafeStreet}-S-${zip}/home/`,
+  ];
+}
+
+/**
+ * Build UtahRealEstate URL from address
+ */
+function buildUtahRealEstateUrl(address: string): string[] {
+  const parsed = parseAddress(address);
+  if (!parsed) return [];
+  
+  const { streetNum, streetName, city, state, zip } = parsed;
+  const urlSafeStreet = streetName.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  const urlSafeCity = city.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  const urlSafeState = state.toLowerCase();
+  
+  // Try multiple UtahRealEstate URL patterns
+  return [
+    `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+    `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet.toUpperCase()}-${urlSafeCity}-${urlSafeState.toUpperCase()}-${zip}/`,
+    `https://www.utahrealestate.com/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${zip}/`,
+    `https://www.utahrealestate.com/${streetNum}-W-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+    `https://www.utahrealestate.com/${streetNum}-N-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+    `https://www.utahrealestate.com/${streetNum}-E-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+    `https://www.utahrealestate.com/${streetNum}-S-${urlSafeStreet}-${urlSafeCity}-${urlSafeState}-${zip}/`,
+  ];
+}
+
+/**
+ * Check which critical fields are missing from listing data
+ */
+function getMissingCriticalFields(listing: ListingData): string[] {
+  const missing: string[] = [];
+  
+  for (const field of ENRICHMENT_CONFIG.criticalFields) {
+    const value = listing[field];
+    
+    if (field === 'hoa') {
+      // HOA: null/undefined means missing, but 0 is valid (no HOA)
+      if (value === null || value === undefined) {
+        missing.push(field);
+      }
+    } else {
+      // Other fields: null/undefined means missing
+      if (value === null || value === undefined) {
+        missing.push(field);
+      }
+    }
+  }
+  
+  return missing;
+}
+
+/**
+ * Cross-source data enrichment function
+ * Fetches missing critical fields from high-quality sources
+ */
+async function enrichPropertyData(
+  initialListing: ListingData,
+  initialAddress: string
+): Promise<{ enrichedListing: ListingData; enrichmentLog: Array<{ source: string; url: string; fieldsFound: string[] }> }> {
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`CROSS-SOURCE ENRICHMENT START`);
+  console.log(`${'='.repeat(60)}`);
+  
+  // Check which fields are missing
+  const missingFields = getMissingCriticalFields(initialListing);
+  console.log(`Initial data missing fields: ${missingFields.join(', ') || 'none'}`);
+  
+  // Don't enrich if we have everything or too few missing fields
+  if (missingFields.length < ENRICHMENT_CONFIG.minMissingFieldsToTrigger) {
+    console.log(`Skipping enrichment: Only ${missingFields.length} missing field(s) (minimum ${ENRICHMENT_CONFIG.minMissingFieldsToTrigger} required)`);
+    return {
+      enrichedListing: initialListing,
+      enrichmentLog: []
+    };
+  }
+  
+  // Start with initial data
+  const enrichedListing: ListingData = { ...initialListing };
+  const enrichmentLog: Array<{ source: string; url: string; fieldsFound: string[] }> = [];
+  
+  // Track which fields still need to be found
+  let remainingMissingFields = [...missingFields];
+  
+  // Try enrichment sources in priority order
+  for (let i = 0; i < Math.min(ENRICHMENT_CONFIG.maxEnrichmentAttempts, ENRICHMENT_CONFIG.sources.length); i++) {
+    const source = ENRICHMENT_CONFIG.sources[i];
+    console.log(`\n[${i + 1}/${Math.min(ENRICHMENT_CONFIG.maxEnrichmentAttempts, ENRICHMENT_CONFIG.sources.length)}] Trying enrichment source: ${source.name} (${source.description})`);
+    
+    // Build URLs for this source
+    const urls = source.urlBuilder(initialAddress);
+    console.log(`  Built ${urls.length} URL pattern(s) for ${source.name}`);
+    
+    // Try each URL pattern until we find one that works
+    let foundData = false;
+    for (let j = 0; j < urls.length && remainingMissingFields.length > 0; j++) {
+      const url = urls[j];
+      try {
+        console.log(`  [${j + 1}/${urls.length}] Trying URL: ${url}`);
+        
+        const fetchResponse = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(8000), // 8 second timeout
+        });
+        
+        if (fetchResponse.ok) {
+          const htmlContent = await fetchResponse.text();
+          const plainText = htmlToPlainText(htmlContent);
+          
+          if (plainText && plainText.length >= 100) {
+            console.log(`    ✓ Fetched ${plainText.length} chars, extracting data...`);
+            
+            // Extract data using existing extraction logic
+            const extractedListing = await extractListingWithOpenAISinglePage(
+              url,
+              plainText,
+              `enrichment_${source.name}`,
+              initialAddress
+            );
+            
+            // Merge only the missing fields (don't overwrite good data)
+            const fieldsFound: string[] = [];
+            for (const field of remainingMissingFields) {
+              const extractedValue = extractedListing[field as keyof ListingData];
+              
+              // Only merge if we got a valid value
+              if (extractedValue !== null && extractedValue !== undefined) {
+                if (field === 'hoa') {
+                  // HOA: 0 is valid (no HOA), always merge if not null/undefined
+                  if (typeof extractedValue === 'number') {
+                    enrichedListing.hoa = extractedValue;
+                    fieldsFound.push(field);
+                  }
+                } else {
+                  // Other fields: merge if not null/undefined and not 0 (0 usually means missing data for these fields)
+                  if (typeof extractedValue === 'number' && extractedValue !== 0) {
+                    (enrichedListing as any)[field] = extractedValue;
+                    fieldsFound.push(field);
+                  } else if (typeof extractedValue !== 'number') {
+                    // Non-number values (shouldn't happen for these fields, but handle it)
+                    (enrichedListing as any)[field] = extractedValue;
+                    fieldsFound.push(field);
+                  }
+                }
+              }
+            }
+            
+            if (fieldsFound.length > 0) {
+              console.log(`    ✓ Found ${fieldsFound.length} missing field(s): ${fieldsFound.join(', ')}`);
+              enrichmentLog.push({
+                source: source.name,
+                url,
+                fieldsFound
+              });
+              
+              // Remove found fields from remaining missing fields
+              remainingMissingFields = remainingMissingFields.filter(f => !fieldsFound.includes(f));
+              foundData = true;
+              
+              // If we found all missing fields, we can stop early
+              if (remainingMissingFields.length === 0) {
+                console.log(`    ✓ All missing fields found - stopping enrichment`);
+                break;
+              }
+            } else {
+              console.log(`    ✗ No missing fields found in this extraction`);
+            }
+          } else {
+            console.log(`    ✗ Content too short (${plainText?.length || 0} chars)`);
+          }
+        } else {
+          console.log(`    ✗ HTTP ${fetchResponse.status}`);
+        }
+      } catch (error) {
+        console.log(`    ✗ Error: ${error instanceof Error ? error.message : 'Unknown'}`);
+        continue;
+      }
+      
+      // If we found data from this URL, don't try other URLs for this source
+      if (foundData) break;
+    }
+    
+    // If we found all missing fields, we can stop trying other sources
+    if (remainingMissingFields.length === 0) break;
+  }
+  
+  console.log(`\nEnrichment complete. Fields still missing: ${remainingMissingFields.join(', ') || 'none'}`);
+  console.log(`Enrichment log: ${enrichmentLog.length} source(s) provided data`);
+  console.log(`${'='.repeat(60)}\n`);
+  
+  return {
+    enrichedListing,
+    enrichmentLog
+  };
+}
+
+/**
  * Get listing data using Google Search (SIMPLIFIED VERSION)
  */
 async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, address?: string): Promise<{ listing: ListingData; ingestion: IngestResult }> {
@@ -951,7 +1194,30 @@ export default async function handler(
       throw new Error('No URL or address provided');
     }
 
-    // Try property tax lookup if missing
+    // STEP: Cross-source enrichment (fill in missing critical fields)
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`CROSS-SOURCE ENRICHMENT`);
+    console.log(`${'='.repeat(60)}`);
+    
+    const enrichmentResult = await enrichPropertyData(
+      searchResult.listing,
+      searchResult.listing.address
+    );
+    
+    // Update searchResult with enriched data
+    searchResult.listing = enrichmentResult.enrichedListing;
+    
+    // Log enrichment results
+    if (enrichmentResult.enrichmentLog.length > 0) {
+      console.log(`Enrichment successful: ${enrichmentResult.enrichmentLog.length} source(s) provided data`);
+      for (const logEntry of enrichmentResult.enrichmentLog) {
+        console.log(`  - ${logEntry.source}: Found ${logEntry.fieldsFound.join(', ')}`);
+      }
+    } else {
+      console.log(`Enrichment skipped or no additional data found`);
+    }
+
+    // Try property tax lookup if still missing (legacy fallback)
     if (!searchResult.listing.propertyTax && searchResult.listing.address && searchResult.listing.price) {
       const lookedUpTax = await lookupPropertyTax(searchResult.listing.address, searchResult.listing.price);
       if (lookedUpTax !== null) {
