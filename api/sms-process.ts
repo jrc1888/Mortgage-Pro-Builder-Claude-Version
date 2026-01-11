@@ -650,7 +650,7 @@ async function lookupPropertyTax(address: string, price: number): Promise<number
 const ENRICHMENT_CONFIG = {
   criticalFields: ['hoa', 'yearBuilt', 'propertyTax', 'lotSqft'] as const,
   minMissingFieldsToTrigger: 1,
-  maxEnrichmentAttempts: 2,
+  maxEnrichmentAttempts: 3,
   sources: [
     {
       name: 'redfin',
@@ -665,6 +665,13 @@ const ENRICHMENT_CONFIG = {
       description: 'UtahRealEstate (has HOA, year built, lot size from MLS)',
       searchQuery: (address: string) => `${address} site:utahrealestate.com`,
       targetFields: ['hoa', 'yearBuilt', 'lotSqft', 'propertyTax']
+    },
+    {
+      name: 'zillow',
+      priority: 3,
+      description: 'Zillow (comprehensive property data)',
+      searchQuery: (address: string) => `${address} site:zillow.com`,
+      targetFields: ['propertyTax', 'hoa', 'yearBuilt', 'lotSqft']
     }
   ] as const
 };
@@ -835,6 +842,33 @@ function buildUtahRealEstateUrl(address: string): string[] {
 }
 
 /**
+ * Build Zillow URL patterns for a given address
+ * Zillow uses format: /homedetails/{streetNum}-{streetName}-{city}-{state}-{zip}/
+ */
+function buildZillowUrl(address: string): string[] {
+  const parsed = parseAddress(address);
+  if (!parsed) return [];
+  
+  const { streetNum, streetName, city, state, zip } = parsed;
+  const urlPatterns: string[] = [];
+  
+  // Clean up street name for URL (remove spaces, periods, etc.)
+  const urlSafeStreet = streetName.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  const urlSafeCity = city.replace(/\s+/g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  const stateSlug = state.toUpperCase();
+  
+  // Zillow Pattern: /homedetails/{streetNum}-{streetName}-{city}-{state}-{zip}/
+  // Try multiple URL patterns (similar to tryDirectUrlConstruction)
+  return [
+    `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-${urlSafeCity}-${stateSlug}-${zip}/`,
+    `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-N-${urlSafeCity}-${stateSlug}-${zip}/`,
+    `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-W-${urlSafeCity}-${stateSlug}-${zip}/`,
+    `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-E-${urlSafeCity}-${stateSlug}-${zip}/`,
+    `https://www.zillow.com/homedetails/${streetNum}-${urlSafeStreet}-S-${urlSafeCity}-${stateSlug}-${zip}/`
+  ];
+}
+
+/**
  * Check which critical fields are missing from listing data
  */
 function getMissingCriticalFields(listing: any): string[] {
@@ -970,6 +1004,17 @@ async function enrichPropertyData(
         // City and street
         `"${streetName}" ${city} site:utahrealestate.com`
       ];
+    } else if (source.name === 'zillow') {
+      searchQueries = [
+        // Most specific - full address with homedetails pattern
+        `"${streetNum} ${streetName}" "${city}" "${state}" "${zip}" site:zillow.com/homedetails`,
+        // Full address
+        `${initialAddress} site:zillow.com`,
+        // Street name and ZIP
+        `"${streetName}" "${zip}" site:zillow.com`,
+        // City and street
+        `"${streetName}" ${city} ${state} site:zillow.com`
+      ];
     }
     
     // BAD URL PATTERNS - aggregate pages
@@ -1026,6 +1071,15 @@ async function enrichPropertyData(
             const hasPropertyPattern = /pid\.\d+|mls.*\d+|\d{7}/i.test(url);
             
             if ((hasStreetNum || hasZip) && hasPropertyPattern) {
+              console.log(`   ✓ Found property page: ${url}`);
+              propertyUrl = url;
+              break;
+            }
+          }
+          
+          // For Zillow: Look for the pattern /homedetails/
+          if (source.name === 'zillow') {
+            if (url.includes('/homedetails/') && url.includes(`/${zip}`)) {
               console.log(`   ✓ Found property page: ${url}`);
               propertyUrl = url;
               break;

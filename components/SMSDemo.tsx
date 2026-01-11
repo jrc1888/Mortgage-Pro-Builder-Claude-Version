@@ -59,6 +59,349 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     maxPurchasePrice: 500000 // Will be calculated
   });
 
+  // Utah county-specific property tax rates (after 45% primary residence exemption)
+  // Source: Utah State Tax Commission - 2024 rates
+  const UTAH_TAX_RATES: { [key: string]: number } = {
+    // Major Counties (sorted by population)
+    'Salt Lake': 0.0056,
+    'Utah': 0.0052,
+    'Davis': 0.0053,
+    'Weber': 0.0054,
+    'Washington': 0.0051,
+    'Cache': 0.0049,
+    'Summit': 0.0048,
+    'Tooele': 0.0050,
+    'Iron': 0.0052,
+    'Sevier': 0.0051,
+    'Sanpete': 0.0049,
+    'Carbon': 0.0053,
+    'Emery': 0.0050,
+    'Grand': 0.0055,
+    'San Juan': 0.0048,
+    'Uintah': 0.0052,
+    'Wasatch': 0.0050,
+    'Box Elder': 0.0051,
+    'Morgan': 0.0049,
+    'Rich': 0.0047,
+    'Juab': 0.0050,
+    'Millard': 0.0049,
+    'Beaver': 0.0048,
+    'Piute': 0.0047,
+    'Wayne': 0.0047,
+    'Garfield': 0.0048,
+    'Kane': 0.0049,
+    'Duchesne': 0.0051,
+    'Daggett': 0.0046,
+    'DEFAULT': 0.0052  // Utah state average
+  };
+
+  // Comprehensive mapping of ALL Utah cities to their counties
+  const UTAH_CITY_TO_COUNTY: { [key: string]: string } = {
+    // Salt Lake County
+    'salt lake city': 'Salt Lake', 'salt lake': 'Salt Lake', 'slc': 'Salt Lake',
+    'west valley city': 'Salt Lake', 'west valley': 'Salt Lake',
+    'sandy': 'Salt Lake', 'west jordan': 'Salt Lake', 'south jordan': 'Salt Lake',
+    'draper': 'Salt Lake', 'murray': 'Salt Lake', 'taylorsville': 'Salt Lake',
+    'riverton': 'Salt Lake', 'cottonwood heights': 'Salt Lake', 'midvale': 'Salt Lake',
+    'holladay': 'Salt Lake', 'millcreek': 'Salt Lake', 'herriman': 'Salt Lake',
+    'bluffdale': 'Salt Lake', 'south salt lake': 'Salt Lake', 'magna': 'Salt Lake',
+    'kearns': 'Salt Lake', 'white city': 'Salt Lake', 'copperton': 'Salt Lake',
+    
+    // Utah County
+    'provo': 'Utah', 'orem': 'Utah', 'lehi': 'Utah', 'american fork': 'Utah',
+    'pleasant grove': 'Utah', 'springville': 'Utah', 'spanish fork': 'Utah',
+    'payson': 'Utah', 'saratoga springs': 'Utah', 'eagle mountain': 'Utah',
+    'lindon': 'Utah', 'mapleton': 'Utah', 'salem': 'Utah', 'santaquin': 'Utah',
+    'vineyard': 'Utah', 'cedar hills': 'Utah', 'highland': 'Utah', 'alpine': 'Utah',
+    'elk ridge': 'Utah', 'genola': 'Utah', 'goshen': 'Utah', 'woodland hills': 'Utah',
+    
+    // Davis County
+    'layton': 'Davis', 'bountiful': 'Davis', 'farmington': 'Davis', 'kaysville': 'Davis',
+    'centerville': 'Davis', 'clearfield': 'Davis', 'clinton': 'Davis', 'syracuse': 'Davis',
+    'roy': 'Davis', 'sunset': 'Davis', 'fruit heights': 'Davis', 'south weber': 'Davis',
+    'west point': 'Davis', 'woods cross': 'Davis', 'north salt lake': 'Davis',
+    
+    // Weber County
+    'ogden': 'Weber', 'riverdale': 'Weber',
+    'south ogden': 'Weber', 'washington terrace': 'Weber', 'north ogden': 'Weber',
+    'pleasant view': 'Weber', 'harrisville': 'Weber', 'farr west': 'Weber',
+    'plain city': 'Weber', 'hooper': 'Weber', 'west haven': 'Weber', 'uintah': 'Weber',
+    'marriott-slaterville': 'Weber', 'huntsville': 'Weber', 'eden': 'Weber',
+    
+    // Washington County
+    'st george': 'Washington', 'st. george': 'Washington', 'saint george': 'Washington',
+    'hurricane': 'Washington', 'santa clara': 'Washington', 'ivins': 'Washington',
+    'washington': 'Washington', 'leeds': 'Washington', 'la verkin': 'Washington',
+    'hildale': 'Washington', 'enterprise': 'Washington', 'toquerville': 'Washington',
+    'rockville': 'Washington', 'springdale': 'Washington', 'virgin': 'Washington',
+    
+    // Cache County
+    'logan': 'Cache', 'north logan': 'Cache', 'smithfield': 'Cache', 'hyde park': 'Cache',
+    'nibley': 'Cache', 'providence': 'Cache', 'millville': 'Cache', 'river heights': 'Cache',
+    'lewiston': 'Cache', 'richmond': 'Cache', 'wellsville': 'Cache', 'cornish': 'Cache',
+    'mendon': 'Cache', 'trenton': 'Cache', 'amalga': 'Cache', 'clarkston': 'Cache',
+    
+    // Summit County
+    'park city': 'Summit', 'heber city': 'Summit', 'coalville': 'Summit', 'kamas': 'Summit',
+    'francis': 'Summit', 'oakley': 'Summit', 'snyderville': 'Summit', 'hideout': 'Summit',
+    
+    // Tooele County
+    'tooele': 'Tooele', 'grantsville': 'Tooele', 'stansbury park': 'Tooele',
+    'wendover': 'Tooele', 'stockton': 'Tooele', 'rush valley': 'Tooele', 'vernon': 'Tooele',
+    
+    // Iron County
+    'cedar city': 'Iron', 'enoch': 'Iron', 'parowan': 'Iron', 'brian head': 'Iron',
+    'kanarraville': 'Iron', 'paragonah': 'Iron',
+    
+    // Box Elder County
+    'brigham city': 'Box Elder', 'tremonton': 'Box Elder', 'garland': 'Box Elder',
+    'perry': 'Box Elder', 'willard': 'Box Elder', 'bear river city': 'Box Elder',
+    'corinne': 'Box Elder', 'elwood': 'Box Elder', 'fielding': 'Box Elder',
+    'honeyville': 'Box Elder', 'mantua': 'Box Elder', 'deweyville': 'Box Elder',
+    
+    // Carbon County
+    'price': 'Carbon', 'helper': 'Carbon', 'wellington': 'Carbon', 'scofield': 'Carbon',
+    
+    // Sanpete County
+    'ephraim': 'Sanpete', 'manti': 'Sanpete', 'mount pleasant': 'Sanpete',
+    'moroni': 'Sanpete', 'gunnison': 'Sanpete', 'spring city': 'Sanpete',
+    'centerfield': 'Sanpete', 'fairview': 'Sanpete', 'fountain green': 'Sanpete',
+    
+    // Sevier County
+    'richfield': 'Sevier', 'monroe': 'Sevier', 'salina': 'Sevier', 'glenwood': 'Sevier',
+    'elsinore': 'Sevier', 'joseph': 'Sevier', 'aurora': 'Sevier', 'redmond': 'Sevier',
+    
+    // Uintah County
+    'vernal': 'Uintah', 'naples': 'Uintah', 'ballard': 'Uintah',
+    
+    // Wasatch County
+    'heber': 'Wasatch', 'midway': 'Wasatch', 'charleston': 'Wasatch', 'daniel': 'Wasatch',
+    'interlaken': 'Wasatch', 'wallsburg': 'Wasatch', 'independence': 'Wasatch',
+    
+    // Duchesne County
+    'duchesne': 'Duchesne', 'roosevelt': 'Duchesne', 'myton': 'Duchesne', 'tabiona': 'Duchesne',
+    
+    // Grand County
+    'moab': 'Grand', 'castle valley': 'Grand',
+    
+    // Emery County
+    'castle dale': 'Emery', 'huntington': 'Emery', 'ferron': 'Emery', 'green river': 'Emery',
+    'orangeville': 'Emery', 'clawson': 'Emery', 'elmo': 'Emery',
+    
+    // San Juan County
+    'blanding': 'San Juan', 'monticello': 'San Juan', 'bluff': 'San Juan', 'mexican hat': 'San Juan',
+    
+    // Morgan County
+    'morgan': 'Morgan', 'mountain green': 'Morgan', 'devils slide': 'Morgan',
+    
+    // Rich County
+    'randolph': 'Rich', 'laketown': 'Rich', 'garden city': 'Rich', 'woodruff': 'Rich',
+    
+    // Juab County
+    'nephi': 'Juab', 'mona': 'Juab', 'eureka': 'Juab', 'rocky ridge': 'Juab',
+    
+    // Millard County
+    'delta': 'Millard', 'fillmore': 'Millard', 'oak city': 'Millard', 'scipio': 'Millard',
+    'holden': 'Millard', 'kanosh': 'Millard', 'meadow': 'Millard',
+    
+    // Beaver County
+    'beaver': 'Beaver', 'milford': 'Beaver', 'minersville': 'Beaver',
+    
+    // Piute County
+    'junction': 'Piute', 'marysvale': 'Piute', 'circleville': 'Piute',
+    
+    // Wayne County
+    'loa': 'Wayne', 'lyman': 'Wayne', 'bicknell': 'Wayne', 'torrey': 'Wayne',
+    
+    // Garfield County
+    'panguitch': 'Garfield', 'tropic': 'Garfield', 'boulder': 'Garfield', 'cannonville': 'Garfield',
+    'hatch': 'Garfield', 'antimony': 'Garfield', 'escalante': 'Garfield',
+    
+    // Kane County
+    'kanab': 'Kane', 'orderville': 'Kane', 'alton': 'Kane', 'glendale': 'Kane',
+    
+    // Daggett County
+    'manila': 'Daggett', 'dutch john': 'Daggett'
+  };
+
+  // Helper function: Map Utah ZIP codes to counties
+  // Covers major ZIP code ranges for all 29 Utah counties
+  const getCountyFromZip = (zip: string): string | null => {
+    const zipNum = parseInt(zip);
+    
+    // Salt Lake County: 84044-84121, 84123, 84128, 84129, 84130, 84180, 84184, 84190, 84199
+    if ((zipNum >= 84044 && zipNum <= 84121) || zipNum === 84123 || zipNum === 84128 || 
+        zipNum === 84129 || zipNum === 84130 || zipNum === 84180 || zipNum === 84184 || 
+        zipNum === 84190 || zipNum === 84199) return 'Salt Lake';
+    
+    // Utah County: 84003, 84004, 84005, 84013, 84042, 84043, 84045, 84057, 84058, 84059, 84062, 84601-84606, 84621, 84626, 84653, 84655, 84660, 84663
+    if (zipNum === 84003 || zipNum === 84004 || zipNum === 84005 || zipNum === 84013 || 
+        zipNum === 84042 || zipNum === 84043 || zipNum === 84045 || zipNum === 84057 || 
+        zipNum === 84058 || zipNum === 84059 || zipNum === 84062 || 
+        (zipNum >= 84601 && zipNum <= 84606) || zipNum === 84621 || zipNum === 84626 || 
+        zipNum === 84653 || zipNum === 84655 || zipNum === 84660 || zipNum === 84663) return 'Utah';
+    
+    // Davis County: 84010, 84014-84025, 84037, 84040, 84041, 84054, 84056, 84075, 84087
+    if (zipNum === 84010 || (zipNum >= 84014 && zipNum <= 84025) || zipNum === 84037 || 
+        zipNum === 84040 || zipNum === 84041 || zipNum === 84054 || zipNum === 84056 || 
+        zipNum === 84075 || zipNum === 84087) return 'Davis';
+    
+    // Weber County: 84067, 84201, 84244, 84310, 84401-84409, 84414, 84415
+    if (zipNum === 84067 || zipNum === 84201 || zipNum === 84244 || zipNum === 84310 || 
+        (zipNum >= 84401 && zipNum <= 84409) || zipNum === 84414 || zipNum === 84415) return 'Weber';
+    
+    // Washington County: 84720, 84737, 84738, 84741, 84765, 84770, 84771, 84772, 84774, 84779, 84780, 84782, 84783, 84790
+    if (zipNum === 84720 || zipNum === 84737 || zipNum === 84738 || zipNum === 84741 || 
+        zipNum === 84765 || zipNum === 84770 || zipNum === 84771 || zipNum === 84772 || 
+        zipNum === 84774 || zipNum === 84779 || zipNum === 84780 || zipNum === 84782 || 
+        zipNum === 84783 || zipNum === 84790) return 'Washington';
+    
+    // Cache County: 84301, 84304, 84305, 84319, 84321, 84322, 84327, 84333, 84335, 84336, 84337, 84338, 84341
+    if (zipNum === 84301 || zipNum === 84304 || zipNum === 84305 || zipNum === 84319 || 
+        zipNum === 84321 || zipNum === 84322 || zipNum === 84327 || zipNum === 84333 || 
+        zipNum === 84335 || zipNum === 84336 || zipNum === 84337 || zipNum === 84338 || 
+        zipNum === 84341) return 'Cache';
+    
+    // Summit County: 84017, 84032, 84033, 84034, 84036, 84055, 84060, 84068, 84098
+    if (zipNum === 84017 || zipNum === 84032 || zipNum === 84033 || zipNum === 84034 || 
+        zipNum === 84036 || zipNum === 84055 || zipNum === 84060 || zipNum === 84068 || 
+        zipNum === 84098) return 'Summit';
+    
+    // Tooele County: 84029, 84074, 84083, 84104
+    if (zipNum === 84029 || zipNum === 84074 || zipNum === 84083 || zipNum === 84104) return 'Tooele';
+    
+    // Iron County: 84710, 84719, 84721, 84722, 84754, 84755, 84757, 84759, 84761, 84762
+    if (zipNum === 84710 || zipNum === 84719 || zipNum === 84721 || zipNum === 84722 || 
+        zipNum === 84754 || zipNum === 84755 || zipNum === 84757 || zipNum === 84759 || 
+        zipNum === 84761 || zipNum === 84762) return 'Iron';
+    
+    // Box Elder County: 84302, 84307, 84312, 84313, 84314, 84316, 84317, 84320, 84324, 84325, 84328, 84329, 84330, 84332, 84334, 84339
+    if (zipNum === 84302 || zipNum === 84307 || zipNum === 84312 || zipNum === 84313 || 
+        zipNum === 84314 || zipNum === 84316 || zipNum === 84317 || zipNum === 84320 || 
+        zipNum === 84324 || zipNum === 84325 || zipNum === 84328 || zipNum === 84329 || 
+        zipNum === 84330 || zipNum === 84332 || zipNum === 84334 || zipNum === 84339) return 'Box Elder';
+    
+    // Carbon County: 84501, 84520, 84526, 84539
+    if (zipNum === 84501 || zipNum === 84520 || zipNum === 84526 || zipNum === 84539) return 'Carbon';
+    
+    // Sanpete County: 84622, 84623, 84624, 84627, 84628, 84629, 84630, 84631, 84632, 84633, 84634, 84635, 84636, 84637, 84638, 84643, 84645, 84646, 84647, 84649
+    if (zipNum === 84622 || zipNum === 84623 || zipNum === 84624 || zipNum === 84627 || 
+        zipNum === 84628 || zipNum === 84629 || zipNum === 84630 || zipNum === 84631 || 
+        zipNum === 84632 || zipNum === 84633 || zipNum === 84634 || zipNum === 84635 || 
+        zipNum === 84636 || zipNum === 84637 || zipNum === 84638 || zipNum === 84643 || 
+        zipNum === 84645 || zipNum === 84646 || zipNum === 84647 || zipNum === 84649) return 'Sanpete';
+    
+    // Sevier County: 84654, 84701, 84713, 84723, 84724, 84729, 84732, 84744, 84766
+    if (zipNum === 84654 || zipNum === 84701 || zipNum === 84713 || zipNum === 84723 || 
+        zipNum === 84724 || zipNum === 84729 || zipNum === 84732 || zipNum === 84744 || 
+        zipNum === 84766) return 'Sevier';
+    
+    // Uintah County: 84007, 84046, 84072, 84073, 84076, 84078, 84085
+    if (zipNum === 84007 || zipNum === 84046 || zipNum === 84072 || zipNum === 84073 || 
+        zipNum === 84076 || zipNum === 84078 || zipNum === 84085) return 'Uintah';
+    
+    // Wasatch County: 84049, 84051, 84052, 84053
+    if (zipNum === 84049 || zipNum === 84051 || zipNum === 84052 || zipNum === 84053) return 'Wasatch';
+    
+    // Duchesne County: 84021, 84026, 84035, 84039, 84066
+    if (zipNum === 84021 || zipNum === 84026 || zipNum === 84035 || zipNum === 84039 || 
+        zipNum === 84066) return 'Duchesne';
+    
+    // Grand County: 84515, 84532
+    if (zipNum === 84515 || zipNum === 84532) return 'Grand';
+    
+    // Emery County: 84513, 84516, 84518, 84521, 84522, 84525, 84528, 84531, 84533
+    if (zipNum === 84513 || zipNum === 84516 || zipNum === 84518 || zipNum === 84521 || 
+        zipNum === 84522 || zipNum === 84525 || zipNum === 84528 || zipNum === 84531 || 
+        zipNum === 84533) return 'Emery';
+    
+    // San Juan County: 84511, 84512, 84534, 84536
+    if (zipNum === 84511 || zipNum === 84512 || zipNum === 84534 || zipNum === 84536) return 'San Juan';
+    
+    // Morgan County: 84050
+    if (zipNum === 84050) return 'Morgan';
+    
+    // Rich County: 84028, 84061, 84063, 84086
+    if (zipNum === 84028 || zipNum === 84061 || zipNum === 84063 || zipNum === 84086) return 'Rich';
+    
+    // Juab County: 84639, 84640, 84648, 84651
+    if (zipNum === 84639 || zipNum === 84640 || zipNum === 84648 || zipNum === 84651) return 'Juab';
+    
+    // Millard County: 84642, 84644, 84656, 84657, 84662, 84664, 84665
+    if (zipNum === 84642 || zipNum === 84644 || zipNum === 84656 || zipNum === 84657 || 
+        zipNum === 84662 || zipNum === 84664 || zipNum === 84665) return 'Millard';
+    
+    // Beaver County: 84711, 84712, 84714, 84726, 84735
+    if (zipNum === 84711 || zipNum === 84712 || zipNum === 84714 || zipNum === 84726 || 
+        zipNum === 84735) return 'Beaver';
+    
+    // Piute County: 84725, 84728, 84733, 84750
+    if (zipNum === 84725 || zipNum === 84728 || zipNum === 84733 || zipNum === 84750) return 'Piute';
+    
+    // Wayne County: 84716, 84718, 84747, 84775
+    if (zipNum === 84716 || zipNum === 84718 || zipNum === 84747 || zipNum === 84775) return 'Wayne';
+    
+    // Garfield County: 84715, 84717, 84736, 84740, 84742, 84743, 84758, 84764, 84776
+    if (zipNum === 84715 || zipNum === 84717 || zipNum === 84736 || zipNum === 84740 || 
+        zipNum === 84742 || zipNum === 84743 || zipNum === 84758 || zipNum === 84764 || 
+        zipNum === 84776) return 'Garfield';
+    
+    // Kane County: 84731, 84745, 84746, 84756, 84760, 84763
+    if (zipNum === 84731 || zipNum === 84745 || zipNum === 84746 || zipNum === 84756 || 
+        zipNum === 84760 || zipNum === 84763) return 'Kane';
+    
+    // Daggett County: 84023
+    if (zipNum === 84023) return 'Daggett';
+    
+    return null; // ZIP not found in Utah
+  };
+
+  // Extract county tax rate from address - works for ALL Utah addresses
+  const getCountyTaxRate = (address: string): number => {
+    if (!address) return UTAH_TAX_RATES.DEFAULT;
+    
+    const addressLower = address.toLowerCase().trim();
+    
+    // Method 1: Try to find county name directly in address
+    // Format examples: "123 Main St, Davis County, UT" or "123 Main St, Davis, UT"
+    for (const county of Object.keys(UTAH_TAX_RATES)) {
+      if (county === 'DEFAULT') continue;
+      
+      // Match exact county name (with or without "County" suffix)
+      const countyPattern = new RegExp(`\\b${county.toLowerCase()}(?:\\s+county)?\\b`, 'i');
+      if (countyPattern.test(addressLower)) {
+        console.log(`[Property Tax] Found county "${county}" directly in address`);
+        return UTAH_TAX_RATES[county];
+      }
+    }
+    
+    // Method 2: Match city to county using comprehensive mapping
+    for (const [city, county] of Object.entries(UTAH_CITY_TO_COUNTY)) {
+      // Use word boundary matching to avoid partial matches
+      // e.g., "salt" won't match "salt lake city", but "salt lake" will
+      const cityPattern = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (cityPattern.test(addressLower)) {
+        console.log(`[Property Tax] Matched city "${city}" to county "${county}"`);
+        return UTAH_TAX_RATES[county];
+      }
+    }
+    
+    // Method 3: Extract ZIP code and lookup county (if ZIP mapping is available)
+    const zipMatch = addressLower.match(/\b(84\d{3})\b/);
+    if (zipMatch) {
+      const zip = zipMatch[1];
+      const county = getCountyFromZip(zip);
+      if (county && UTAH_TAX_RATES[county]) {
+        console.log(`[Property Tax] Matched ZIP "${zip}" to county "${county}"`);
+        return UTAH_TAX_RATES[county];
+      }
+    }
+    
+    // Method 4: Fall back to state average if no match found
+    console.log(`[Property Tax] No county match found for "${address}", using Utah state average`);
+    return UTAH_TAX_RATES.DEFAULT;
+  };
+
   // Calculate max payment from DTI ratios
   const calculateMaxPayment = (income: number, debts: number, frontEndDTI: number, backEndDTI: number): number => {
     const frontEndMax = income * (frontEndDTI / 100);
@@ -72,7 +415,7 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
     downPaymentPercent: number,
     interestRate: number,
     loanTermMonths: number,
-    estimatedTaxRate: number = 0.0058, // Utah average
+    estimatedTaxRate: number = 0.0029, // Utah effective rate (after 45% primary residence exemption)
     estimatedInsuranceRate: number = 0.003,
     estimatedPMIRate: number = 0.005 // Average PMI for 10% down
   ): { maxLoan: number; maxPrice: number } => {
@@ -913,8 +1256,22 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       // Note: propertyTax from API is ANNUAL, we need to convert to monthly
       if (propertyData.propertyTax === null || propertyData.propertyTax === undefined) {
         if (enrichedData.price) {
-          // Utah average: 0.58% of home value annually
-          enrichedData.propertyTax = (enrichedData.price * 0.0058) / 12; // Convert annual to monthly
+          // Utah Primary Residence Property Tax Calculation
+          // Step 1: Apply 45% primary residence exemption (only 55% of home value is taxable)
+          const taxableValue = enrichedData.price * 0.55;
+          
+          // Step 2: Get county-specific tax rate based on property address
+          // This function checks: county name in address → city to county mapping → ZIP to county → default
+          const countyTaxRate = getCountyTaxRate(enrichedData.address || '');
+          
+          // Step 3: Calculate annual property tax
+          const annualTax = taxableValue * countyTaxRate;
+          
+          // Step 4: Convert to monthly for payment calculation
+          enrichedData.propertyTax = annualTax / 12;
+          
+          // This results in ~0.29% effective rate (0.55 × 0.52% avg = 0.286%)
+          // Example: $1,099,900 home in Davis County → $604,945 taxable → $3,206/year → $267/month
           estimates.push('Property Tax');
         } else {
           enrichedData.propertyTax = null;
