@@ -690,10 +690,58 @@ async function findPropertyUrlViaGoogle(
       return null;
     }
     
-    // Return the first result's URL
-    const firstResult = searchResults[0];
-    console.log(`   ✓ Found URL: ${firstResult.link}`);
-    return firstResult.link;
+    console.log(`   Found ${searchResults.length} results, filtering for property pages...`);
+    
+    // BAD URL PATTERNS - These are aggregate pages, not individual property listings
+    const badPatterns = [
+      /\/zipcode\//i,           // ZIP code pages
+      /\/city\//i,              // City pages
+      /\/roster\//i,            // Office roster pages
+      /\/office\//i,            // Office pages
+      /\/agent\//i,             // Agent pages
+      /\/search/i,              // Search results pages
+      /\/browse/i,              // Browse pages
+      /\/find/i,                // Find pages
+      /listings\.report/i       // Listing report pages (multi-property)
+    ];
+    
+    // Filter results to find the best property page URL
+    for (const item of searchResults) {
+      const url = item.link;
+      
+      // Skip if URL matches any bad pattern
+      if (badPatterns.some(pattern => pattern.test(url))) {
+        console.log(`   ✗ Skipping (aggregate page): ${url}`);
+        continue;
+      }
+      
+      // For Redfin: Look for the pattern /home/[propertyId]
+      if (sourceName === 'redfin') {
+        if (url.includes('/home/') && /\/\d+\/?$/.test(url)) {
+          console.log(`   ✓ Found property page: ${url}`);
+          return url;
+        }
+      }
+      
+      // For UtahRealEstate: Look for URLs with address patterns
+      if (sourceName === 'utahrealestate') {
+        // Check if URL contains address parts (street number, zip)
+        const addressParts = address.toLowerCase().match(/\d{3,5}/g) || []; // Extract numbers
+        const hasAddressMarkers = addressParts.some(part => url.toLowerCase().includes(part));
+        const hasPropertyPattern = /pid\.\d+|mls.*\d+/i.test(url);
+        
+        if (hasAddressMarkers && (hasPropertyPattern || url.includes('-84014'))) {
+          console.log(`   ✓ Found property page: ${url}`);
+          return url;
+        }
+      }
+      
+      console.log(`   ? Uncertain: ${url}`);
+    }
+    
+    console.log(`   ⚠️  No high-confidence property pages found`);
+    console.log(`   📋 Trying first result as fallback: ${searchResults[0].link}`);
+    return searchResults[0].link;
     
   } catch (error) {
     console.log(`   ✗ Search error: ${error instanceof Error ? error.message : 'Unknown error'}`);
