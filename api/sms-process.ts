@@ -649,26 +649,60 @@ async function lookupPropertyTax(address: string, price: number): Promise<number
  */
 const ENRICHMENT_CONFIG = {
   criticalFields: ['hoa', 'yearBuilt', 'propertyTax', 'lotSqft'] as const,
-  minMissingFieldsToTrigger: 1, // Changed from 2 to trigger on any missing field
-  maxEnrichmentAttempts: 2, // Maximum 2 source attempts
+  minMissingFieldsToTrigger: 1,
+  maxEnrichmentAttempts: 2,
   sources: [
     {
       name: 'redfin',
       priority: 1,
       description: 'Redfin (has actual property tax from county records)',
-      urlBuilder: (address: string, mls?: string) => buildRedfinUrl(address)
+      searchQuery: (address: string) => `${address} site:redfin.com`,
+      targetFields: ['propertyTax', 'yearBuilt', 'hoa', 'lotSqft']
     },
     {
       name: 'utahrealestate',
       priority: 2,
       description: 'UtahRealEstate (has HOA, year built, lot size from MLS)',
-      urlBuilder: (address: string, mls?: string) => buildUtahRealEstateUrl(address)
+      searchQuery: (address: string) => `${address} site:utahrealestate.com`,
+      targetFields: ['hoa', 'yearBuilt', 'lotSqft', 'propertyTax']
     }
   ] as const
 };
 
 /**
- * Build Redfin URL from address
+ * Use Google Search to find actual property listing URLs for a given address
+ * This replaces URL pattern guessing with actual URL discovery
+ */
+async function findPropertyUrlViaGoogle(
+  address: string,
+  sourceName: string,
+  siteDomain: string
+): Promise<string | null> {
+  console.log(`🔍 Searching Google for ${sourceName} listing...`);
+  console.log(`   Query: "${address} site:${siteDomain}"`);
+  
+  try {
+    const searchQuery = `${address} site:${siteDomain}`;
+    const searchResults = await googleSearch(searchQuery);
+    
+    if (!searchResults || searchResults.length === 0) {
+      console.log(`   ✗ No results found`);
+      return null;
+    }
+    
+    // Return the first result's URL
+    const firstResult = searchResults[0];
+    console.log(`   ✓ Found URL: ${firstResult.link}`);
+    return firstResult.link;
+    
+  } catch (error) {
+    console.log(`   ✗ Search error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return null;
+  }
+}
+
+/**
+ * Build Redfin URL from address (DEPRECATED - kept for backwards compatibility)
  */
 function buildRedfinUrl(address: string): string[] {
   const parsed = parseAddress(address);
@@ -795,119 +829,137 @@ async function enrichPropertyData(
   // Start with initial data
   const enrichedListing: ListingData = { ...initialListing };
   const enrichmentLog: Array<{ source: string; url: string; fieldsFound: string[] }> = [];
+  let sourcesAttempted = 0;
   
-  // Track which fields still need to be found
-  let remainingMissingFields = [...missingFields];
-  
-  // Try enrichment sources in priority order
-  for (let i = 0; i < Math.min(ENRICHMENT_CONFIG.maxEnrichmentAttempts, ENRICHMENT_CONFIG.sources.length); i++) {
-    const source = ENRICHMENT_CONFIG.sources[i];
-    console.log(`\n[${i + 1}/${Math.min(ENRICHMENT_CONFIG.maxEnrichmentAttempts, ENRICHMENT_CONFIG.sources.length)}] Trying enrichment source: ${source.name} (${source.description})`);
+  // Try each source in priority order
+  for (const source of ENRICHMENT_CONFIG.sources) {
+    if (sourcesAttempted >= ENRICHMENT_CONFIG.maxEnrichmentAttempts) {
+      console.log(`Reached maximum enrichment attempts (${ENRICHMENT_CONFIG.maxEnrichmentAttempts})`);
+      break;
+    }
     
-    // Build URLs for this source
-    const urls = source.urlBuilder(initialAddress);
-    console.log(`  Built ${urls.length} URL pattern(s) for ${source.name}`);
+    console.log(`[${sourcesAttempted + 1}/${ENRICHMENT_CONFIG.maxEnrichmentAttempts}] Trying enrichment source: ${source.name} (${source.description})`);
+    sourcesAttempted++;
     
-    // Try each URL pattern until we find one that works
-    let foundData = false;
-    for (let j = 0; j < urls.length && remainingMissingFields.length > 0; j++) {
-      const url = urls[j];
-      try {
-        console.log(`  [${j + 1}/${urls.length}] Trying URL: ${url}`);
-        
-        const fetchResponse = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Cache-Control': 'no-cache',
-          },
-          redirect: 'follow',
-          signal: AbortSignal.timeout(8000), // 8 second timeout
-        });
-        
-        if (fetchResponse.ok) {
-          const htmlContent = await fetchResponse.text();
-          const plainText = htmlToPlainText(htmlContent);
-          
-          if (plainText && plainText.length >= 100) {
-            console.log(`    ✓ Fetched ${plainText.length} chars, extracting data...`);
-            
-            // Extract data using existing extraction logic
-            const extractedListing = await extractListingWithOpenAISinglePage(
-              url,
-              plainText,
-              `enrichment_${source.name}`,
-              initialAddress
-            );
-            
-            // Merge only the missing fields (don't overwrite good data)
-            const fieldsFound: string[] = [];
-            for (const field of remainingMissingFields) {
-              const extractedValue = extractedListing[field as keyof ListingData];
-              
-              // Only merge if we got a valid value
-              if (extractedValue !== null && extractedValue !== undefined) {
-                if (field === 'hoa') {
-                  // HOA: 0 is valid (no HOA), always merge if not null/undefined
-                  if (typeof extractedValue === 'number') {
-                    enrichedListing.hoa = extractedValue;
-                    fieldsFound.push(field);
-                  }
-                } else {
-                  // Other fields: merge if not null/undefined and not 0 (0 usually means missing data for these fields)
-                  if (typeof extractedValue === 'number' && extractedValue !== 0) {
-                    (enrichedListing as any)[field] = extractedValue;
-                    fieldsFound.push(field);
-                  } else if (typeof extractedValue !== 'number') {
-                    // Non-number values (shouldn't happen for these fields, but handle it)
-                    (enrichedListing as any)[field] = extractedValue;
-                    fieldsFound.push(field);
-                  }
-                }
-              }
-            }
-            
-            if (fieldsFound.length > 0) {
-              console.log(`    ✓ Found ${fieldsFound.length} missing field(s): ${fieldsFound.join(', ')}`);
-              enrichmentLog.push({
-                source: source.name,
-                url,
-                fieldsFound
-              });
-              
-              // Remove found fields from remaining missing fields
-              remainingMissingFields = remainingMissingFields.filter(f => !fieldsFound.includes(f));
-              foundData = true;
-              
-              // If we found all missing fields, we can stop early
-              if (remainingMissingFields.length === 0) {
-                console.log(`    ✓ All missing fields found - stopping enrichment`);
-                break;
-              }
-            } else {
-              console.log(`    ✗ No missing fields found in this extraction`);
-            }
-          } else {
-            console.log(`    ✗ Content too short (${plainText?.length || 0} chars)`);
-          }
-        } else {
-          console.log(`    ✗ HTTP ${fetchResponse.status}`);
-        }
-      } catch (error) {
-        console.log(`    ✗ Error: ${error instanceof Error ? error.message : 'Unknown'}`);
+    // Use Google Search to find the actual property URL
+    const siteDomain = source.name === 'redfin' ? 'redfin.com' : 'utahrealestate.com';
+    const propertyUrl = await findPropertyUrlViaGoogle(initialAddress, source.name, siteDomain);
+    
+    if (!propertyUrl) {
+      console.log(`✗ Could not find ${source.name} URL via Google Search`);
+      continue;
+    }
+    
+    // Now fetch and scrape the actual property page
+    console.log(`📥 Fetching property page from ${source.name}...`);
+    
+    try {
+      const fetchResponse = await fetch(propertyUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000), // 8 second timeout
+      });
+      
+      if (!fetchResponse.ok) {
+        console.log(`✗ HTTP ${fetchResponse.status} - page may be blocking requests`);
         continue;
       }
       
-      // If we found data from this URL, don't try other URLs for this source
-      if (foundData) break;
+      const htmlContent = await fetchResponse.text();
+      const plainText = htmlToPlainText(htmlContent);
+      
+      if (plainText && plainText.length >= 100) {
+        console.log(`✓ Fetched ${plainText.length} characters from ${source.name}`);
+        
+        // Extract property data using existing extraction logic
+        console.log(`🤖 Extracting property data from ${source.name} page...`);
+        
+        const extractedListing = await extractListingWithOpenAISinglePage(
+          propertyUrl,
+          plainText,
+          `enrichment_${source.name}`,
+          initialAddress
+        );
+        
+        console.log(`📊 Extracted data from ${source.name}:`, {
+          hoa: extractedListing.hoa,
+          yearBuilt: extractedListing.yearBuilt,
+          propertyTax: extractedListing.propertyTax,
+          lotSqft: extractedListing.lotSqft
+        });
+        
+        // Apply extracted data to enriched listing (only missing fields)
+        const fieldsFound: string[] = [];
+        
+        // Check each critical field and merge if missing in enrichedListing
+        for (const field of ENRICHMENT_CONFIG.criticalFields) {
+          const currentValue = enrichedListing[field as keyof ListingData];
+          const extractedValue = extractedListing[field as keyof ListingData];
+          
+          // Only merge if current value is missing and extracted value exists
+          if ((currentValue === null || currentValue === undefined) && extractedValue !== null && extractedValue !== undefined) {
+            if (field === 'hoa') {
+              // HOA: 0 is valid (no HOA), always merge if not null/undefined
+              if (typeof extractedValue === 'number') {
+                enrichedListing.hoa = extractedValue;
+                fieldsFound.push(field);
+              }
+            } else if (field === 'propertyTax') {
+              // Property tax: Convert annual to monthly if needed (extractListingWithOpenAISinglePage returns annual)
+              if (typeof extractedValue === 'number' && extractedValue > 0) {
+                enrichedListing.propertyTax = extractedValue; // Already annual from extraction
+                fieldsFound.push(field);
+              }
+            } else {
+              // Other fields: merge if not null/undefined and not 0 (0 usually means missing data for these fields)
+              if (typeof extractedValue === 'number' && extractedValue !== 0) {
+                (enrichedListing as any)[field] = extractedValue;
+                fieldsFound.push(field);
+              } else if (typeof extractedValue !== 'number') {
+                // Non-number values (shouldn't happen for these fields, but handle it)
+                (enrichedListing as any)[field] = extractedValue;
+                fieldsFound.push(field);
+              }
+            }
+          }
+        }
+        
+        if (fieldsFound.length > 0) {
+          console.log(`✅ Successfully enriched ${fieldsFound.length} field(s): ${fieldsFound.join(', ')}`);
+          enrichmentLog.push({
+            source: source.name,
+            url: propertyUrl,
+            fieldsFound
+          });
+        } else {
+          console.log(`⚠️  Page visited but no new data found for missing fields`);
+        }
+        
+        // Check if we've found everything we need
+        const stillMissing = getMissingCriticalFields(enrichedListing);
+        if (stillMissing.length === 0) {
+          console.log(`✅ All critical fields now populated - stopping enrichment`);
+          break;
+        }
+        
+      } else {
+        console.log(`✗ Content too short (${plainText?.length || 0} chars)`);
+      }
+      
+    } catch (error) {
+      console.log(`✗ Error processing ${source.name}:`, error instanceof Error ? error.message : 'Unknown error');
+      continue;
     }
-    
-    // If we found all missing fields, we can stop trying other sources
-    if (remainingMissingFields.length === 0) break;
   }
   
-  console.log(`\nEnrichment complete. Fields still missing: ${remainingMissingFields.join(', ') || 'none'}`);
+  // Check final state of missing fields
+  const finalMissingFields = getMissingCriticalFields(enrichedListing);
+  console.log(`\nEnrichment complete. Fields still missing: ${finalMissingFields.join(', ') || 'none'}`);
   console.log(`Enrichment log: ${enrichmentLog.length} source(s) provided data`);
   console.log(`${'='.repeat(60)}\n`);
   
