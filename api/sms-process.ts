@@ -649,7 +649,7 @@ async function lookupPropertyTax(address: string, price: number): Promise<number
  */
 const ENRICHMENT_CONFIG = {
   criticalFields: ['hoa', 'yearBuilt', 'propertyTax', 'lotSqft'] as const,
-  minMissingFieldsToTrigger: 2, // Only enrich if 2+ fields are missing
+  minMissingFieldsToTrigger: 1, // Changed from 2 to trigger on any missing field
   maxEnrichmentAttempts: 2, // Maximum 2 source attempts
   sources: [
     {
@@ -715,25 +715,42 @@ function buildUtahRealEstateUrl(address: string): string[] {
 /**
  * Check which critical fields are missing from listing data
  */
-function getMissingCriticalFields(listing: ListingData): string[] {
+function getMissingCriticalFields(listing: any): string[] {
+  const criticalFields = ENRICHMENT_CONFIG.criticalFields;
   const missing: string[] = [];
   
-  for (const field of ENRICHMENT_CONFIG.criticalFields) {
+  console.log('🔍 Checking for missing critical fields:', {
+    criticalFields,
+    currentValues: {
+      hoa: listing.hoa,
+      yearBuilt: listing.yearBuilt,
+      propertyTax: listing.propertyTax,
+      lotSqft: listing.lotSqft,
+      propertyType: listing.propertyType
+    }
+  });
+  
+  for (const field of criticalFields) {
     const value = listing[field];
     
     if (field === 'hoa') {
-      // HOA: null/undefined means missing, but 0 is valid (no HOA)
       if (value === null || value === undefined) {
         missing.push(field);
+        console.log(`  ❌ ${field}: missing (value=${value})`);
+      } else {
+        console.log(`  ✅ ${field}: present (value=${value})`);
       }
     } else {
-      // Other fields: null/undefined means missing
       if (value === null || value === undefined) {
         missing.push(field);
+        console.log(`  ❌ ${field}: missing (value=${value})`);
+      } else {
+        console.log(`  ✅ ${field}: present (value=${value})`);
       }
     }
   }
   
+  console.log(`📊 Missing critical fields: ${missing.length}/${criticalFields.length}`, missing);
   return missing;
 }
 
@@ -745,9 +762,22 @@ async function enrichPropertyData(
   initialListing: ListingData,
   initialAddress: string
 ): Promise<{ enrichedListing: ListingData; enrichmentLog: Array<{ source: string; url: string; fieldsFound: string[] }> }> {
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`CROSS-SOURCE ENRICHMENT START`);
-  console.log(`${'='.repeat(60)}`);
+  console.log('');
+  console.log('============================================================');
+  console.log('CROSS-SOURCE ENRICHMENT CALLED');
+  console.log('============================================================');
+  console.log('📍 Address:', initialAddress);
+  console.log('📋 Initial listing data:', {
+    price: initialListing.price,
+    beds: initialListing.beds,
+    baths: initialListing.baths,
+    sqft: initialListing.sqft,
+    hoa: initialListing.hoa,
+    yearBuilt: initialListing.yearBuilt,
+    propertyTax: initialListing.propertyTax,
+    lotSqft: initialListing.lotSqft,
+    propertyType: initialListing.propertyType
+  });
   
   // Check which fields are missing
   const missingFields = getMissingCriticalFields(initialListing);
@@ -1203,6 +1233,21 @@ export default async function handler(
       searchResult.listing,
       searchResult.listing.address
     );
+    
+    // Comprehensive debug logging
+    console.log('🔍 ENRICHMENT DEBUG:', {
+      wasCalled: true,
+      hadMissingFields: enrichmentResult.enrichmentLog.length > 0 ? 'unknown' : 'check logs above',
+      missingFieldsList: 'check logs above',
+      sourcesAttempted: enrichmentResult.enrichmentLog.length,
+      fieldsFound: enrichmentResult.enrichmentLog.flatMap(entry => entry.fieldsFound),
+      finalListing: {
+        hoa: enrichmentResult.enrichedListing.hoa,
+        yearBuilt: enrichmentResult.enrichedListing.yearBuilt,
+        propertyTax: enrichmentResult.enrichedListing.propertyTax,
+        lotSqft: enrichmentResult.enrichedListing.lotSqft
+      }
+    });
     
     // Update searchResult with enriched data
     searchResult.listing = enrichmentResult.enrichedListing;
