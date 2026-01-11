@@ -1292,9 +1292,14 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         enrichedData.insurance = null;
       }
 
-      // HOA: Standardize null to 0 (assume no HOA rather than Unknown)
+      // 🆕 Track HOA status more explicitly
+      let hoaStatus: 'found' | 'not_found_assumed_zero' | 'confirmed_zero' = 'found';
+      
       if (enrichedData.hoa === null || enrichedData.hoa === undefined) {
-        enrichedData.hoa = 0; // Assume no HOA instead of null/Unknown
+        enrichedData.hoa = 0; // Assume no HOA
+        hoaStatus = 'not_found_assumed_zero';
+      } else if (enrichedData.hoa === 0) {
+        hoaStatus = 'confirmed_zero';
       }
 
       // Add data provenance tracking for debugging
@@ -1302,7 +1307,9 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         price: propertyData.price !== null && propertyData.price !== undefined ? 'extracted' : 'missing',
         propertyTax: propertyData.propertyTax !== null && propertyData.propertyTax !== undefined ? 'extracted' : 'estimated',
         insurance: 'estimated', // Always estimated
-        hoa: propertyData.hoa !== null && propertyData.hoa !== undefined ? 'extracted' : 'assumed_zero',
+        hoa: hoaStatus === 'found' ? 'extracted' : 
+             hoaStatus === 'confirmed_zero' ? 'confirmed_zero' : 
+             'assumed_zero',
         yearBuilt: propertyData.yearBuilt !== null && propertyData.yearBuilt !== undefined ? 'extracted' : 'missing'
       };
       
@@ -1428,8 +1435,13 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       responseText += `- ${formatNullable(enrichedData.sqft, (v) => v.toLocaleString() + ' sq ft')}\n`;
       responseText += `- Built: ${formatNullable(enrichedData.yearBuilt, (v) => v.toString())}\n`;
       
-      // HOA display: Show $0/mo instead of Unknown (we standardize null to 0 in enrichment)
-      responseText += `- HOA: ${formatCurrency(enrichedData.hoa || 0)}/mo\n`;
+      // 🆕 HOA display with source/status indicator
+      const hoaText = enrichedData.hoa !== null && enrichedData.hoa !== undefined
+        ? enrichedData.hoa === 0
+          ? `$0/mo (no HOA)${dataProvenance.hoa === 'confirmed_zero' ? ' [confirmed]' : dataProvenance.hoa === 'extracted' ? ' [extracted]' : ''}`
+          : `${formatCurrency(enrichedData.hoa)}/mo${dataProvenance.hoa === 'extracted' ? ' [extracted]' : ''}`
+        : `$0/mo (assumed)*`;
+      responseText += `- HOA: ${hoaText}\n`;
       responseText += `\n`;
       
       responseText += `💰 Your Payment (${borrowerQualification.downPaymentPercent}% down):\n`;
@@ -1439,8 +1451,13 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       if (payment.pmi > 0) {
         responseText += `- PMI: ${formatCurrency(payment.pmi)}/mo\n`;
       }
-      // Always show HOA (will be $0/mo if no HOA)
-      responseText += `- HOA: ${formatCurrency(payment.hoa || 0)}/mo\n`;
+      // 🆕 Show HOA with source/status indicator
+      const paymentHoaText = payment.hoa !== null && payment.hoa !== undefined
+        ? payment.hoa === 0
+          ? `$0/mo (no HOA)${dataProvenance.hoa === 'confirmed_zero' ? ' [confirmed]' : ''}`
+          : `${formatCurrency(payment.hoa)}/mo${dataProvenance.hoa === 'extracted' ? ' [extracted]' : ''}`
+        : `$0/mo (assumed)*`;
+      responseText += `- HOA: ${paymentHoaText}\n`;
       responseText += `━━━━━━━━━━━━━━━━\n`;
       responseText += `TOTAL: ${formatCurrency(payment.total)}/month\n\n`;
       

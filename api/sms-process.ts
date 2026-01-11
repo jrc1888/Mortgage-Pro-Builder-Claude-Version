@@ -649,6 +649,7 @@ async function lookupPropertyTax(address: string, price: number): Promise<number
  */
 const ENRICHMENT_CONFIG = {
   criticalFields: ['hoa', 'yearBuilt', 'propertyTax', 'lotSqft'] as const,
+  highPriorityFields: ['hoa', 'propertyTax'] as const, // 🆕 ALWAYS trigger enrichment for these
   minMissingFieldsToTrigger: 1,
   maxEnrichmentAttempts: 3,
   sources: [
@@ -657,21 +658,24 @@ const ENRICHMENT_CONFIG = {
       priority: 1,
       description: 'Redfin (has actual property tax from county records)',
       searchQuery: (address: string) => `${address} site:redfin.com`,
-      targetFields: ['propertyTax', 'yearBuilt', 'hoa', 'lotSqft']
-    },
-    {
-      name: 'utahrealestate',
-      priority: 2,
-      description: 'UtahRealEstate (has HOA, year built, lot size from MLS)',
-      searchQuery: (address: string) => `${address} site:utahrealestate.com`,
-      targetFields: ['hoa', 'yearBuilt', 'lotSqft', 'propertyTax']
+      targetFields: ['propertyTax', 'yearBuilt', 'hoa', 'lotSqft'],
+      hoaReliability: 'high' as const // 🆕 HOA data quality indicator
     },
     {
       name: 'zillow',
-      priority: 3,
-      description: 'Zillow (comprehensive property data)',
+      priority: 2, // 🆕 Moved up in priority for HOA
+      description: 'Zillow (comprehensive property data, excellent HOA coverage)',
       searchQuery: (address: string) => `${address} site:zillow.com`,
-      targetFields: ['propertyTax', 'hoa', 'yearBuilt', 'lotSqft']
+      targetFields: ['propertyTax', 'hoa', 'yearBuilt', 'lotSqft'],
+      hoaReliability: 'high' as const // 🆕 Zillow is very reliable for HOA
+    },
+    {
+      name: 'utahrealestate',
+      priority: 3, // 🆕 Moved down slightly
+      description: 'UtahRealEstate (has HOA, year built, lot size from MLS)',
+      searchQuery: (address: string) => `${address} site:utahrealestate.com`,
+      targetFields: ['hoa', 'yearBuilt', 'lotSqft', 'propertyTax'],
+      hoaReliability: 'medium' as const // 🆕 Less consistent HOA data
     }
   ] as const
 };
@@ -911,6 +915,92 @@ function getMissingCriticalFields(listing: any): string[] {
 }
 
 /**
+ * 🆕 NEW FUNCTION: Check if enrichment should be triggered
+ * HIGH-PRIORITY FIELDS (hoa, propertyTax) ALWAYS trigger enrichment
+ */
+function shouldTriggerEnrichment(listing: any): boolean {
+  const highPriorityFields = ENRICHMENT_CONFIG.highPriorityFields;
+  
+  // Check if ANY high-priority field is missing
+  for (const field of highPriorityFields) {
+    const value = listing[field];
+    if (value === null || value === undefined) {
+      console.log(`🔴 HIGH-PRIORITY FIELD MISSING: ${field} - TRIGGERING ENRICHMENT`);
+      return true;
+    }
+  }
+  
+  // If high-priority fields are present, use normal threshold
+  const missingFields = getMissingCriticalFields(listing);
+  const shouldEnrich = missingFields.length >= ENRICHMENT_CONFIG.minMissingFieldsToTrigger;
+  
+  console.log(`Enrichment decision: ${shouldEnrich ? 'YES' : 'NO'} (${missingFields.length} missing fields)`);
+  return shouldEnrich;
+}
+
+/**
+ * Validate HOA value and assign confidence score
+ * Returns whether HOA is valid and a confidence score (0-1)
+ */
+function validateHOA(
+  hoa: number | null | undefined, 
+  sourceName: string
+): { valid: boolean; confidence: number; reason?: string } {
+  
+  // Null/undefined HOA is invalid (not found)
+  if (hoa === null || hoa === undefined) {
+    return { valid: false, confidence: 0, reason: 'HOA value is null/undefined' };
+  }
+  
+  // HOA of $0 is VALID and common (no HOA fee)
+  if (hoa === 0) {
+    console.log(`[HOA Validation] ✓ Valid: $0/mo HOA (no fee) from ${sourceName}`);
+    return { valid: true, confidence: 0.95, reason: 'No HOA fee (valid)' };
+  }
+  
+  // Typical HOA range for Utah properties: $10 - $1000/month
+  // Values outside this range are suspicious
+  if (hoa < 5) {
+    console.log(`[HOA Validation] ⚠️  Suspicious: $${hoa}/mo is unusually low for ${sourceName}`);
+    return { valid: false, confidence: 0.3, reason: 'HOA value suspiciously low (< $5)' };
+  }
+  
+  if (hoa > 1000) {
+    console.log(`[HOA Validation] ⚠️  Suspicious: $${hoa}/mo is unusually high for ${sourceName}`);
+    return { valid: false, confidence: 0.3, reason: 'HOA value suspiciously high (> $1000)' };
+  }
+  
+  // Valid HOA in normal range
+  // Confidence based on source reliability
+  const sourceConfidence = getSourceHOAReliability(sourceName);
+  
+  console.log(`[HOA Validation] ✓ Valid: $${hoa}/mo from ${sourceName} (confidence: ${sourceConfidence})`);
+  return { 
+    valid: true, 
+    confidence: sourceConfidence, 
+    reason: `Valid HOA in normal range from ${sourceName}` 
+  };
+}
+
+/**
+ * Get HOA reliability score for a given source
+ */
+function getSourceHOAReliability(sourceName: string): number {
+  const source = ENRICHMENT_CONFIG.sources.find(s => s.name === sourceName);
+  
+  if (!source || !source.hoaReliability) return 0.5; // Unknown source, medium confidence
+  
+  switch (source.hoaReliability) {
+    case 'high':
+      return 0.95;
+    case 'medium':
+      return 0.75;
+    default:
+      return 0.70;
+  }
+}
+
+/**
  * Cross-source data enrichment function
  * Fetches missing critical fields from high-quality sources
  */
@@ -939,9 +1029,9 @@ async function enrichPropertyData(
   const missingFields = getMissingCriticalFields(initialListing);
   console.log(`Initial data missing fields: ${missingFields.join(', ') || 'none'}`);
   
-  // Don't enrich if we have everything or too few missing fields
-  if (missingFields.length < ENRICHMENT_CONFIG.minMissingFieldsToTrigger) {
-    console.log(`Skipping enrichment: Only ${missingFields.length} missing field(s) (minimum ${ENRICHMENT_CONFIG.minMissingFieldsToTrigger} required)`);
+  // 🆕 Use new high-priority field logic
+  if (!shouldTriggerEnrichment(initialListing)) {
+    console.log(`Skipping enrichment: No high-priority fields missing and only ${missingFields.length} missing field(s)`);
     return {
       enrichedListing: initialListing,
       enrichmentLog: []
@@ -1153,6 +1243,8 @@ async function enrichPropertyData(
         const fieldsFound: string[] = [];
         
         // Check each critical field and merge if missing in enrichedListing
+        const hoaCandidates: Array<{ value: number; source: string; confidence: number }> = [];
+        
         for (const field of ENRICHMENT_CONFIG.criticalFields) {
           const currentValue = enrichedListing[field as keyof ListingData];
           const extractedValue = extractedListing[field as keyof ListingData];
@@ -1160,10 +1252,28 @@ async function enrichPropertyData(
           // Only merge if current value is missing and extracted value exists
           if ((currentValue === null || currentValue === undefined) && extractedValue !== null && extractedValue !== undefined) {
             if (field === 'hoa') {
-              // HOA: 0 is valid (no HOA), always merge if not null/undefined
+              // 🆕 HOA: Validate before accepting
               if (typeof extractedValue === 'number') {
-                enrichedListing.hoa = extractedValue;
-                fieldsFound.push(field);
+                const validation = validateHOA(extractedValue, source.name);
+                
+                if (validation.valid) {
+                  // Track this HOA candidate with confidence score
+                  hoaCandidates.push({
+                    value: extractedValue,
+                    source: source.name,
+                    confidence: validation.confidence
+                  });
+                  
+                  // For now, accept the first valid HOA we find
+                  // (Later we'll implement smart merging if multiple sources provide HOA)
+                  if (enrichedListing.hoa === null || enrichedListing.hoa === undefined) {
+                    enrichedListing.hoa = extractedValue;
+                    fieldsFound.push(field);
+                    console.log(`✅ Accepted HOA: $${extractedValue}/mo from ${source.name} (confidence: ${validation.confidence})`);
+                  }
+                } else {
+                  console.log(`⚠️  Rejected HOA: $${extractedValue}/mo from ${source.name} - ${validation.reason}`);
+                }
               }
             } else if (field === 'propertyTax') {
               // Property tax: Convert annual to monthly if needed (extractListingWithOpenAISinglePage returns annual)
@@ -1216,6 +1326,30 @@ async function enrichPropertyData(
   // Check final state of missing fields
   const finalMissingFields = getMissingCriticalFields(enrichedListing);
   console.log(`\nEnrichment complete. Fields still missing: ${finalMissingFields.join(', ') || 'none'}`);
+  
+  // 🆕 If HOA is STILL missing after all direct sources, try Google fallback
+  if (finalMissingFields.includes('hoa')) {
+    console.log(`🔍 HOA still missing after ${sourcesAttempted} enrichment attempts - trying Google fallback...`);
+    
+    try {
+      const googleHOA = await findHOAViaGoogleFallback(initialAddress);
+      
+      if (googleHOA !== null) {
+        enrichedListing.hoa = googleHOA;
+        enrichmentLog.push({
+          source: 'google_hoa_fallback',
+          url: 'Google Search Results',
+          fieldsFound: ['hoa']
+        });
+        console.log(`✅ Google fallback SUCCESS: Found HOA = $${googleHOA}/mo`);
+      } else {
+        console.log(`⚠️  Google fallback FAILED: Could not find HOA via Google search`);
+      }
+    } catch (error) {
+      console.error(`❌ Google HOA fallback error:`, error);
+    }
+  }
+  
   console.log(`Enrichment log: ${enrichmentLog.length} source(s) provided data`);
   console.log(`${'='.repeat(60)}\n`);
   
@@ -1223,6 +1357,91 @@ async function enrichPropertyData(
     enrichedListing,
     enrichmentLog
   };
+}
+
+/**
+ * 🆕 Google Search fallback specifically for HOA data
+ * Used when all direct property sources fail to find HOA
+ */
+async function findHOAViaGoogleFallback(address: string): Promise<number | null> {
+  console.log('');
+  console.log('============================================================');
+  console.log('HOA GOOGLE FALLBACK SEARCH');
+  console.log('============================================================');
+  console.log(`🔍 Searching Google specifically for HOA info: ${address}`);
+  
+  const searchQueries = [
+    `"${address}" HOA fee monthly`,
+    `"${address}" homeowner association fee`,
+    `"${address}" HOA dues`,
+    `${address} HOA monthly cost`,
+  ];
+  
+  for (let i = 0; i < searchQueries.length; i++) {
+    const query = searchQueries[i];
+    console.log(`[${i + 1}/${searchQueries.length}] Trying query: "${query}"`);
+    
+    try {
+      const searchResults = await googleSearch(query);
+      
+      if (!searchResults || searchResults.length === 0) {
+        console.log(`   ✗ No results found`);
+        continue;
+      }
+      
+      console.log(`   Found ${searchResults.length} results, analyzing snippets...`);
+      
+      // HOA patterns to look for in snippets
+      const hoaPatterns = [
+        // "$20/month HOA", "$20/mo HOA", "$20 monthly HOA"
+        /\$(\d+)(?:\/month|\/mo|\s+monthly)\s+HOA/i,
+        // "HOA: $20", "HOA fee: $20"
+        /HOA(?:\s+fee)?:\s*\$(\d+)/i,
+        // "monthly HOA of $20", "HOA dues of $20"
+        /(?:monthly\s+)?HOA(?:\s+dues)?\s+of\s+\$(\d+)/i,
+        // "$20 HOA fee", "$20 association fee"
+        /\$(\d+)\s+(?:HOA|association)\s+fee/i,
+      ];
+      
+      for (const result of searchResults) {
+        const snippet = result.snippet || '';
+        const title = result.title || '';
+        const textToSearch = `${title} ${snippet}`.toLowerCase();
+        
+        console.log(`   Analyzing: "${snippet.substring(0, 100)}..."`);
+        
+        // Try each pattern
+        for (const pattern of hoaPatterns) {
+          const match = textToSearch.match(pattern);
+          if (match && match[1]) {
+            const hoaAmount = parseInt(match[1], 10);
+            
+            // Validate the found HOA
+            const validation = validateHOA(hoaAmount, 'google_fallback');
+            
+            if (validation.valid) {
+              console.log(`✅ [HOA Fallback] Found valid HOA via Google: $${hoaAmount}/mo`);
+              console.log(`   Source: ${result.link}`);
+              console.log(`   Context: "${match[0]}"`);
+              return hoaAmount;
+            } else {
+              console.log(`⚠️  [HOA Fallback] Found HOA but failed validation: $${hoaAmount}/mo - ${validation.reason}`);
+            }
+          }
+        }
+      }
+      
+      console.log(`   No valid HOA patterns found in results`);
+      
+    } catch (error) {
+      console.error(`   ✗ Search error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      continue;
+    }
+  }
+  
+  console.log('⚠️  [HOA Fallback] All Google searches exhausted - HOA not found');
+  console.log('============================================================\n');
+  return null;
 }
 
 /**
