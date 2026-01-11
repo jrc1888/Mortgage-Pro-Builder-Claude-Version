@@ -1225,6 +1225,9 @@ export default async function handler(
     }
 
     // STEP: Cross-source enrichment (fill in missing critical fields)
+    console.log('🔵 CHECKPOINT: About to start enrichment section');
+    console.log('🔵 searchResult exists:', !!searchResult);
+    console.log('🔵 searchResult.listing exists:', !!searchResult?.listing);
     console.log(`\n${'='.repeat(60)}`);
     console.log(`CROSS-SOURCE ENRICHMENT - STARTING`);
     console.log(`${'='.repeat(60)}`);
