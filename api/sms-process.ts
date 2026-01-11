@@ -929,11 +929,125 @@ async function enrichPropertyData(
     console.log(`[${sourcesAttempted + 1}/${ENRICHMENT_CONFIG.maxEnrichmentAttempts}] Trying enrichment source: ${source.name} (${source.description})`);
     sourcesAttempted++;
     
-    // Use Google Search to find the actual property URL
-    const siteDomain = source.name === 'redfin' ? 'redfin.com' : 'utahrealestate.com';
-    const propertyUrl = await findPropertyUrlViaGoogle(initialAddress, source.name, siteDomain);
+    // Use improved multi-query Google Search to find the actual property URL
+    console.log(`🔍 Searching Google for ${source.name} listing...`);
+    
+    let propertyUrl: string | null = null;
+    
+    // Parse address to extract components for better queries
+    const parsed = parseAddress(initialAddress);
+    if (!parsed) {
+      console.log(`   ✗ Could not parse address: ${initialAddress}`);
+      continue;
+    }
+    
+    const { streetNum, streetName, city, state, zip } = parsed;
+    
+    // Build search queries based on source
+    let searchQueries: string[] = [];
+    
+    if (source.name === 'redfin') {
+      searchQueries = [
+        // Most specific - full address with path hint
+        `"${streetNum} ${streetName}" "${zip}" site:redfin.com/${state}/${city}`,
+        // Street name and zip with home path
+        `"${streetName}" "${zip}" site:redfin.com/home`,
+        // Street number and key words from street name
+        `${streetNum} ${streetName.split(' ')[0]} ${city} site:redfin.com/${state}`,
+        // Simple address with site
+        `${initialAddress} site:redfin.com`,
+        // Just street and city for broader match
+        `"${streetName}" ${city} ${state} site:redfin.com`
+      ];
+    } else if (source.name === 'utahrealestate') {
+      searchQueries = [
+        // Most specific with pid pattern
+        `"${streetNum} ${streetName}" "${zip}" site:utahrealestate.com/pid`,
+        // Full address
+        `${initialAddress} site:utahrealestate.com`,
+        // Street name and ZIP
+        `"${streetName}" "${zip}" site:utahrealestate.com`,
+        // City and street
+        `"${streetName}" ${city} site:utahrealestate.com`
+      ];
+    }
+    
+    // BAD URL PATTERNS - aggregate pages
+    const badPatterns = [
+      /\/zipcode\//i,
+      /\/city\//i,
+      /\/roster\//i,
+      /\/office\//i,
+      /\/agent\//i,
+      /\/search/i,
+      /\/browse/i,
+      /\/find/i,
+      /listings\.report/i
+    ];
+    
+    // Try each query variation
+    for (let i = 0; i < searchQueries.length; i++) {
+      const searchQuery = searchQueries[i];
+      console.log(`   [${i + 1}/${searchQueries.length}] Query: "${searchQuery}"`);
+      
+      try {
+        const searchResults = await googleSearch(searchQuery);
+        
+        if (!searchResults || searchResults.length === 0) {
+          console.log(`   ✗ No results found`);
+          continue;
+        }
+        
+        console.log(`   Found ${searchResults.length} results, filtering...`);
+        
+        // Filter results to find the best property page URL
+        for (const item of searchResults) {
+          const url = item.link;
+          
+          // Skip if URL matches any bad pattern
+          if (badPatterns.some(pattern => pattern.test(url))) {
+            console.log(`   ✗ Skipping (aggregate): ${url}`);
+            continue;
+          }
+          
+          // For Redfin: Look for the pattern /home/[propertyId]
+          if (source.name === 'redfin') {
+            if (url.includes('/home/') && /\/\d+\/?$/.test(url)) {
+              console.log(`   ✓ Found property page: ${url}`);
+              propertyUrl = url;
+              break;
+            }
+          }
+          
+          // For UtahRealEstate: Look for URLs with address patterns
+          if (source.name === 'utahrealestate') {
+            const hasStreetNum = url.toLowerCase().includes(streetNum);
+            const hasZip = url.includes(zip);
+            const hasPropertyPattern = /pid\.\d+|mls.*\d+|\d{7}/i.test(url);
+            
+            if ((hasStreetNum || hasZip) && hasPropertyPattern) {
+              console.log(`   ✓ Found property page: ${url}`);
+              propertyUrl = url;
+              break;
+            }
+          }
+        }
+        
+        if (propertyUrl) {
+          // Found a URL, stop trying queries
+          break;
+        }
+        
+        console.log(`   No property page in these results, trying next query...`);
+        
+      } catch (error) {
+        console.log(`   ✗ Search error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        continue;
+      }
+    }
     
     if (!propertyUrl) {
+      console.log(`   ⚠️  All search queries exhausted, no property page found`);
       console.log(`✗ Could not find ${source.name} URL via Google Search`);
       continue;
     }
