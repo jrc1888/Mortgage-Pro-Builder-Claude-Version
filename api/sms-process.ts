@@ -511,25 +511,34 @@ function extractAddressFromUrl(url: string): string | null {
     if (url.includes('zillow.com')) {
       const match = pathname.match(/\/homedetails\/([^\/]+)/);
       if (match) {
-        // Extract full address from path, converting dashes to spaces
-        let address = match[1]
-          .replace(/-/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+        // Split by dashes to get address components
+        const parts = match[1].split('-');
         
-        // Extract zip code and format properly
-        const zipMatch = address.match(/(\d{5})/);
-        if (zipMatch) {
-          const zip = zipMatch[1];
-          // Remove everything after zip code (like _zpid references)
-          address = address.replace(/\s+\d+.*$/, '').trim();
-          // Ensure we have the zip code at the end
-          if (!address.includes(zip)) {
-            address = address + ' ' + zip;
+        // Find zip (last part that's 5 digits) and state (2-letter code before zip)
+        let zip = '';
+        let stateIndex = -1;
+        
+        for (let i = parts.length - 1; i >= 0; i--) {
+          if (/^\d{5}$/.test(parts[i])) {
+            zip = parts[i];
+            if (i > 0 && /^[A-Z]{2}$/i.test(parts[i - 1])) {
+              stateIndex = i - 1;
+            }
+            break;
           }
         }
         
-        return address;
+        if (zip && stateIndex > 0) {
+          const state = parts[stateIndex].toUpperCase();
+          // City is typically the part before state
+          const city = parts[stateIndex - 1] || parts[stateIndex - 2] || '';
+          // Everything before city is street
+          const streetParts = parts.slice(0, stateIndex - 1);
+          const street = streetParts.join(' ');
+          
+          // Format as: "Street, City, State Zip" (comma format works best with parseAddress)
+          return `${street}, ${city}, ${state} ${zip}`;
+        }
       }
     }
     
