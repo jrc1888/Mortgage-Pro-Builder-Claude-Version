@@ -924,31 +924,42 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
         enrichedData.propertyTax = propertyData.propertyTax / 12;
       }
 
-      // Insurance: Use consistent calculation based on year built and price
-      // IMPORTANT: Use consistent yearBuilt fallback to ensure insurance calculations match across all input types
+      // Insurance: ALWAYS use standardized formula (0.25% annually = 0.0025)
+      // This ensures consistency regardless of property age or source
       if (enrichedData.price) {
-        const currentYear = new Date().getFullYear();
-        // Use consistent fallback: if yearBuilt is missing, assume 10 years old (2024 - 10 = 2014)
-        // This ensures insurance calculations are consistent regardless of input type
-        const defaultYearBuilt = currentYear - 10; // 2014 for 2024
-        const yearBuilt = propertyData.yearBuilt || defaultYearBuilt;
-        const age = currentYear - yearBuilt;
-        
-        // Consistent insurance rates based on age (same for all input types)
-        let insuranceRate = 0.003; // Base 0.3% annually
-        if (age > 20) insuranceRate = 0.0035; // Older homes (20+ years) cost more to insure
-        if (age < 5) insuranceRate = 0.0025; // Newer homes (<5 years) cost less
-        if (age < 0) insuranceRate = 0.0025; // New construction
-
+        // STANDARDIZED INSURANCE FORMULA: monthlyInsurance = (price × 0.0025) ÷ 12
+        const insuranceRate = 0.0025; // Always 0.25% annually
         enrichedData.insurance = (enrichedData.price * insuranceRate) / 12; // Convert annual to monthly
-        
-        // Only mark as estimate if yearBuilt was actually missing
-        if (!propertyData.yearBuilt) {
-          estimates.push('Insurance');
-        }
+        estimates.push('Insurance'); // Insurance is always estimated
       } else {
         enrichedData.insurance = null;
       }
+
+      // HOA: Standardize null to 0 (assume no HOA rather than Unknown)
+      if (enrichedData.hoa === null || enrichedData.hoa === undefined) {
+        enrichedData.hoa = 0; // Assume no HOA instead of null/Unknown
+      }
+
+      // Add data provenance tracking for debugging
+      const dataProvenance = {
+        price: propertyData.price !== null && propertyData.price !== undefined ? 'extracted' : 'missing',
+        propertyTax: propertyData.propertyTax !== null && propertyData.propertyTax !== undefined ? 'extracted' : 'estimated',
+        insurance: 'estimated', // Always estimated
+        hoa: propertyData.hoa !== null && propertyData.hoa !== undefined ? 'extracted' : 'assumed_zero',
+        yearBuilt: propertyData.yearBuilt !== null && propertyData.yearBuilt !== undefined ? 'extracted' : 'missing'
+      };
+      
+      enrichedData._dataProvenance = dataProvenance;
+
+      // Verification logging
+      console.log('Property data after enrichment:', {
+        address: enrichedData.address,
+        propertyTaxSource: dataProvenance.propertyTax,
+        propertyTaxMonthly: enrichedData.propertyTax,
+        insuranceMonthly: enrichedData.insurance,
+        hoaSource: dataProvenance.hoa,
+        hoaValue: enrichedData.hoa
+      });
 
       updateStep(step5Id, { 
         status: 'success', 
@@ -1060,23 +1071,19 @@ export const SMSDemo: React.FC<Props> = ({ onNavigateHome, userEmail }) => {
       responseText += `- ${formatNullable(enrichedData.sqft, (v) => v.toLocaleString() + ' sq ft')}\n`;
       responseText += `- Built: ${formatNullable(enrichedData.yearBuilt, (v) => v.toString())}\n`;
       
-      if (enrichedData.hoa !== null && enrichedData.hoa !== undefined) {
-        responseText += `- HOA: ${enrichedData.hoa > 0 ? formatCurrency(enrichedData.hoa) + '/mo' : 'None detected ✓'}\n`;
-      } else {
-        responseText += `- HOA: Unknown\n`;
-      }
+      // HOA display: Show $0/mo instead of Unknown (we standardize null to 0 in enrichment)
+      responseText += `- HOA: ${formatCurrency(enrichedData.hoa || 0)}/mo\n`;
       responseText += `\n`;
       
       responseText += `💰 Your Payment (${borrowerQualification.downPaymentPercent}% down):\n`;
       responseText += `- P&I: ${formatCurrency(payment.principalAndInterest)}\n`;
-      responseText += `- Property Tax: ${formatCurrency(payment.propertyTax)}/mo ${estimates.includes('Property Tax') ? '(est)*' : ''}\n`;
+      responseText += `- Property Tax: ${formatCurrency(payment.propertyTax)}/mo${estimates.includes('Property Tax') ? ' (est)*' : ''}\n`;
       responseText += `- Insurance: ${formatCurrency(payment.insurance)}/mo (est)*\n`;
       if (payment.pmi > 0) {
         responseText += `- PMI: ${formatCurrency(payment.pmi)}/mo\n`;
       }
-      if (payment.hoa > 0) {
-        responseText += `- HOA: ${formatCurrency(payment.hoa)}/mo\n`;
-      }
+      // Always show HOA (will be $0/mo if no HOA)
+      responseText += `- HOA: ${formatCurrency(payment.hoa || 0)}/mo\n`;
       responseText += `━━━━━━━━━━━━━━━━\n`;
       responseText += `TOTAL: ${formatCurrency(payment.total)}/month\n\n`;
       
