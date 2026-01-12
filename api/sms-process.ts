@@ -404,16 +404,19 @@ async function extractListingWithOpenAISinglePage(
 
   const instructions = `You are a real estate data extraction assistant. Extract property listing information from the provided webpage content.
 
-IMPORTANT RULES:
-1. Extract ONLY information that appears in the webpage content. Never guess or invent values.
-2. For missing fields, return null (not 0).
-3. Validate that numbers are reasonable (e.g., price > 10000, beds 1-10, baths 1-10, sqft 100-20000).
-4. Property tax should be ANNUAL amount in dollars.
-5. HOA should be MONTHLY amount in dollars (convert if needed).
-6. If you see "year built" or "built in YYYY", extract as yearBuilt.
-7. Confidence scores should reflect how certain you are (0.0 to 1.0).
+CRITICAL RULES - READ CAREFULLY:
+1. Extract ONLY information that appears EXPLICITLY in the webpage content. Never guess, estimate, or invent values.
+2. For missing fields, return null (not 0, not estimates).
+3. **CRITICAL FOR HOA: If you cannot find "HOA", "HOA fee", "association fee", "association dues", or "monthly fee" EXPLICITLY stated with a dollar amount, return null. DO NOT estimate, infer, or use values from other properties.**
+4. Validate that numbers are reasonable (e.g., price > 10000, beds 1-10, baths 1-10, sqft 100-20000).
+5. Property tax should be ANNUAL amount in dollars (convert if shown as monthly).
+6. HOA should be MONTHLY amount in dollars (convert if shown as annual).
+7. If you see "year built" or "built in YYYY", extract as yearBuilt.
+8. Confidence scores should reflect certainty (0.0 = not found or uncertain, 1.0 = explicitly stated).
+9. **Set confidence to 0 for any field where the value is uncertain or not explicitly stated in the text.**
+10. If the webpage shows multiple properties, extract ONLY the property matching the target address (if provided).
 
-${targetAddress ? `TARGET ADDRESS: ${targetAddress}\nValidate that the extracted address matches this target address.` : ''}
+${targetAddress ? `TARGET ADDRESS: ${targetAddress}\nValidate that the extracted address matches this target address. If multiple properties are shown, extract ONLY data for this specific address.` : ''}
 
 Return a JSON object with:
 - address: Full property address (string)
@@ -423,7 +426,7 @@ Return a JSON object with:
 - sqft: Square footage (number or null)
 - yearBuilt: Year built (number or null)
 - propertyType: Type (e.g. "Single Family", "Condo", "Townhouse")
-- hoa: Monthly HOA fee in dollars (number or null, 0 if explicitly no HOA)
+- hoa: Monthly HOA fee in dollars (number or null, 0 if explicitly states "No HOA" or "$0")
 - propertyTax: Annual property tax in dollars (number or null)
 - lotSqft: Lot size in square feet (number or null)
 - status: Listing status (e.g. "Active", "Pending", "Sold")
@@ -491,6 +494,36 @@ Return a JSON object with:
     listingData.hoa = listingData.hoa !== null && listingData.hoa !== undefined ? Number(listingData.hoa) : null;
     listingData.lotSqft = listingData.lotSqft !== null && listingData.lotSqft !== undefined ? Number(listingData.lotSqft) : null;
     listingData.propertyTax = listingData.propertyTax !== null && listingData.propertyTax !== undefined ? Number(listingData.propertyTax) : null;
+
+    // CRITICAL: Validate HOA is actually in the raw text to prevent AI hallucination
+    if (listingData.hoa !== null && listingData.hoa !== undefined) {
+      const hoaStr = String(listingData.hoa);
+      const hoaPatterns = [
+        new RegExp(`\\$${hoaStr}[\\s/]*(?:mo|month|monthly)`, 'i'),
+        new RegExp(`HOA[\\s:]*\\$${hoaStr}`, 'i'),
+        new RegExp(`${hoaStr}[\\s]*(?:per month|monthly|/mo).*HOA`, 'i'),
+        new RegExp(`association[\\s]+fee[\\s:]*\\$${hoaStr}`, 'i'),
+      ];
+      
+      const hoaFoundInText = hoaPatterns.some(pattern => truncatedText.match(pattern));
+      
+      if (!hoaFoundInText) {
+        console.log(`⚠️  HOA VALIDATION FAILED: $${listingData.hoa} not found in raw text - REJECTING as hallucination`);
+        listingData.hoa = null;
+        if (listingData.confidence) {
+          listingData.confidence.hoa = 0;
+        }
+        // Add to missingFields if not already there
+        if (!listingData.missingFields) {
+          listingData.missingFields = [];
+        }
+        if (!listingData.missingFields.includes('hoa')) {
+          listingData.missingFields.push('hoa');
+        }
+      } else {
+        console.log(`✓ HOA VALIDATED: $${listingData.hoa} found in raw text`);
+      }
+    }
 
     return listingData;
   } catch (error) {
@@ -915,26 +948,35 @@ function getMissingCriticalFields(listing: any): string[] {
 }
 
 /**
- * 🆕 NEW FUNCTION: Check if enrichment should be triggered
- * HIGH-PRIORITY FIELDS (hoa, propertyTax) ALWAYS trigger enrichment
+ * Determine if enrichment should be triggered
+ * Returns true if any high-priority field is missing OR has low confidence
  */
-function shouldTriggerEnrichment(listing: any): boolean {
+function shouldTriggerEnrichment(listing: ListingData): boolean {
   const highPriorityFields = ENRICHMENT_CONFIG.highPriorityFields;
   
-  // Check if ANY high-priority field is missing
+  // Check if ANY high-priority field is missing OR has low confidence
   for (const field of highPriorityFields) {
     const value = listing[field];
+    const confidence = listing.confidence?.[field] ?? 1;
+    
+    // Trigger if field is missing
     if (value === null || value === undefined) {
       console.log(`🔴 HIGH-PRIORITY FIELD MISSING: ${field} - TRIGGERING ENRICHMENT`);
       return true;
     }
+    
+    // 🆕 NEW: Trigger if field has low confidence (< 0.5)
+    if (confidence < 0.5) {
+      console.log(`🔴 HIGH-PRIORITY FIELD LOW CONFIDENCE: ${field} (value: ${value}, confidence: ${confidence}) - TRIGGERING ENRICHMENT`);
+      return true;
+    }
   }
   
-  // If high-priority fields are present, use normal threshold
+  // If high-priority fields are present with good confidence, use normal threshold
   const missingFields = getMissingCriticalFields(listing);
   const shouldEnrich = missingFields.length >= ENRICHMENT_CONFIG.minMissingFieldsToTrigger;
   
-  console.log(`Enrichment decision: ${shouldEnrich ? 'YES' : 'NO'} (${missingFields.length} missing fields)`);
+  console.log(`Enrichment decision: ${shouldEnrich ? 'YES' : 'NO'} (${missingFields.length} missing fields, high-priority fields OK)`);
   return shouldEnrich;
 }
 
@@ -1536,11 +1578,30 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
 
   console.log(`Total search results collected: ${allSearchResults.length}`);
 
-  // Filter out bad sources (symphonyhomes.com never has price data)
-  const filteredResults = allSearchResults.filter(result => 
-    !result.link.includes('symphonyhomes.com')
-  );
-  console.log(`After filtering out symphonyhomes.com: ${filteredResults.length} results`);
+  // Filter out bad patterns - agent pages, zip searches, etc.
+  const badPatterns = [
+    /\/roster\//i,              // Agent roster pages
+    /\/agent\./i,               // Agent profile pages
+    /\/agents\//i,              // Agents directory
+    /\/office\//i,              // Office pages
+    /\/team\//i,                // Team pages
+    /agent\.listings/i,         // Agent listing aggregator pages
+    /\/zipcode\//i,             // Zipcode search pages
+    /\/zip\//i,                 // Zip search pages
+    /\/city\//i,                // City pages
+    /\/search/i,                // Search result pages
+    /symphonyhomes\.com/i,      // Aggregate site
+  ];
+  
+  const filteredResults = allSearchResults.filter(result => {
+    const url = result.link;
+    const matchesBadPattern = badPatterns.some(pattern => pattern.test(url));
+    if (matchesBadPattern) {
+      console.log(`  ✗ Filtered out (bad pattern): ${url}`);
+    }
+    return !matchesBadPattern;
+  });
+  console.log(`After filtering out bad patterns: ${filteredResults.length} results`);
 
   // Prioritize known good sources (redfin, utahrealestate, zillow, realtor)
   const priorityResults = filteredResults.filter(result => {
