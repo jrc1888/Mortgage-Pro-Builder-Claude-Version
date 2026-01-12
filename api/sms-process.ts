@@ -1,4 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
+});
 
 interface ListingData {
   address: string;
@@ -535,7 +540,7 @@ Return a JSON object with:
 /**
  * Extract address from URL patterns
  */
-function extractAddressFromUrl(url: string): string | null {
+async function extractAddressFromUrl(url: string): Promise<string | null> {
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
@@ -606,7 +611,82 @@ function extractAddressFromUrl(url: string): string | null {
       }
     }
     
-    return null;
+    // Realtor.com: Multiple URL patterns
+    // Pattern 1: /realestateandhomes-detail/4821-W-Dock-St_South-Jordan_UT_84009_M26023-39049
+    // Pattern 2: /homedetail/4821-W-Dock-St_South-Jordan_UT_84009_M26023-39049
+    if (url.includes('realtor.com')) {
+      // Try pattern with underscores: Street_City_State_ZIP
+      const match1 = url.match(/[\/-]([^\/_-]+(?:-[^\/_-]+)*)_([^\/_-]+(?:-[^\/_-]+)*)_([A-Z]{2})_(\d{5})/);
+      if (match1) {
+        const street = match1[1].replace(/-/g, ' ');
+        const city = match1[2].replace(/-/g, ' ');
+        const state = match1[3];
+        const zip = match1[4];
+        const address = `${street}, ${city}, ${state} ${zip}`;
+        console.log(`✓ Extracted address from Realtor.com URL via REGEX: ${address}`);
+        return address;
+      }
+      // Try pattern with dashes in pathname
+      const match2 = pathname.match(/\/([^\/]+(?:-[^\/]+)+)/);
+      if (match2) {
+        const parts = match2[1].split('-');
+        // Look for state (2 letters) and zip (5 digits) pattern
+        for (let i = parts.length - 1; i >= 1; i--) {
+          if (/^\d{5}$/.test(parts[i]) && /^[A-Z]{2}$/i.test(parts[i - 1])) {
+            const state = parts[i - 1].toUpperCase();
+            const zip = parts[i];
+            const city = parts[i - 2] || '';
+            const street = parts.slice(0, i - 2).join(' ');
+            if (street && city) {
+              const address = `${street}, ${city}, ${state} ${zip}`;
+              console.log(`✓ Extracted address from Realtor.com URL via REGEX (pattern 2): ${address}`);
+              return address;
+            }
+          }
+        }
+      }
+    }
+    
+    // 🆕 AI FALLBACK: If no REGEX pattern matched, use OpenAI to extract address
+    console.log(`⚠️  No REGEX pattern matched for URL: ${url}`);
+    console.log(`🤖 Attempting AI-powered address extraction...`);
+    
+    try {
+      const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+      if (!apiKey) {
+        console.log(`❌ OpenAI API key not configured, cannot use AI fallback`);
+        return null;
+      }
+
+      const aiResponse = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'Extract the property address from this URL and return it in standard format: Street, City, State ZIP. Return ONLY the address, nothing else.'
+          },
+          {
+            role: 'user',
+            content: `Extract the property address from this URL: ${url}`
+          }
+        ],
+        temperature: 0,
+        max_tokens: 100
+      });
+
+      const extractedAddress = aiResponse.choices[0]?.message?.content?.trim();
+      
+      if (extractedAddress && extractedAddress.length > 10) {
+        console.log(`✓ AI extracted address: ${extractedAddress}`);
+        return extractedAddress;
+      } else {
+        console.log(`❌ AI extraction failed or returned invalid address: ${extractedAddress}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ AI address extraction error:`, error);
+      return null;
+    }
   } catch {
     return null;
   }
@@ -1496,49 +1576,74 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
     throw new Error('OpenAI API key not configured');
   }
 
-  console.log(`\n=== GOOGLE SEARCH FALLBACK START ===`);
-  console.log(`Input: url=${url}, mlsNumber=${mlsNumber}, address=${address}`);
+  console.log('\n=== GOOGLE SEARCH FOR PROPERTY ===');
+  console.log('Input URL:', url);
+  console.log('MLS Number:', mlsNumber);
+  console.log('Address:', address);
 
-  // Build SIMPLE search queries - no complex operators
+  // Build search query with MLS number if available to get EXACT property
   let searchQueries: string[] = [];
   
-  if (address) {
-    console.log(`Building queries for address: ${address}`);
+  if (mlsNumber && address) {
+    // If we have MLS number, use it to find the EXACT listing
     searchQueries = [
-      // Very simple queries without site restrictions
-      address,
-      `${address} property listing`,
-      `${address} for sale`,
-      // Then try specific sites
-      `${address} site:utahrealestate.com`,
-      `${address} site:redfin.com`,
-      `${address} site:homes.com`,
-      `${address} site:zillow.com`,
+      `"${address}" "MLS ${mlsNumber}" site:redfin.com OR site:zillow.com OR site:utahrealestate.com`,
+      `"${address}" MLS ${mlsNumber} site:redfin.com`,
+      `"${address}" MLS ${mlsNumber} site:zillow.com`,
+      `"${address}" MLS ${mlsNumber} site:utahrealestate.com`,
     ];
+    console.log(`Search query (with MLS): ${searchQueries[0]}`);
   } else if (mlsNumber) {
-    console.log(`Building queries for MLS: ${mlsNumber}`);
+    // MLS only
     searchQueries = [
-      `MLS ${mlsNumber}`,
-      `${mlsNumber} MLS listing`,
-      `MLS ${mlsNumber} site:utahrealestate.com`,
+      `"MLS ${mlsNumber}" site:redfin.com OR site:zillow.com OR site:utahrealestate.com`,
       `MLS ${mlsNumber} site:redfin.com`,
+      `MLS ${mlsNumber} site:zillow.com`,
+      `MLS ${mlsNumber} site:utahrealestate.com`,
     ];
+    console.log(`Search query (MLS only): ${searchQueries[0]}`);
+  } else if (address) {
+    // Extract MLS number from address if present
+    const mlsMatch = address.match(/MLS\s*[#:]?\s*(\d+)/i);
+    const extractedMLS = mlsMatch ? mlsMatch[1] : undefined;
+    
+    if (extractedMLS) {
+      console.log(`📋 Extracted MLS number from address: ${extractedMLS}`);
+      // Use MLS in search queries for better accuracy
+      searchQueries = [
+        `"${address.replace(/MLS\s*[#:]?\s*\d+/i, '').trim()}" "MLS ${extractedMLS}" site:redfin.com OR site:zillow.com OR site:utahrealestate.com`,
+        `"${address.replace(/MLS\s*[#:]?\s*\d+/i, '').trim()}" MLS ${extractedMLS} site:redfin.com`,
+        `"${address.replace(/MLS\s*[#:]?\s*\d+/i, '').trim()}" MLS ${extractedMLS} site:zillow.com`,
+        `"${address.replace(/MLS\s*[#:]?\s*\d+/i, '').trim()}" MLS ${extractedMLS} site:utahrealestate.com`,
+      ];
+      console.log(`Search query (address + extracted MLS): ${searchQueries[0]}`);
+    } else {
+      // No MLS found, use standard address search
+      searchQueries = [
+        `"${address}" MLS site:redfin.com OR site:zillow.com OR site:utahrealestate.com`,
+        `"${address}" site:redfin.com`,
+        `"${address}" site:zillow.com`,
+        `"${address}" site:utahrealestate.com`,
+        `${address} property listing`,
+      ];
+      console.log(`Search query (address + MLS keyword): ${searchQueries[0]}`);
+    }
   } else if (url) {
-    const addressFromUrl = extractAddressFromUrl(url);
+    const addressFromUrl = await extractAddressFromUrl(url);
     if (addressFromUrl) {
       console.log(`Extracted address from URL: ${addressFromUrl}`);
       searchQueries = [
-        addressFromUrl,
-        `${addressFromUrl} property listing`,
-        `${addressFromUrl} site:utahrealestate.com`,
-        `${addressFromUrl} site:redfin.com`,
+        `"${addressFromUrl}" MLS site:redfin.com OR site:zillow.com OR site:utahrealestate.com`,
+        `"${addressFromUrl}" site:redfin.com`,
+        `"${addressFromUrl}" site:zillow.com`,
       ];
     } else {
       console.log(`Could not extract address from URL, searching URL directly`);
       searchQueries = [url];
     }
+    console.log(`Search query (URL): ${searchQueries[0]}`);
   } else {
-    throw new Error('No search query available: need URL, address, or MLS number');
+    throw new Error('No search criteria provided');
   }
 
   console.log(`Will try ${searchQueries.length} search queries...`);
@@ -1578,8 +1683,10 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
 
   console.log(`Total search results collected: ${allSearchResults.length}`);
 
-  // Filter out bad patterns - agent pages, zip searches, etc.
+  // Filter out bad patterns - agent pages, zip searches, neighborhood pages, etc.
   const badPatterns = [
+    /\/neighborhood\//i,        // Neighborhood pages
+    /\/luxury-homes/i,          // Luxury home aggregate pages
     /\/roster\//i,              // Agent roster pages
     /\/agent\./i,               // Agent profile pages
     /\/agents\//i,              // Agents directory
@@ -1594,14 +1701,20 @@ async function getListingDataFromGoogleSearch(url?: string, mlsNumber?: string, 
   ];
   
   const filteredResults = allSearchResults.filter(result => {
-    const url = result.link;
-    const matchesBadPattern = badPatterns.some(pattern => pattern.test(url));
-    if (matchesBadPattern) {
-      console.log(`  ✗ Filtered out (bad pattern): ${url}`);
+    const isBad = badPatterns.some(pattern => pattern.test(result.link));
+    if (isBad) {
+      // Log which pattern matched for debugging
+      const matchedPattern = badPatterns.find(pattern => pattern.test(result.link));
+      console.log(`❌ Filtered out: ${result.link} (matched pattern: ${matchedPattern?.toString()})`);
     }
-    return !matchesBadPattern;
+    return !isBad;
   });
-  console.log(`After filtering out bad patterns: ${filteredResults.length} results`);
+  
+  console.log(`After filtering: ${filteredResults.length} valid property listing URLs`);
+  
+  if (filteredResults.length === 0) {
+    throw new Error('All search results were filtered out as non-property pages');
+  }
 
   // Prioritize known good sources (redfin, utahrealestate, zillow, realtor)
   const priorityResults = filteredResults.filter(result => {
@@ -1698,7 +1811,7 @@ async function getListingDataFromUrl(url: string): Promise<{ listing: ListingDat
   console.log(`======================================\n`);
 
   // 🆕 STEP 0: Extract address FIRST (before trying anything else)
-  const addressFromUrl = extractAddressFromUrl(url);
+  const addressFromUrl = await extractAddressFromUrl(url);
   console.log(`Extracted address from URL: ${addressFromUrl || 'none'}`);
 
   // STEP 1: Try direct fetch (but don't trust it completely)
@@ -1769,6 +1882,111 @@ async function extractListingWithOpenAI(url: string, rawText: string, source: st
   return extractListingWithOpenAISinglePage(url, rawText, source, targetAddress);
 }
 
+/**
+ * Extract MLS number from address string
+ * Returns MLS number if found, undefined otherwise
+ */
+function extractMLSFromAddress(address: string): string | undefined {
+  // Patterns: "MLS 123456", "MLS#123456", "MLS: 123456", "mls 123456"
+  const mlsMatch = address.match(/MLS\s*[#:]?\s*(\d+)/i);
+  return mlsMatch ? mlsMatch[1] : undefined;
+}
+
+/**
+ * Check if address looks incomplete or messy
+ * Returns true if address needs normalization
+ */
+function isAddressMessy(address: string): boolean {
+  const cleaned = address.trim();
+  
+  // Very short addresses are likely incomplete
+  if (cleaned.length < 10) {
+    return true;
+  }
+  
+  // Check for vague phrases
+  const vaguePhrases = [
+    /that house/i,
+    /the house/i,
+    /on\s+\w+\s+street/i,
+    /near\s+/i,
+    /around\s+/i,
+    /somewhere\s+/i
+  ];
+  
+  if (vaguePhrases.some(phrase => phrase.test(cleaned))) {
+    return true;
+  }
+  
+  // Check if missing ZIP code (5 digits)
+  if (!/\d{5}/.test(cleaned)) {
+    return true;
+  }
+  
+  // Check if missing state (2-letter code)
+  if (!/\b[A-Z]{2}\b/.test(cleaned)) {
+    return true;
+  }
+  
+  // Check if it looks like a partial address (no street number at start)
+  if (!/^\d+/.test(cleaned)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Normalize messy address using OpenAI
+ * Returns normalized address or original if normalization fails
+ */
+async function normalizeAddressWithAI(address: string): Promise<{ normalizedAddress: string; mlsNumber?: string }> {
+  console.log(`🤖 Normalizing messy address with AI: "${address}"`);
+  
+  try {
+    const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+    if (!apiKey) {
+      console.log(`❌ OpenAI API key not configured, cannot normalize address`);
+      return { normalizedAddress: address };
+    }
+
+    // Extract MLS number before normalization
+    const mlsNumber = extractMLSFromAddress(address);
+    if (mlsNumber) {
+      console.log(`📋 Found MLS number in address: ${mlsNumber}`);
+    }
+
+    const aiResponse = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'Normalize this address to standard format: Street Number Street Name, City, State ZIP. If you can\'t determine a complete address, return it unchanged.'
+        },
+        {
+          role: 'user',
+          content: `Normalize this address: ${address}`
+        }
+      ],
+      temperature: 0,
+      max_tokens: 100
+    });
+
+    const normalizedAddress = aiResponse.choices[0]?.message?.content?.trim();
+    
+    if (normalizedAddress && normalizedAddress.length > 10) {
+      console.log(`✓ AI normalized address: "${normalizedAddress}"`);
+      return { normalizedAddress, mlsNumber };
+    } else {
+      console.log(`⚠️  AI normalization returned invalid result, using original address`);
+      return { normalizedAddress: address, mlsNumber };
+    }
+  } catch (error) {
+    console.error(`❌ AI address normalization error:`, error);
+    return { normalizedAddress: address };
+  }
+}
+
 // API Handler
 export default async function handler(
   request: VercelRequest,
@@ -1805,6 +2023,8 @@ export default async function handler(
     }
 
     let searchResult: { listing: ListingData; ingestion: IngestResult };
+    let normalizedAddress = address;
+    let extractedMLS: string | undefined;
     
     if (url) {
       // For URLs: Use improved fallback chain
@@ -1813,24 +2033,42 @@ export default async function handler(
       console.log(`${'='.repeat(60)}`);
       searchResult = await getListingDataFromUrl(url);
     } else if (address) {
-      // For addresses: Try direct URL construction first, then Google Search
+      // For addresses: Normalize if messy, then process
       console.log(`\n${'='.repeat(60)}`);
       console.log(`NEW REQUEST: ADDRESS`);
-      console.log(`Address: ${address}`);
+      console.log(`Original Address: ${address}`);
       console.log(`${'='.repeat(60)}`);
+      
+      // Check if address needs normalization
+      if (isAddressMessy(address)) {
+        console.log(`⚠️  Address looks messy/incomplete, normalizing with AI...`);
+        const normalizationResult = await normalizeAddressWithAI(address);
+        normalizedAddress = normalizationResult.normalizedAddress;
+        extractedMLS = normalizationResult.mlsNumber;
+        console.log(`✓ Normalized address: "${normalizedAddress}"`);
+        if (extractedMLS) {
+          console.log(`✓ Extracted MLS number: ${extractedMLS}`);
+        }
+      } else {
+        // Address looks good, but still extract MLS if present
+        extractedMLS = extractMLSFromAddress(address);
+        if (extractedMLS) {
+          console.log(`✓ Extracted MLS number from address: ${extractedMLS}`);
+        }
+      }
       
       // PRIORITY 1: Try direct URL construction
       console.log(`\nPRIORITY 1: Trying direct URL construction...`);
-      const directUrlResult = await tryDirectUrlConstruction(address);
+      const directUrlResult = await tryDirectUrlConstruction(normalizedAddress);
       
       if (directUrlResult) {
         console.log(`✓ Direct URL construction SUCCESS`);
         searchResult = directUrlResult;
       } else {
-        // PRIORITY 2: Fall back to Google Search
+        // PRIORITY 2: Fall back to Google Search (with MLS if available)
         console.log(`✗ Direct URL construction failed`);
         console.log(`\nPRIORITY 2: Falling back to Google Search...`);
-        searchResult = await getListingDataFromGoogleSearch(undefined, undefined, address);
+        searchResult = await getListingDataFromGoogleSearch(undefined, extractedMLS, normalizedAddress);
       }
     } else {
       throw new Error('No URL or address provided');
