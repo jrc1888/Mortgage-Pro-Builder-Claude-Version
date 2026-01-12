@@ -1697,45 +1697,69 @@ async function getListingDataFromUrl(url: string): Promise<{ listing: ListingDat
   console.log(`PROCESSING URL: ${url}`);
   console.log(`======================================\n`);
 
-  // STEP 1: Try direct fetch
+  // 🆕 STEP 0: Extract address FIRST (before trying anything else)
+  const addressFromUrl = extractAddressFromUrl(url);
+  console.log(`Extracted address from URL: ${addressFromUrl || 'none'}`);
+
+  // STEP 1: Try direct fetch (but don't trust it completely)
+  let directFetchResult: { listing: ListingData; ingestion: IngestResult } | null = null;
   try {
     console.log(`STEP 1: Attempting direct fetch...`);
     const ingestion = await ingestListingText(url);
-    const targetAddress = extractAddressFromUrl(url);
+    const targetAddress = addressFromUrl;
     const listing = await extractListingWithOpenAI(url, ingestion.raw_text, ingestion.source, targetAddress);
     
-    // Check if we got critical fields
-    if (!hasCriticalMissingFields(listing)) {
-      console.log(`✓ Direct fetch SUCCESS - got all critical fields`);
+    // 🆕 Only accept direct fetch if we got GOOD data with high confidence
+    // Check that we have price and either HOA is present with high confidence OR explicitly null
+    const hasReliableHOA = listing.hoa === null || (listing.confidence?.hoa && listing.confidence.hoa > 0.5);
+    const hasCriticalData = listing.price && listing.address;
+    
+    if (hasCriticalData && hasReliableHOA && !hasCriticalMissingFields(listing)) {
+      console.log(`✓ Direct fetch SUCCESS - got reliable data with good confidence`);
       return { listing, ingestion };
     } else {
-      console.log(`✗ Direct fetch got partial data, missing critical fields`);
+      console.log(`⚠️  Direct fetch got partial/uncertain data - will try address-based search`);
+      console.log(`   - Has critical data: ${hasCriticalData}`);
+      console.log(`   - Has reliable HOA: ${hasReliableHOA} (HOA: ${listing.hoa}, confidence: ${listing.confidence?.hoa})`);
+      console.log(`   - Missing fields: ${hasCriticalMissingFields(listing)}`);
+      directFetchResult = { listing, ingestion }; // Save but don't return yet
     }
   } catch (error) {
     console.log(`✗ Direct fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
-  // STEP 2: Extract address and try direct URL construction BEFORE Google Search
-  console.log(`\nSTEP 2: Attempting direct URL construction before Google Search fallback...`);
-  const addressFromUrl = extractAddressFromUrl(url);
+  // 🆕 STEP 2: If we have an address, treat this like an ADDRESS INPUT (more reliable)
   if (addressFromUrl) {
-    console.log(`Extracted address from URL: ${addressFromUrl}`);
-    console.log(`Trying direct URL construction with address: ${addressFromUrl}`);
+    console.log(`\n🔄 SWITCHING TO ADDRESS-BASED SEARCH (same flow as address input - more reliable)`);
+    console.log(`Address: ${addressFromUrl}`);
+    
+    // PRIORITY 1: Try direct URL construction (like address input flow)
+    console.log(`\nPRIORITY 1: Trying direct URL construction...`);
     const directUrlResult = await tryDirectUrlConstruction(addressFromUrl);
+    
     if (directUrlResult) {
-      console.log(`✓ Direct URL construction SUCCESS - returning result`);
+      console.log(`✓ Direct URL construction SUCCESS`);
       return directUrlResult;
     } else {
-      console.log(`✗ Direct URL construction failed - will fall back to Google Search`);
+      console.log(`✗ Direct URL construction failed`);
     }
-  } else {
-    console.log(`✗ Could not extract address from URL for direct URL construction`);
-    console.log(`Will attempt Google Search as last resort`);
+    
+    // PRIORITY 2: Fall back to Google Search by ADDRESS (not by URL)
+    console.log(`\nPRIORITY 2: Falling back to Google Search by address...`);
+    const googleResult = await getListingDataFromGoogleSearch(undefined, undefined, addressFromUrl);
+    
+    console.log(`✓ Google Search by address completed`);
+    return googleResult;
   }
 
-  // STEP 3: Fall back to Google Search ONLY if direct URL construction failed
-  console.log(`\nSTEP 3: All direct methods failed - falling back to Google Search as last resort...`);
-  return await getListingDataFromGoogleSearch(url, undefined, addressFromUrl || undefined);
+  // STEP 3: No address extracted - use direct fetch result if available, otherwise fail
+  if (directFetchResult) {
+    console.log(`⚠️  Returning partial data from direct fetch (no address extracted to improve search)`);
+    return directFetchResult;
+  }
+
+  console.log(`❌ All methods failed - could not extract property data`);
+  throw new Error('Could not extract property data from URL and no address found for fallback');
 }
 
 /**
