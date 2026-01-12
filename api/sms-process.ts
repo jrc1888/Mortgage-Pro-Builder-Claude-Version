@@ -1,9 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
-});
 
 interface ListingData {
   address: string;
@@ -658,23 +653,36 @@ async function extractAddressFromUrl(url: string): Promise<string | null> {
         return null;
       }
 
-      const aiResponse = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'Extract the property address from this URL and return it in standard format: Street, City, State ZIP. Return ONLY the address, nothing else.'
-          },
-          {
-            role: 'user',
-            content: `Extract the property address from this URL: ${url}`
-          }
-        ],
-        temperature: 0,
-        max_tokens: 100
+      const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'Extract the property address from this URL and return it in standard format: Street, City, State ZIP. Return ONLY the address, nothing else.'
+            },
+            {
+              role: 'user',
+              content: `Extract the property address from this URL: ${url}`
+            }
+          ],
+          temperature: 0,
+          max_tokens: 100
+        })
       });
 
-      const extractedAddress = aiResponse.choices[0]?.message?.content?.trim();
+      if (!aiResponse.ok) {
+        const errorText = await aiResponse.text();
+        throw new Error(`OpenAI API error: ${errorText.substring(0, 200)}`);
+      }
+
+      const data = await aiResponse.json();
+      const extractedAddress = data.choices?.[0]?.message?.content?.trim();
       
       if (extractedAddress && extractedAddress.length > 10) {
         console.log(`✓ AI extracted address: ${extractedAddress}`);
@@ -1956,23 +1964,36 @@ async function normalizeAddressWithAI(address: string): Promise<{ normalizedAddr
       console.log(`📋 Found MLS number in address: ${mlsNumber}`);
     }
 
-    const aiResponse = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Normalize this address to standard format: Street Number Street Name, City, State ZIP. If you can\'t determine a complete address, return it unchanged.'
-        },
-        {
-          role: 'user',
-          content: `Normalize this address: ${address}`
-        }
-      ],
-      temperature: 0,
-      max_tokens: 100
+    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'Normalize this address to standard format: Street Number Street Name, City, State ZIP. If you can\'t determine a complete address, return it unchanged.'
+          },
+          {
+            role: 'user',
+            content: `Normalize this address: ${address}`
+          }
+        ],
+        temperature: 0,
+        max_tokens: 100
+      })
     });
 
-    const normalizedAddress = aiResponse.choices[0]?.message?.content?.trim();
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      throw new Error(`OpenAI API error: ${errorText.substring(0, 200)}`);
+    }
+
+    const data = await aiResponse.json();
+    const normalizedAddress = data.choices?.[0]?.message?.content?.trim();
     
     if (normalizedAddress && normalizedAddress.length > 10) {
       console.log(`✓ AI normalized address: "${normalizedAddress}"`);
